@@ -69,3 +69,15 @@ doc/manual/version.tex
 
 doc/devref/devref/
 doc/manual/manual/
+
+
+Hadoop_output
+Hadoop_output/
+Hadoop_output/*
+
+MapRed/*.text
+MapRed/*.txt
+MapRed/*/out/
+MapRed/*/outputs/
+MapRed/outputs/
+MapRed/*.class
