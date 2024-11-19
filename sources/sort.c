@@ -927,6 +927,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #ifdef WITHPTHREADS
 					if ( AS.MasterSort && ( fout == AR.outfile ) ) goto RetRetval;
 #endif
+					//MesPrint("This is how 2\n");
 					WriteStats(&pp,STATSPOSTSORT,NOCHECKLOGTYPE);
 					UpdateMaxSize();
 				}
@@ -1098,6 +1099,7 @@ TooLarge:
 #endif
 		pp = S->SizeInFile[0];
 		MULPOS(pp,sizeof(WORD));
+		//MesPrint("This is how we print the thread value\n");
 		WriteStats(&pp,STATSPOSTSORT,NOCHECKLOGTYPE);
 		UpdateMaxSize();
 	}

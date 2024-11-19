@@ -75,12 +75,14 @@ Hadoop_output
 Hadoop_output/
 Hadoop_output/*
 
-MapRed/*.text
-MapRed/*.txt
+MapRed/*/*.text
+MapRed/*/*.txt
 MapRed/*/out/
 MapRed/*/outputs/
 MapRed/outputs/
-MapRed/*.class
+MapRed/*/*.class
 *.class
-tests/*.text
-tests/*.txt
+tests/*/*.text
+tests/inputs/*/*.text
+tests/inputs/*/*.txt
+tests/data_parsed/*.txt

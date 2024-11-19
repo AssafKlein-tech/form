@@ -1570,7 +1570,7 @@ bucketstolen:;
 				If they have to keep their order, don't use this feature.
 */
 			case DOONEEXPRESSION: {
-
+				MesPrint("Do one expression\n");
 				POSITION position, outposition;
 				FILEHANDLE *fi, *fout, *oldoutfile;
 				LONG dd = 0;
@@ -1588,7 +1588,6 @@ bucketstolen:;
 					AT.BrackBuf = AM.BracketFactors;
 					AT.bracketindexflag = 1;
 				}
-
 				position = AS.OldOnFile[i];
 				if ( e->status == HIDDENLEXPRESSION || e->status == HIDDENGEXPRESSION ) {
 					AR.GetFile = 2; fi = AR.hidefile;
@@ -1717,6 +1716,7 @@ bucketstolen:;
 				 }
 				}
 				AN.ninterms += dd;
+				MesPrint("thread call to endsort oon do expression\n");
 				if ( EndSort(BHEAD AT.S0->sBuffer,0) < 0 ) goto ProcErr;
 				e->numdummies = AR.MaxDum - AM.IndDum;
 				AR.BracketOn = oldBracketOn;
@@ -3599,6 +3599,8 @@ int MasterMerge(VOID)
 #ifdef WITHSORTBOTS
 	if ( numberofworkers > 2 ) return(SortBotMasterMerge());
 #endif
+	MesPrint("Start mastermerge\n");
+	PrintRunningTime();
 	fin = &S->file;
 	if ( AR0.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR0.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -4069,6 +4071,8 @@ ReturnError:
 
 int SortBotMasterMerge(VOID)
 {
+	MesPrint("\nStart Sortbotmerge at:\n");
+	PrintRunningTime();
 	FILEHANDLE *fin, *fout;
 	ALLPRIVATES *B = AB[0], *BB;
 	POSITION position;
@@ -4099,6 +4103,7 @@ int SortBotMasterMerge(VOID)
 	LOCK(BB->T.SB.MasterBlockLock[BB->T.SB.MasterNumBlocks]);
 
 	MasterWaitAllSortBots();
+
 /*
 	Now we can start up the workers. They will claim their writing blocks.
 	Here the master will wait till all writing blocks have been claimed.
@@ -4164,7 +4169,8 @@ int SortBotMasterMerge(VOID)
 	initialization. The result is usually disastrous.
 */
 	MasterWaitAllSortBots();
-
+	MesPrint("\nFinished Sortbotmerge at:\n");
+	PrintRunningTime();
 	return(0);
 }
 
