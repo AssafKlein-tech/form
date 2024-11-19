@@ -81,3 +81,6 @@ MapRed/*/out/
 MapRed/*/outputs/
 MapRed/outputs/
 MapRed/*.class
+*.class
+tests/*.text
+tests/*.txt
