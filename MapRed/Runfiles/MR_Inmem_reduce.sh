@@ -35,21 +35,21 @@ cd /home/assaf/Repos/form
 hdfs dfsadmin -safemode leave
 
 # Wait for services to start up (optional, adjust sleep time as necessary)
-sleep 2
+#sleep 2
 
 # Define input and output directories in HDFS
 DFS_INPUT_DIR="/input"
 DFS_OUTPUT_DIR="/output"
 
 # Remove old input and output directories if they exist
-#hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
+hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
 hdfs dfs -rm -r -skipTrash $DFS_OUTPUT_DIR
 
 # Create the input directory in HDFS
-#hdfs dfs -mkdir -p $DFS_INPUT_DIR
+hdfs dfs -mkdir -p $DFS_INPUT_DIR
 
 # Upload local files to the HDFS input directory
-#hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
+hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
 
 # Remove local output directory if it exists
 if [ -d "$OUTPUT_DIR" ]; then
@@ -59,8 +59,8 @@ fi
 mkdir -p $OUTPUT_DIR
 
 # Run the WordCount job
-time hadoop jar ./Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTermFractionDriver \
-    -D mapreduce.task.io.file.buffer.size=131072  \
+time strace -f -e trace=write,read -o hadoop_profile.log  hadoop jar /home/assaf/Repos/form/MapRed/Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTermFractionDriver \
+    -D mapreduce.task.io.file.buffer.size=524288  \
     -D mapreduce.map.memory.mb=768 \
     -D mapreduce.map.java.opts=-Xmx512m\
     -D mapreduce.task.io.sort.mb=200 \
@@ -77,6 +77,7 @@ time hadoop jar ./Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTerm
     -D mapreduce.job.reduces=4\
     -D mapreduce.reduce.speculative=false \
     $DFS_INPUT_DIR $DFS_OUTPUT_DIR #> $OUTPUT_DIR/log.txt 2>&1
+    -D mapreduce.input.fileinputformat.split.minsize=268435456\
     -D mapreduce.reduce.shuffle.parallelcopies = 8 \
     #-D mapred.job.reduce.input.buffer.percent=0.7\
     #-D mapreduce.reduce.shuffle.memory.limit.percent=1.0\

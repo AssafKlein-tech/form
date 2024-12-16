@@ -1,6 +1,6 @@
 format 255;
-#create <terms_mid_presort.text>;
-#create <terms_mid_postsort.text>;
+#create <terms_powerfirst_1G.text>;
+#create <terms_lowfirst_1G.text>;
 #:ThreadLoadBalancing ON
 on powerfirst;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
@@ -14,12 +14,12 @@ id d =  j + k ;
 id f =  o + p ;
 .Sort 
 
-#write <terms_mid_presort.text> "    + %+E",F
+#write <terms_powerfirst_1G.text> "    + %+E",F
 
 .Sort  //on power first order
-on lowfirst;
+off powerfirst;
 .sort //sorting the different order
 
-#write <terms_mid_postsort.text> "    + %+E",F
+//#write <terms_lowfirst_1G.text> "    + %+E",F
 
 .end

@@ -25,8 +25,11 @@ fi
 # Save the dir provided as the second argument in a variable
 export OUTPUT_DIR="$2"
 
+cd /home/assaf/Repos/form
 
 # Start HDFS and YARN (if not already running)
+#stop-dfs.sh
+#stop-yarn.sh
 #start-dfs.sh
 #start-yarn.sh
 
@@ -34,21 +37,21 @@ export OUTPUT_DIR="$2"
 hdfs dfsadmin -safemode leave
 
 # Wait for services to start up (optional, adjust sleep time as necessary)
-sleep 2
+#sleep 2
 
 # Define input and output directories in HDFS
 DFS_INPUT_DIR="/input"
 DFS_OUTPUT_DIR="/output"
 
 # Remove old input and output directories if they exist
-#hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
+hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
 hdfs dfs -rm -r -skipTrash $DFS_OUTPUT_DIR
 
 # Create the input directory in HDFS
-#hdfs dfs -mkdir -p $DFS_INPUT_DIR
+hdfs dfs -mkdir -p $DFS_INPUT_DIR
 
 # Upload local files to the HDFS input directory
-#hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
+hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
 
 # Remove local output directory if it exists
 if [ -d "$OUTPUT_DIR" ]; then
@@ -60,30 +63,31 @@ mkdir -p $OUTPUT_DIR
 # Run the WordCount job
 time hadoop jar /home/assaf/Repos/form/MapRed/Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTermFractionDriver \
     -D mapreduce.task.io.file.buffer.size=524288  \
-    -D mapreduce.map.memory.mb=1280 \
-    -D mapreduce.map.java.opts=-Xmx768m\
-    -D mapreduce.task.io.sort.mb=400 \
-    -D mapreduce.map.sort.spill.percent=0.92 \
+    -D mapreduce.map.memory.mb=1536 \
+    -D mapreduce.map.java.opts=-Xmx1024m\
+    -D mapreduce.task.io.sort.mb=576 \
+    -D mapreduce.map.sort.spill.percent=0.95 \
     -D mapreduce.task.io.sort.factor=100 \
-    -D mapreduce.reduce.memory.mb=2560 \
-    -D mapreduce.reduce.java.opts=-Xmx1536m \
-    -D mapreduce.reduce.shuffle.input.buffer.percent=0.8 \
-    -D mapreduce.reduce.shuffle.merge.percent=0.66 \
-    -D mapred.job.reduce.input.buffer.percent=0.7 \
-    -D mapreduce.map.speculative=false \
-    -D mapreduce.job.reduces=2\
-    -D mapreduce.reduce.shuffle.parallelcopies = 10 \
-    -D mapreduce.reduce.speculative=false \
+    -D mapreduce.reduce.memory.mb=2400 \
+    -D mapreduce.reduce.java.opts=-Xmx1736m \
     -D mapreduce.map.output.compress=true \
     -D mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.SnappyCodec \
-    -D mapreduce.tasktracker.map.tasks.maximum=16 \
+    -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
+    -D mapreduce.reduce.shuffle.merge.percent=0.8\
+    -D mapred.job.reduce.input.buffer.percent=0.75\
+    -D mapreduce.map.speculative=false \
+    -D mapreduce.job.reduces=20\
+    -D mapreduce.reduce.speculative=false \
+    -D mapreduce.input.fileinputformat.split.minsize=536870912\
     $DFS_INPUT_DIR $DFS_OUTPUT_DIR #> $OUTPUT_DIR/log.txt 2>&1
-    -D mapreduce.input.fileinputformat.split.minsize=268435456 \
-    #-D mapreduce.job.maps=16 \   #ignored on "local"
+    #-D mapreduce.reduce.shuffle.parallelcopies = 8 \
     #-D mapred.job.reduce.input.buffer.percent=0.7\
     #-D mapreduce.reduce.shuffle.memory.limit.percent=1.0\
+    #-D mapreduce.input.fileinputformat.split.maxsize=67108864 \
     #-D mapreduce.input.fileinputformat.split.minsize=33554432 \
+    #-D mapreduce.job.maps=4 \
     #-D mapreduce.tasktracker.reduce.tasks.maximum=6 \
+    #-D mapreduce.tasktracker.map.tasks.maximum=6 \
     #-D mapreduce.task.profile=true \
     #-D mapreduce.task.profile.maps=0 \
     #-D mapreduce.task.profile.reduces=0 \
@@ -100,7 +104,7 @@ time hadoop jar /home/assaf/Repos/form/MapRed/Hadoop/fraction_num_term/ComplexTe
 
 # Copy the output from HDFS to the local filesystem
 
-hdfs dfs -get $DFS_OUTPUT_DIR/* $OUTPUT_DIR/
+#hdfs dfs -get $DFS_OUTPUT_DIR/* $OUTPUT_DIR/
 
 # Optionally stop Hadoop services after job completion
 #stop-dfs.sh
