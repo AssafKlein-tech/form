@@ -25,7 +25,7 @@ fi
 # Save the dir provided as the second argument in a variable
 export OUTPUT_DIR="$2"
 
-cd /home/assaf/Repos/form
+cd ~/form
 
 # Start HDFS and YARN (if not already running)
 #start-dfs.sh
@@ -42,14 +42,14 @@ DFS_INPUT_DIR="/input"
 DFS_OUTPUT_DIR="/output"
 
 # Remove old input and output directories if they exist
-#hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
+hdfs dfs -rm -r -skipTrash $DFS_INPUT_DIR
 hdfs dfs -rm -r -skipTrash $DFS_OUTPUT_DIR
 
 # Create the input directory in HDFS
-#hdfs dfs -mkdir -p $DFS_INPUT_DIR
+sudo hdfs dfs -mkdir -p $DFS_INPUT_DIR
 
 # Upload local files to the HDFS input directory
-#hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
+hdfs dfs -put $INPUT_FILE $DFS_INPUT_DIR
 
 # Remove local output directory if it exists
 if [ -d "$OUTPUT_DIR" ]; then
@@ -59,19 +59,18 @@ fi
 mkdir -p $OUTPUT_DIR
 
 # Run the WordCount job
-cd /home/assaf/Repos/form
-time hadoop jar ./Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTermFractionDriver \
-    -D mapreduce.task.io.file.buffer.size=131072  \
-    -D mapreduce.map.memory.mb=1792 \
-    -D mapreduce.map.java.opts=-Xmx1280m\
-    -D mapreduce.task.io.sort.mb=512 \
-    -D mapreduce.map.sort.spill.percent=0.9 \
-    -D mapreduce.task.io.sort.factor=1000 \
-    -D mapreduce.reduce.memory.mb=1560 \
-    -D mapreduce.reduce.java.opts=-Xmx1048m \
-    -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
-    -D mapreduce.map.output.compress=false \
+time hadoop jar ~/form/MapRed/Hadoop/fraction_num_term/ComplexTermProcessing.jar ComplexTermFractionDriver \
     $DFS_INPUT_DIR $DFS_OUTPUT_DIR #> $OUTPUT_DIR/log.txt 2>&1
+    #-D mapreduce.task.io.file.buffer.size=131072  \
+    #-D mapreduce.map.memory.mb=1792 \
+    #-D mapreduce.map.java.opts=-Xmx1280m\
+    #-D mapreduce.task.io.sort.mb=512 \
+    #-D mapreduce.map.sort.spill.percent=0.9 \
+    #-D mapreduce.task.io.sort.factor=1000 \
+    #-D mapreduce.reduce.memory.mb=1560 \
+    #-D mapreduce.reduce.java.opts=-Xmx1048m \
+    #-D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
+    #-D mapreduce.map.output.compress=false \
     #-D mapreduce.map.speculative=true \
     #-D mapreduce.reduce.speculative=true \
     #-D mapreduce.reduce.shuffle.memory.limit.percent=1.0\

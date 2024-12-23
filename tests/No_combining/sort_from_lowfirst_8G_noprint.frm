@@ -3,7 +3,7 @@ format 255;
 on powerfirst;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Local F = (a+b+c+d)^9 * (f+e+g+h)^9 * (i+j+k)^9 * l^9;
+Local F = (a+b+c+d)^8 * (f+e+g+h)^8 * (i+j+k)^8 * l^8;
 
 
 .Sort

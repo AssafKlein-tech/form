@@ -1872,17 +1872,17 @@ VOID PrintRunningTime(VOID)
 	if ( AB[0] != 0 ) {
 		workertime = GetWorkerTimes();
 #else
-	workertime = PF_GetSlaveTimes();  /* must be called on all processors */
+	//workertime = PF_GetSlaveTimes();  /* must be called on all processors */
 	if ( PF.me == MASTER ) {
 #endif
 		mastertime = AM.SumTime + TimeCPU(1);
 		wallclocktime = TimeWallClock(1);
-		totaltime = mastertime+workertime;
+		//totaltime = mastertime+workertime;
 		if ( !AM.silent ) {
-		MesPrint("  %l.%2i sec + %l.%2i sec: %l.%2i sec out of %l.%2i sec",
+		MesPrint("  %l.%2i sec out of %l.%2i sec",
 			mastertime/1000,(WORD)((mastertime%1000)/10),
-			workertime/1000,(WORD)((workertime%1000)/10),
-			totaltime/1000,(WORD)((totaltime%1000)/10),
+			//workertime/1000,(WORD)((workertime%1000)/10),
+			//totaltime/1000,(WORD)((totaltime%1000)/10),
 			wallclocktime/100,(WORD)(wallclocktime%100));
 		}
 	}

@@ -14,10 +14,5 @@ id l = n + m;
 .sort
 id f = o + p;
 .Sort 
-
-#write <terms_powerfirst_16G.text> "    + %+E",F
-
-.Sort  //on power first order
-off powerfirst;
-
+#write <terms_powerfirst16G.text> "    + %+E",F
 .end

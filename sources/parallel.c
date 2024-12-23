@@ -915,6 +915,8 @@ int PF_EndSort(void)
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
+	MesPrint("Start the master merge\n");
+    PrintRunningTime();
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -968,6 +970,8 @@ int PF_EndSort(void)
 	S->TermsLeft = PF_goutterms = noutterms;
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
+	MesPrint("Finished the master merge\n");
+    PrintRunningTime();
 	return(1);
 }
 
