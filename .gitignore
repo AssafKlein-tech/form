@@ -86,3 +86,5 @@ tests/*/*.text
 tests/inputs/*/*.text
 tests/inputs/*/*.txt
 tests/data_parsed/*.txt
+MapRed/Hadoop/fraction_num_term/ComplexTermProcessing.jar
+terms_powerfirst_small.text
