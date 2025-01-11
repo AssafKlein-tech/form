@@ -1877,7 +1877,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		close(file_fd);
 
 		// Write some output (this goes to the file)
-		//printf("This output will go to the file.\n");
+		printf("This output will go to the file%d.\n",PF.me);
 
 		while ( PF_GetTerm(term) ) {
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;

@@ -208,7 +208,7 @@ WORD Processor(VOID)
 			               For the moment we ignore this for parallelization.
 */
 			WORD j;
-
+			printf("Inmem\n");
 			AR.GetFile = 0;
 			SetScratch(AR.infile,&(e->onfile));
 			if ( GetTerm(BHEAD term) <= 0 ) {
@@ -306,6 +306,7 @@ WORD Processor(VOID)
 				curfile = AR.infile;
 commonread:;
 #ifdef WITHMPI
+				printf("Entered parallel processeing\n");
 				if ( PF_Processor(e,i,LastExpression) ) {
 					MesPrint("Error in PF_Processor");
 					goto ProcErr;
