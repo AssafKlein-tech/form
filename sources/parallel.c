@@ -1567,7 +1567,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 	}
 
-	if ( AC.mparallelflag != PARALLELFLAG ) return(0);
+	if ( AC.mparallelflag != PARALLELFLAG ) return(0); //check that parallel is enabled for this module
 
 	if ( PF.me == MASTER ) {
 /*
@@ -1589,8 +1589,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			MesPrint("[%d] Expression %d has problems in scratchfile",PF.me,i);
 			return(-1);
 		}
-		term[3] = i;
-		if ( AR.outtohide ) {
+		term[3] = i; //in the working heap
+		if ( AR.outtohide ) { //for hiden expressions
 			SeekScratch(AR.hidefile,&position);
 			e->onfile = position;
 			if ( PutOut(BHEAD term,&position,AR.hidefile,0) < 0 ) return(-1);
@@ -1818,9 +1818,10 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				AC.inputnumbers[j] = -1;
 			}
 		}
-
-		SeekScratch(AR.outfile,&position);
+		//maybe setting the ouput buffer?
+		SeekScratch(AR.outfile,&position); //position is pointing to the start of the scratch file? - POposition + Pofill - Pobuffer.
 		e->onfile = position;
+
 		AR.DeferFlag = AC.ComDefer;
 		AR.Eside = RHSIDE;
 		if ( ( e->vflags & ISFACTORIZED ) != 0 ) {
@@ -1828,11 +1829,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			AT.BrackBuf = AM.BracketFactors;
 			AT.bracketindexflag = 1;
 		}
+		//setting a the lowest level sort. AT>SS and AT.S0 point to it.
 		NewSort(BHEAD0);
 		AR.MaxDum = AM.IndDum;
 		AN.ninterms = 0;
 		PF_linterms = 0;
-		PF.parallel = 1;
+		PF.parallel = 1; //setting a flag that works in parallel
 #ifdef MPI2
 		AR.infile->POfull = AR.infile->POfill = AR.infile->PObuffer = PF_shared_buff;
 #endif
@@ -1842,8 +1844,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
+
+		// start iterate the terms and call generator for each
 		while ( PF_GetTerm(term) ) {
+			//update statistics
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
+			//Update the heap pointer to point to the end of the term (the next availible memory)
 			AT.WorkPointer = term + *term;
 			AN.RepPoint = AT.RepCount + 1;
 			if ( ( e->vflags & ISFACTORIZED ) != 0 && term[1] == HAAKJE ) {
@@ -1867,6 +1873,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				&& ( e->status == LOCALEXPRESSION || e->status == GLOBALEXPRESSION ) ) {
 				PolyFunClean(BHEAD term);
 			}
+			//calls Generator
 			if ( Generator(BHEAD term,0) ) {
 				MesPrint("[%d] PF_Processor: Error in Generator",PF.me);
 				LowerSortLevel(); return(-1);

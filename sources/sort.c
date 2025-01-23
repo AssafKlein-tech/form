@@ -613,6 +613,7 @@ WORD NewSort(PHEAD0)
 	if ( AN.SoScratC == 0 )
 		AN.SoScratC = (UWORD *)Malloc1(2*(AM.MaxTal+2)*sizeof(UWORD),"NewSort");
 	AR.sLevel++;
+	//increasing the SORTING list if needed
 	if ( AR.sLevel >= AN.NumFunSorts ) {
 		if ( AN.NumFunSorts == 0 ) newsize = 100;
 		else newsize = 2*AN.NumFunSorts;
@@ -622,11 +623,11 @@ WORD NewSort(PHEAD0)
 		if ( AN.FunSorts ) M_free(AN.FunSorts,"FunSort pointers");
 		AN.FunSorts = newFS; AN.NumFunSorts = newsize;
 	}
-	if ( AR.sLevel == 0 ) {
+	if ( AR.sLevel == 0 ) { //if its the lowest level of sorting
 
 		numcompares = 0;
 
-		AN.FunSorts[0] = AT.S0;
+		AN.FunSorts[0] = AT.S0; //make the head of the SORTING list to point to the same struct as AT.S0 that is set to default in AllocSetups() (setfile.c)
 		if ( AR.PolyFun == 0 ) { AT.S0->PolyFlag = 0; }
 		else if ( AR.PolyFunType == 1 ) { AT.S0->PolyFlag = 1; }
 		else if ( AR.PolyFunType == 2 ) {
@@ -636,7 +637,7 @@ WORD NewSort(PHEAD0)
 		}
 		AR.ShortSortCount = 0;
 	}
-	else {
+	else { //allocate memory for the new SORTING struct.
 		if ( AN.FunSorts[AR.sLevel] == 0 ) {
 			AN.FunSorts[AR.sLevel] = AllocSort(
 				AM.SLargeSize,AM.SSmallSize,AM.SSmallEsize,AM.STermsInSmall
@@ -644,7 +645,8 @@ WORD NewSort(PHEAD0)
 		}
 		AN.FunSorts[AR.sLevel]->PolyFlag = 0;
 	}
-	AT.SS = S = AN.FunSorts[AR.sLevel];
+	AT.SS = S = AN.FunSorts[AR.sLevel]; // set the current sort pointer to the highest allocated level
+	// Initialize the sort pointer
 	S->sFill = S->sBuffer;
 	S->lFill = S->lBuffer;
 	S->lPatch = 0;
@@ -746,14 +748,15 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	sSpace = 0;
 	tover = over = S->sTerms;
 	ss = S->sPointer;
-	if ( over >= 0 ) {
-		if ( S->lPatch > 0 || S->file.handle >= 0 ) {
+	//the small is sorted. over = #terms in smallbuffer
+	if ( over >= 0 ) { //the small buffer is not empty
+		if ( S->lPatch > 0 || S->file.handle >= 0 ) { //their are terms in the large buffer or sort file.
 			ss[over] = 0;
-			sSpace = ComPress(ss,&spare);
+			sSpace = ComPress(ss,&spare); //Does regular commpression of the small buffer.
 			S->TermsLeft -= over - spare;
-			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); }
+			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); } //in PF par = 0
 		}
-		else if ( S != AT.S0 ) {
+		else if ( S != AT.S0 ) { //we are not wrking on the lowest level of sort
 			ss[over] = 0;
 			if ( par == 2 ) {
 				sSpace = 3;
@@ -793,7 +796,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			}
 			goto RetRetval;
 		}
-		else {
+		else { //all the terms are inside the small buffer. write it to outfile
 			POSITION oldpos;
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
@@ -813,7 +816,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			{ int oldgzipCompress = AR.gzipCompress;
 				AR.gzipCompress = 0;
 #endif
-			if ( tover > 0 ) {
+			if ( tover > 0 ) { //if there are terms in the small buffer
 				ss = S->sPointer;
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
@@ -821,7 +824,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 					if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD t); }
 					else
 #endif
-					if ( PutOut(BHEAD t,&position,fout,1) < 0 ) {
+					if ( PutOut(BHEAD t,&position,fout,1) < 0 ) { //
 						retval = -1; goto RetRetval;
 					}
 				}
@@ -850,11 +853,12 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			goto RetRetval;
 		}
 	}
-	else if ( par == 1 && newout == 0 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); }
+	else if ( par == 1 && newout == 0 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); } //in PF par =0
 	sSpace++;
 	lSpace = sSpace + (S->lFill - S->lBuffer) - (LONG)S->lPatch*(AM.MaxTer/sizeof(WORD));
 /*         Note wrt MaxTer and lPatch: each patch starts with space for decompression */
 /*         Not needed if only large buffer, but needed when using files (?) */
+	//setting up the size of the sorted terms in all buffers and files.in pp.p1
 	SETBASEPOSITION(pp,lSpace);
 	MULPOS(pp,sizeof(WORD));
 	if ( S->file.handle >= 0 ) {
@@ -879,7 +883,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			MUNLOCK(ErrorMessageLock);
 #endif
 
-			if ( MergePatches(1) ) {
+			if ( MergePatches(1) ) { //writing the large buffer into the sort file. get inside the if if there is an error
 				MLOCK(ErrorMessageLock);
 				MesCall("EndSort");
 				MUNLOCK(ErrorMessageLock);
@@ -901,7 +905,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				UpdateMaxSize();
 			}
 		}
-		else {
+		else { //the large buffer is not full
 			S->Patches[S->lPatch++] = S->lFill;
 		    to = (WORD *)(((UBYTE *)(S->lFill)) + AM.MaxTer);
 			if ( tover > 0 ) {
@@ -1039,14 +1043,14 @@ TooLarge:
 #endif
 		}
 	}
-	if ( S->file.handle >= 0 ) {
+	if ( S->file.handle >= 0 ) { //there are terms in the sort file
 #ifdef GZIPDEBUG
 		MLOCK(ErrorMessageLock);
 		MesPrint("%w EndSort: fPatchN = %d, lPatch = %d, position = %12p"
 			,S->fPatchN,S->lPatch,&(S->fPatches[S->fPatchN]));
 		MUNLOCK(ErrorMessageLock);
 #endif
-		if ( S->lPatch <= 0 ) {
+		if ( S->lPatch <= 0 ) { //there are no terms in the large buffer
 			StageSort(&(S->file));
 			position = S->fPatches[S->fPatchN];
 			ss = S->sPointer;
@@ -1658,10 +1662,10 @@ nocompress:
 		p = fi->POfill;
 		do {
 			if ( p >= fi->POstop ) {
-#ifdef WITHMPI /* [16mar1998 ar] */
+#ifdef WITHMPI /* [16mar1998 ar] */  //writing the term into the buffer
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 				PF_BUFFER *sbuf = PF.sbuf;
-				sbuf->fill[sbuf->active] = fi->POstop;
+				sbuf->fill[sbuf->active] = fi->POstop; //set the fill of the active buffer to max
 				PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
 				p = fi->PObuffer = fi->POfill = fi->POfull =
 				  sbuf->buff[sbuf->active];
@@ -1792,15 +1796,15 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 #ifdef WITHMPI /* [16mar1998 ar] */
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 		PF_BUFFER *sbuf = PF.sbuf;
-		if ( fi->POfill >= fi->POstop ){
+		if ( fi->POfill >= fi->POstop ){ //if it didn't finished sending terms
 		  sbuf->fill[sbuf->active] = fi->POstop;
 		  PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
 		  fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
 		  fi->POstop = sbuf->stop[sbuf->active];
 		}
 		*(fi->POfill)++ = 0;
-		sbuf->fill[sbuf->active] = fi->POfill;
-		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG);
+		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill?
+		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
 		fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
 		fi->POstop = sbuf->stop[sbuf->active];
 		return(0);
@@ -3855,7 +3859,7 @@ ConMer:
 				   PutToMaster. */
 				if ( AS.MasterSort && ( fout == AR.outfile ) && S == AT.S0 ) {
 					im = PutToMaster(BHEAD m1);
-				}
+				} 	
 				else
 #endif
 				if ( ( im = PutOut(BHEAD m1,&position,fout,1) ) < 0 ) goto ReturnError;
