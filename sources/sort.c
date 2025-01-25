@@ -750,7 +750,8 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	ss = S->sPointer;
 	//the small is sorted. over = #terms in smallbuffer
 	if ( over >= 0 ) { //the small buffer is not empty
-		if ( S->lPatch > 0 || S->file.handle >= 0 ) { //their are terms in the large buffer or sort file.
+		if ( S->lPatch > 0 || S->file.handle >= 0 ) { //there are terms in the large buffer or sort file.
+			MesPrint("Terms volume is greater than small buffer");
 			ss[over] = 0;
 			sSpace = ComPress(ss,&spare); //Does regular commpression of the small buffer.
 			S->TermsLeft -= over - spare;
@@ -797,6 +798,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			goto RetRetval;
 		}
 		else { //all the terms are inside the small buffer. write it to outfile
+			MesPrint("All terms are inside small buffer");
 			POSITION oldpos;
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
@@ -818,6 +820,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 			if ( tover > 0 ) { //if there are terms in the small buffer
 				ss = S->sPointer;
+				MesPrint("SmallBuf: before PutOut");
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
@@ -833,6 +836,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
 #endif
+			MesPrint("SmallBuf: before Flushout");
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1; goto RetRetval;
 			}

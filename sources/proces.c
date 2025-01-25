@@ -208,7 +208,7 @@ WORD Processor(VOID)
 			               For the moment we ignore this for parallelization.
 */
 			WORD j;
-
+			MesPrint("Proccesd by Master");
 			AR.GetFile = 0;
 			SetScratch(AR.infile,&(e->onfile));
 			if ( GetTerm(BHEAD term) <= 0 ) {
@@ -262,6 +262,7 @@ WORD Processor(VOID)
 */
 		}
 		else {
+			MesPrint("Proccesd using Slaves");
 			AR.CurExpr = i;
 			switch ( e->status ) {
 			case UNHIDELEXPRESSION:
