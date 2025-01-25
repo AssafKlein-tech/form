@@ -898,9 +898,9 @@ int PF_EndSort(void)
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 
 		/*AK: redirecting the output to new file*/
-		MesPrint("redirecting output");
  		FILEHANDLE *newout = AllocFileHandle(1,"try1234");
-		fout = newout;
+		MesPrint("redirecting output to %s with file handle %d", newout->name, newout->handle );
+		AR.outfile = newout;
 /*
  		#] the slaves have to initialize their sendbuffer : 
 */

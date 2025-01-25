@@ -820,23 +820,28 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 			if ( tover > 0 ) { //if there are terms in the small buffer
 				ss = S->sPointer;
-				MesPrint("SmallBuf: before PutOut");
+				WORD i;
+				MesPrint("SmallBuf: before PutOut need to store %d terms", tover);
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
 					if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD t); }
 					else
 #endif
-					if ( PutOut(BHEAD t,&position,fout,1) < 0 ) { //
+					i= PutOut(BHEAD t,&position,fout,1);
+					if (i < 0 ) { //
 						retval = -1; goto RetRetval;
 					}
+					MesPrint("SmallBuf: %d bytes writen",i);
 				}
 			}
 #ifdef WITHPTHREADS
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
 #endif
-			MesPrint("SmallBuf: before Flushout");
+			MesPrint("SmallBuf: before Flushout writing to %s",fout->name);
+			MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
+
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1; goto RetRetval;
 			}
