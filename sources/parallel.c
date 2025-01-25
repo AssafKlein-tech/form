@@ -897,10 +897,9 @@ int PF_EndSort(void)
 		for ( i = 0; i < PF.numsbufs; i++ )
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 
-		fout->PObuffer = sbuf->buff[sbuf->active];
-		fout->POstop = sbuf->stop[sbuf->active];
-		fout->POsize = size*sizeof(WORD);
-		fout->POfill = fout->POfull = fout->PObuffer;
+		/*AK: redirecting the output to new file*/
+ 		FILEHANDLE *newout = AllocFileHandle(1,"try1234"));
+		fout = newout;
 /*
  		#] the slaves have to initialize their sendbuffer : 
 */

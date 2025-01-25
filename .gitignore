@@ -86,3 +86,4 @@ tests/*/*.text
 tests/inputs/*/*.text
 tests/inputs/*/*.txt
 tests/data_parsed/*.txt
+tests/analysis/*
