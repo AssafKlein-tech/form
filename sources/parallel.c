@@ -898,6 +898,7 @@ int PF_EndSort(void)
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 
 		/*AK: redirecting the output to new file*/
+		MesPrint("redirecting output");
  		FILEHANDLE *newout = AllocFileHandle(1,"try1234"));
 		fout = newout;
 /*
