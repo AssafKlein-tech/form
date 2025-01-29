@@ -898,9 +898,27 @@ int PF_EndSort(void)
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 
 		/*AK: redirecting the output to new file*/
- 		FILEHANDLE *newout = AllocFileHandle(1,"try1234");
-		MesPrint("redirecting output to %s with file handle %d", newout->name, newout->handle );
+ 		FILEHANDLE *newout = AllocFileHandle(1,"try12345");
 		AR.outfile = newout;
+		LONG RetCode;
+		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
+			newout->handle = (WORD)RetCode;
+			PUTZERO(newout->filesize);
+			PUTZERO(newout->POposition);
+		}
+		else {
+			MLOCK(ErrorMessageLock);
+			MesPrint("Cannot create scratch file %s",newout->name);
+			MUNLOCK(ErrorMessageLock);
+			return(-1);
+		}
+		
+
+/*
+		//AR.outfile->POsize = size*sizeof(WORD);
+		//AR.outfile->POstop = 0;
+		MesPrint("buffer %d , fill %d, full %d, filesize %d, buffersize %d", newout->PObuffer, newout->POfill,newout->POfull, newout->filesize,newout->POsize);
+
 /*
  		#] the slaves have to initialize their sendbuffer : 
 */

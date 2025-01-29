@@ -798,7 +798,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			goto RetRetval;
 		}
 		else { //all the terms are inside the small buffer. write it to outfile
-			MesPrint("All terms are inside small buffer");
+			MesPrint("SmallBuf: Entering small buf");
 			POSITION oldpos;
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
@@ -821,29 +821,29 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( tover > 0 ) { //if there are terms in the small buffer
 				ss = S->sPointer;
 				WORD i;
-				MesPrint("SmallBuf: before PutOut need to store %d terms", tover);
+				//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
 					if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD t); }
 					else
 #endif
-					i= PutOut(BHEAD t,&position,fout,1);
+					i= PutOut(BHEAD t,&position,fout,-1);
 					if (i < 0 ) { //
 						retval = -1; goto RetRetval;
 					}
-					MesPrint("SmallBuf: %d bytes writen",i);
+					//MesPrint("SmallBuf: %d bytes writen",i);
 				}
 			}
 #ifdef WITHPTHREADS
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
 #endif
-			MesPrint("SmallBuf: before Flushout writing to %s",fout->name);
-			MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
-
+			//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
 			if ( FlushOut(&position,fout,1) ) {
-				retval = -1; goto RetRetval;
+				retval = -1;
+				MesPrint("SmallBuf: FlushoutError");
+				goto RetRetval;
 			}
 #ifdef WITHZLIB
 				AR.gzipCompress = oldgzipCompress;
@@ -1671,6 +1671,7 @@ nocompress:
 		p = fi->POfill;
 		do {
 			if ( p >= fi->POstop ) {
+				goto writetofile;
 #ifdef WITHMPI /* [16mar1998 ar] */  //writing the term into the buffer
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 				PF_BUFFER *sbuf = PF.sbuf;
@@ -1682,8 +1683,10 @@ nocompress:
 			  }
 			  else
 #endif /* WITHMPI [16mar1998 ar] */
+writetofile:
 			  {
 				if ( fi->handle < 0 ) {
+					MesPrint("PutOut: open new file");
 					if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
 #ifdef GZIPDEBUG
 						MLOCK(ErrorMessageLock);
@@ -1802,6 +1805,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 #endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
+	goto jumpingsend;
 #ifdef WITHMPI /* [16mar1998 ar] */
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 		PF_BUFFER *sbuf = PF.sbuf;
@@ -1819,6 +1823,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		return(0);
 	}
 #endif /* WITHMPI [16mar1998 ar] */
+jumpingsend:
 	if ( fi->POfill >= fi->POstop ) {
 		if ( fi->handle < 0 ) {
 			if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
@@ -1906,6 +1911,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 	}
 */
 	size = (fi->POfill-fi->PObuffer)*sizeof(WORD);
+	MesPrint("need to write %d bytes to file", size);
 	if ( fi->handle >= 0 ) {
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
