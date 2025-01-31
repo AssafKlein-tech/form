@@ -898,7 +898,9 @@ int PF_EndSort(void)
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 
 		/*AK: redirecting the output to new file*/
- 		FILEHANDLE *newout = AllocFileHandle(1,"try12345");
+		char filename[50];
+    	sprintf(filename, "HadoopInput_%d.txt", PF.me);
+ 		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
 		LONG RetCode;
 		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
