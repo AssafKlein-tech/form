@@ -8,8 +8,8 @@ public class IntArrayTest {
 
     
     public static void main(String[] args) {
-        int[] a = {0xFFFFFFFF,0xFFFFFFFF,0x0000FFFF,0xFFFFFFF0,0x00000001};
-        int[] b = {0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0xFFFFFFFF,0x0000FFFF,0xFFFFFFF0,0x00000001};
+        int[] a = {0xFFFFFFFF,0xFFFFFFFF,0x00000000};
+        int[] b = {0xFFFFFFFF,0xFFFFFFFF};
 
         
         long startTime = System.nanoTime();

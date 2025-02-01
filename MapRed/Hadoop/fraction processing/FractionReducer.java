@@ -41,9 +41,9 @@ protected void reduce(Text key, Iterable<FractionWritable> values, Context conte
             int[] convertedCurrentNumerator = convertToCommonDenominator(numerator, denominator, commonDenominator);
 
             // Add numerators
-            int[] ret = addArrays(convertedSummedNumerator, convertedCurrentNumerator, commonSign,sign);
-            summedNumerator = ret[0];
-            commonSign = ret[1];
+            ArrayList<int[]> ret = addArrays(convertedSummedNumerator, convertedCurrentNumerator, commonSign,sign);
+            summedNumerator = ret.get(0);
+            commonSign = ret.get(1);
 
         }
     }
@@ -107,8 +107,9 @@ protected void reduce(Text key, Iterable<FractionWritable> values, Context conte
             expanded[result.length] = 1; // Store final carry bit
             return expanded;
         }
-        
-        return [result,aSign];
+        ArrayList<int[]> arrays = new ArrayList<int[]>(2);
+        arrays.add(result,aSign);
+        return arrays;
     }
 
     private int[] subtractArrays(int[] a, int[] b) {
