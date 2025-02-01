@@ -2,6 +2,8 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -195,11 +197,16 @@ protected void reduce(Text key, Iterable<FractionWritable> values, Context conte
 
     // Convert int[] to BigInteger (unsigned representation)
     private BigInteger toBigInteger(int[] arr) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < arr.length; i++) {
-            sb.append(String.format("%08X", arr[i] & 0xFFFFFFFFL)); // Format as hex
+         byte[] byteArray = new byte[arr.length * 4];
+
+        // Fill the byte array in little-endian order
+        ByteBuffer buffer = ByteBuffer.wrap(byteArray).order(ByteOrder.LITTLE_ENDIAN);
+        for (int value : arr) {
+            buffer.putInt(value);
         }
-        return new BigInteger(sb.toString(), 16); // Create BigInteger from hex string
+
+        // Convert to BigInteger (uses BigInteger's built-in two's complement handling)
+        return new BigInteger(1, byteArray); // "1" ensures a positive number
     }
 
     // Convert BigInteger back to int[] (unsigned representation)
