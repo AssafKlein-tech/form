@@ -1911,7 +1911,7 @@ jumpingsend:
 	}
 */
 	size = (fi->POfill-fi->PObuffer)*sizeof(WORD);
-	MesPrint("need to write %d bytes to file", size);
+	MesPrint("FlushOut: need to write %d bytes to file", size);
 	if ( fi->handle >= 0 ) {
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
