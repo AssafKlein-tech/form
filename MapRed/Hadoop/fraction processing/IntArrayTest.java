@@ -20,8 +20,8 @@ public class IntArrayTest {
         System.out.println("Int[] Time: " + (endTime - startTime) + " ns");
         System.out.println("Result: " + Arrays.toString(result));
         
-        BigInteger A = toBigInteger(a);
-        BigInteger B = toBigInteger(b);
+        BigInteger A = toBigInteger(a, 1);
+        BigInteger B = toBigInteger(b, -1);
         startTime = System.nanoTime();
         BigInteger result1 = A.multiply(B);
         endTime = System.nanoTime();
@@ -33,7 +33,7 @@ public class IntArrayTest {
     }
 
     // Convert int[] to BigInteger (unsigned representation)
-    private static BigInteger toBigInteger(int[] arr) {
+    private static BigInteger toBigInteger(int[] arr,int sign) {
         byte[] byteArray = new byte[arr.length * 4];
 
         // Fill the byte array in little-endian order
@@ -43,13 +43,13 @@ public class IntArrayTest {
         }
 
         // Convert to BigInteger (uses BigInteger's built-in two's complement handling)
-        return new BigInteger(1, byteArray); // "1" ensures a positive number
+        return new BigInteger(sign, byteArray); // "1" ensures a positive number
     }
     
 
     private static int[] divideArray(int[] num, int[] divisor) {
-        BigInteger bigNum = toBigInteger(num);
-        BigInteger bigDiv = toBigInteger(divisor);
+        BigInteger bigNum = toBigInteger(num,1);
+        BigInteger bigDiv = toBigInteger(divisor,1);
         BigInteger product = bigNum.divide(bigDiv);
         return toUnsignedIntArray(product);
     }

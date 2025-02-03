@@ -8,6 +8,7 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
@@ -83,12 +84,12 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
 
         // Split coefficient into numerator and denominator
         int fractionPartSize = coeffSizeBytes / 2;  // Since numerator and denominator are equal in size
-        int[] numeratorArray = convertToUIntArray(coeffBytes, 0, fractionPartSize);
-        int[] denominatorArray = convertToUIntArray(coeffBytes, fractionPartSize, fractionPartSize);
+        BigInteger numerator = convertToBigInteger(coeffBytes, 0, fractionPartSize,sign);
+        BigInteger denominator = convertToBigInteger(coeffBytes, fractionPartSize, fractionPartSize, 1);
 
         // Store extracted values
         currentKey.set(term);
-        currentValue = new FractionWritable(numeratorArray, denominatorArray,sign);
+        currentValue = new FractionWritable(numerator, denominator);
 
         pos += totalRecordSizeBytes;
         return true;
@@ -124,14 +125,26 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
         return term.toString();
     }
 
-    // Helper function: Convert coefficient to an array of unsigned integers
-    private int[] convertToUIntArray(byte[] data, int start, int length) {
+    // Helper function: Convert coefficient to BigInteger
+    private BigInteger convertToBigInteger(byte[] data, int start, int length, int sign) {
+        if (length <= 0 || start < 0 || start + length > data.length) {
+            throw new IllegalArgumentException("Invalid start or length");
+        }
         int[] uintArray = new int[length / 4];
         for (int i = 0; i < uintArray.length; i++) {
             uintArray[i] = ByteBuffer.wrap(data, start + i * 4, 4)
                                      .order(ByteOrder.LITTLE_ENDIAN)
                                      .getInt();
+        }                        
+        byte[] byteArray = new byte[arr.length * 4];
+
+        // Fill the byte array in little-endian order
+        ByteBuffer buffer = ByteBuffer.wrap(byteArray).order(ByteOrder.LITTLE_ENDIAN);
+        for (int value : uintArray) {
+            buffer.putInt(value);
         }
-        return uintArray;
+
+        // Convert to BigInteger (uses BigInteger's built-in two's complement handling)
+        return new BigInteger(sign, byteArray); // "1" ensures a positive number
     }
 }

@@ -1,48 +1,63 @@
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.mapreduce.Mapper;
-
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 
-import javax.naming.Context;
+public class ComplexTermFractionMapper extends Mapper<Object, byte[], Text, FractionWritable> {
 
-public class ComplexTermFractionMapper extends Mapper<Object, Text, Text, IntWritable> {
-
-    private Text term = new Text();
+    private Text termKey = new Text();
+    private Text fractionValue = new FractionWritable();
 
     @Override
-    protected void map(Object key, Text value, Context context) throws IOException, InterruptedException {
-        String line = value.toString().trim();
-        if (line.isEmpty()) return;  // Skip empty lines
+    protected void map(Object key, FractionWritable value, Context context) throws IOException, InterruptedException {
+        ByteBuffer buffer = ByteBuffer.wrap(value).order(ByteOrder.LITTLE_ENDIAN);
+        
+        // Read total record length (First DWORD)
+        if (buffer.remaining() < 4) return;
+        int totalLength = buffer.getInt();
 
-        // Check if the line starts with a '+' or '-' sign; if not, ignore the line
-        char sign = line.charAt(0);
-        if (sign != '+' && sign != '-') return;
+        if (buffer.remaining() < (totalLength - 1) * 4) return;  // Ensure buffer contains full record
 
-        String remaining = line.substring(1).trim();
-        int splitIndex = findSplitIndex(remaining);
-
-        if (splitIndex != -1) {
-            String termPart = remaining.substring(splitIndex).trim();
-
-            // Remove leading * if it exists
-            if (termPart.startsWith("*")) {
-                termPart = termPart.substring(1).trim();
-            }
-
-            term.set(termPart);
-            context.write(term, new IntWritable(1));
+        // Read term (all DWORDs except last one, which is the coefficient length indicator)
+        int termLength = totalLength - 1;
+        StringBuilder termBuilder = new StringBuilder();
+        for (int i = 0; i < termLength - 1; i++) { // Exclude last DWORD
+            termBuilder.append(Integer.toHexString(buffer.getInt())).append("*");
         }
-    }
 
-    // Function to find the split index where the number ends and the term begins
-    private int findSplitIndex(String str) {
-        for (int i = 0; i < str.length(); i++) {
-            if (!Character.isDigit(str.charAt(i)) && str.charAt(i) != '/') {
-                return i;
-            }
+        // Read coefficient length indicator (last DWORD of term)
+        int coefficientLength = buffer.getInt();
+        boolean isNegative = coefficientLength < 0; // If negative, the coefficient is negative
+        coefficientLength = Math.abs(coefficientLength);
+
+        // Read numerator & denominator
+        int fractionSize = coefficientLength / 2;
+        BigInteger numerator = BigInteger.ZERO;
+        BigInteger denominator = BigInteger.ZERO;
+        BigInteger base = BigInteger.valueOf(2).pow(32);
+
+        // Read numerator
+        for (int i = 0; i < fractionSize; i++) {
+            numerator = numerator.add(BigInteger.valueOf(Integer.toUnsignedLong(buffer.getInt())).multiply(base.pow(i)));
         }
-        return -1;  // If the string is all digits or slash, return -1
+
+        // Read denominator
+        for (int i = 0; i < fractionSize; i++) {
+            denominator = denominator.add(BigInteger.valueOf(Integer.toUnsignedLong(buffer.getInt())).multiply(base.pow(i)));
+        }
+
+        // Apply sign to the numerator if needed
+        if (isNegative) {
+            numerator = numerator.negate();
+        }
+
+        // Construct output key-value pair
+        termKey.set(termBuilder.toString().replaceAll("\\*$", "")); // Remove trailing "*"
+        fractionValue.set(numerator.toString() + "/" + denominator.toString());
+
+        // Emit (key, value)
+        context.write(termKey, fractionValue);
     }
 }
