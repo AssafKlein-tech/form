@@ -14,7 +14,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
-    private FSDataInputStream inputStream;
+    private FSDataInputStream inputStream; //test
+    //private FSDataInputStream fileIn; //test
     private long start, end, pos;
     private Text currentKey = new Text();
     private FractionWritable currentValue;
@@ -22,14 +23,19 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
 
     @Override
     public void initialize(InputSplit split, TaskAttemptContext context) throws IOException {
-        Path file = new Path(split.toString());
-        FileSystem fs = file.getFileSystem(context.getConfiguration());
-        inputStream = fs.open(file);
+        //Path file = new Path(split.toString()); test
+        //FileSystem fs = file.getFileSystem(context.getConfiguration()); test
+        //inputStream = fs.open(file); test
 
         FileSplit fileSplit = (FileSplit) split;  // Cast to FileSplit
+        Path filePath = fileSplit.getPath();  // Extract only the file path    //test
         start = fileSplit.getStart();  // Now `getStart()` works!
         end = start + fileSplit.getLength();
         pos = start;
+
+        // Use FileSystem to open the file correctly  //test
+        FileSystem fs = filePath.getFileSystem(context.getConfiguration());
+        inputStream = fs.open(filePath);  // ✅ Open the actual file (ignores byte range)
     }
 
     @Override
@@ -51,15 +57,14 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
             finished = true;
             return false;
         }
-
         // Read the entire record (totalLengthWords * 4 bytes)
-        int totalRecordSizeBytes = totalLengthWords * 4;
+        int totalRecordSizeBytes = (totalLengthWords - 1) * 4;
         byte[] recordBytes = new byte[totalRecordSizeBytes];
         if (inputStream.read(recordBytes) == -1) {
             finished = true;
             return false;
         }
-
+        
         // Extract the last WORD (4 bytes) to get coefficient length
         int coeffLengthBytes = 4;
         int coeffLengthWords = ByteBuffer.wrap(recordBytes, totalRecordSizeBytes - coeffLengthBytes, coeffLengthBytes)
@@ -74,7 +79,6 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
         // Compute term and coefficient sizes
         int termLengthBytes = (totalLengthWords - coeffLengthWords - 1) * 4;
         int coeffSizeBytes = (coeffLengthWords - 1) * 4;  // Exclude the length indicator itself
-
         // Extract term
         byte[] termBytes = new byte[termLengthBytes];
         System.arraycopy(recordBytes, 0, termBytes, 0, termLengthBytes);
@@ -129,24 +133,26 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
 
     // Helper function: Convert coefficient to BigInteger
     private BigInteger convertToBigInteger(byte[] data, int start, int length, int sign) {
-        if (length <= 0 || start < 0 || start + length > data.length) {
-            throw new IllegalArgumentException("Invalid start or length");
-        }
-        int[] uintArray = new int[length / 4];
-        for (int i = 0; i < uintArray.length; i++) {
-            uintArray[i] = ByteBuffer.wrap(data, start + i * 4, 4)
-                                     .order(ByteOrder.LITTLE_ENDIAN)
-                                     .getInt();
-        }                        
-        byte[] byteArray = new byte[data.length];
+        int numWords = length / 4;
+    byte[] magnitude = new byte[length];  // This will hold the big-endian representation
 
-        // Fill the byte array in little-endian order
-        ByteBuffer buffer = ByteBuffer.wrap(byteArray).order(ByteOrder.LITTLE_ENDIAN);
-        for (int value : uintArray) {
-            buffer.putInt(value);
-        }
-
-        // Convert to BigInteger (uses BigInteger's built-in two's complement handling)
-        return new BigInteger(sign, byteArray); // "1" ensures a positive number
+    // For each word in the little-endian data, copy it into the output in reverse order,
+    // and reverse the bytes within each word.
+    for (int i = 0; i < numWords; i++) {
+        // Compute source index in little-endian data
+        int srcPos = start + i * 4;
+        // Compute destination index in the output so that the most-significant word comes first.
+        int destPos = (numWords - 1 - i) * 4;
+        // Reverse the 4 bytes of the current word:
+        magnitude[destPos]     = data[srcPos + 3];
+        magnitude[destPos + 1] = data[srcPos + 2];
+        magnitude[destPos + 2] = data[srcPos + 1];
+        magnitude[destPos + 3] = data[srcPos];
+    }
+    
+    // Create the BigInteger using the sign and the big-endian magnitude.
+    // Note: The constructor BigInteger(int signum, byte[] magnitude) expects the magnitude in big-endian.
+    BigInteger result = new BigInteger(sign, magnitude);
+    return result;
     }
 }
