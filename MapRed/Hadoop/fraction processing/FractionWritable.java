@@ -12,10 +12,6 @@ public class FractionWritable implements Writable {
     public FractionWritable() {}
 
     public FractionWritable(BigInteger numerator, BigInteger denominator) {
-        if (numerator.length != denominator.length)
-        {
-            throw new IOException("numerator.length != denominator.length");
-        }    
         this.numerator = numerator;
         this.denominator = denominator;
     }

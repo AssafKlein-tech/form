@@ -6,6 +6,7 @@ import org.apache.hadoop.io.Text;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.mapreduce.lib.input.FileSplit;
 
 import java.io.IOException;
 import java.math.BigInteger;
@@ -25,8 +26,9 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
         FileSystem fs = file.getFileSystem(context.getConfiguration());
         inputStream = fs.open(file);
 
-        start = split.getStart();
-        end = start + split.getLength();
+        FileSplit fileSplit = (FileSplit) split;  // Cast to FileSplit
+        start = fileSplit.getStart();  // Now `getStart()` works!
+        end = start + fileSplit.getLength();
         pos = start;
     }
 
@@ -136,7 +138,7 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
                                      .order(ByteOrder.LITTLE_ENDIAN)
                                      .getInt();
         }                        
-        byte[] byteArray = new byte[arr.length * 4];
+        byte[] byteArray = new byte[data.length];
 
         // Fill the byte array in little-endian order
         ByteBuffer buffer = ByteBuffer.wrap(byteArray).order(ByteOrder.LITTLE_ENDIAN);

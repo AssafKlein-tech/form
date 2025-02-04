@@ -9,7 +9,7 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 import org.apache.hadoop.io.IntWritable;
 
-public class FractionProcessingDriver extends Configured implements Tool{
+public class FractionDriver extends Configured implements Tool{
 
     public static void main(String[] args) throws Exception {
         int res = ToolRunner.run(new Configuration(), new FractionProcessingDriver(), args);
@@ -21,10 +21,10 @@ public class FractionProcessingDriver extends Configured implements Tool{
         //conf.setProfileEnabled(true);
         //create the job with the conf configuration
         Job job = Job.getInstance(conf, "Fraction sum");
-        job.setJarByClass(FractionProcessingDriver.class);
+        job.setJarByClass(FractionDriver.class);
 
         // Set Mapper & Reducer
-        job.setMapperClass(BinaryProcessingMapper.class);
+        job.setMapperClass(BinaryMapper.class);
         job.setReducerClass(FractionReducer.class);
 
         // Use custom Writable classes
@@ -35,7 +35,7 @@ public class FractionProcessingDriver extends Configured implements Tool{
 
         // Use custom InputFormat and OutputFormat
         job.setInputFormatClass(BinaryInputFormat.class);
-        job.setOutputFormatClass(BinaryOutputFormat.class);
+        //job.setOutputFormatClass(BinaryOutputFormat.class);
 
         // Set paths
         FileInputFormat.addInputPath(job, new Path(args[0]));
