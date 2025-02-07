@@ -10,10 +10,10 @@ import org.apache.hadoop.io.Text;
 import java.io.IOException;
 import java.util.List;
 
-public class BinaryInputFormat extends FileInputFormat<Text, FractionWritable> {
+public class BinaryInputFormat extends FileInputFormat<BytesWritable, FractionWritable> {
 
     @Override
-    public RecordReader<Text, FractionWritable> createRecordReader(InputSplit split, TaskAttemptContext context) 
+    public RecordReader<BytesWritable, FractionWritable> createRecordReader(InputSplit split, TaskAttemptContext context) 
             throws IOException {
         return new BinaryRecordReader();  // Use your custom RecordReader
     }

@@ -13,10 +13,10 @@ import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
+public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWritable> {
     private FSDataInputStream inputStream; 
     private long start, end, pos;
-    private Text currentKey = new Text();
+    private BytesWritable currentKey = new BytesWritable();
     private FractionWritable currentValue;
     private boolean finished = false;
 
@@ -79,7 +79,7 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
         // Extract term
         byte[] termBytes = new byte[termLengthBytes];
         System.arraycopy(recordBytes, 0, termBytes, 0, termLengthBytes);
-        String term = convertTermToString(termBytes); // Convert binary term to readable format
+        String term = new BytesWritable(termBytes); // Convert binary term to readable format
 
         // Extract coefficient
         byte[] coeffBytes = new byte[coeffSizeBytes];
@@ -99,7 +99,7 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
     }
 
     @Override
-    public Text getCurrentKey() {
+    public BytesWritable getCurrentKey() {
         return currentKey;
     }
 
@@ -116,16 +116,6 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
     @Override
     public void close() throws IOException {
         inputStream.close();
-    }
-
-    // Helper function: Convert binary term to readable format
-    private String convertTermToString(byte[] termBytes) {
-        StringBuilder term = new StringBuilder();
-        for (int i = 0; i < termBytes.length; i += 4) {
-            int word = ByteBuffer.wrap(termBytes, i, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
-            term.append(Integer.toHexString(word)).append("*");
-        }
-        return term.toString();
     }
 
     // Helper function: Convert coefficient to BigInteger

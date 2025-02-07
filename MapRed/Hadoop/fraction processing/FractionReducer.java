@@ -10,12 +10,12 @@ import java.util.List;
 
 import javax.naming.Context;
 
-public class FractionReducer extends Reducer<Text, FractionWritable, Text, FractionWritable> {
+public class FractionReducer extends Reducer<BytesWritable, FractionWritable, BytesWritable, FractionWritable> {
 
     private static final long UINT32_MAX = 0xFFFFFFFFL;
 
     @Override
-protected void reduce(Text key, Iterable<FractionWritable> values, Context context) 
+protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Context context) 
         throws IOException, InterruptedException {
     
     BigInteger commonDenominator = BigInteger.ZERO;
