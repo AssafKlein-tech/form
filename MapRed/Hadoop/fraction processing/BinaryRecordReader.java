@@ -14,8 +14,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
-    private FSDataInputStream inputStream; //test
-    //private FSDataInputStream fileIn; //test
+    private FSDataInputStream inputStream; 
     private long start, end, pos;
     private Text currentKey = new Text();
     private FractionWritable currentValue;
@@ -23,9 +22,7 @@ public class BinaryRecordReader extends RecordReader<Text, FractionWritable> {
 
     @Override
     public void initialize(InputSplit split, TaskAttemptContext context) throws IOException {
-        //Path file = new Path(split.toString()); test
-        //FileSystem fs = file.getFileSystem(context.getConfiguration()); test
-        //inputStream = fs.open(file); test
+
 
         FileSplit fileSplit = (FileSplit) split;  // Cast to FileSplit
         Path filePath = fileSplit.getPath();  // Extract only the file path    //test

@@ -45,7 +45,7 @@ protected void reduce(Text key, Iterable<FractionWritable> values, Context conte
     }
 
     // Simplify the fraction
-    BigInteger gcdValue = summedNumerator.gcd(oldCommonDenominator)commonDenominator);
+    BigInteger gcdValue = summedNumerator.gcd(commonDenominator);
     summedNumerator = summedNumerator.divide(gcdValue);
     commonDenominator = commonDenominator.divide(gcdValue);
 

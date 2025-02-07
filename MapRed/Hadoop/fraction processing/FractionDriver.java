@@ -12,7 +12,7 @@ import org.apache.hadoop.io.IntWritable;
 public class FractionDriver extends Configured implements Tool{
 
     public static void main(String[] args) throws Exception {
-        int res = ToolRunner.run(new Configuration(), new FractionProcessingDriver(), args);
+        int res = ToolRunner.run(new Configuration(), new FractionDriver(), args);
         System.exit(res);
     }
     public int run(String[] args) throws Exception {
@@ -24,7 +24,7 @@ public class FractionDriver extends Configured implements Tool{
         job.setJarByClass(FractionDriver.class);
 
         // Set Mapper & Reducer
-        job.setMapperClass(BinaryMapper.class);
+        job.setMapperClass(FractionMapper.class);
         job.setReducerClass(FractionReducer.class);
 
         // Use custom Writable classes
@@ -41,15 +41,6 @@ public class FractionDriver extends Configured implements Tool{
         FileInputFormat.addInputPath(job, new Path(args[0]));
         FileOutputFormat.setOutputPath(job, new Path(args[1]));
 
-        System.exit(job.waitForCompletion(true) ? 0 : 1);
-    }
-}
-
-
-public class ComplexTermFractionDriver extends Configured implements Tool{
-
-    public static void main(String[] args) throws Exception {
-        int res = ToolRunner.run(new Configuration(), new ComplexTermFractionDriver(), args);
-        System.exit(res);
+        return job.waitForCompletion(true) ? 0 : 1;
     }
 }
