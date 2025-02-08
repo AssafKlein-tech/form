@@ -7,6 +7,7 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.IntWritable;
 
 public class FractionDriver extends Configured implements Tool{
@@ -28,14 +29,14 @@ public class FractionDriver extends Configured implements Tool{
         job.setReducerClass(FractionReducer.class);
 
         // Use custom Writable classes
-        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputKeyClass(BytesWritable.class);
         job.setMapOutputValueClass(FractionWritable.class);
-        job.setOutputKeyClass(Text.class);
+        job.setOutputKeyClass(BytesWritable.class);
         job.setOutputValueClass(FractionWritable.class);
 
         // Use custom InputFormat and OutputFormat
         job.setInputFormatClass(BinaryInputFormat.class);
-        //job.setOutputFormatClass(BinaryOutputFormat.class);
+        job.setOutputFormatClass(BinaryOutputFormat.class);
 
         // Set paths
         FileInputFormat.addInputPath(job, new Path(args[0]));

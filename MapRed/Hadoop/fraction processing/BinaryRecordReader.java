@@ -2,6 +2,7 @@ import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.io.ArrayWritable;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -79,7 +80,7 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         // Extract term
         byte[] termBytes = new byte[termLengthBytes];
         System.arraycopy(recordBytes, 0, termBytes, 0, termLengthBytes);
-        String term = new BytesWritable(termBytes); // Convert binary term to readable format
+        BytesWritable term = new BytesWritable(termBytes); // Convert binary term to readable format
 
         // Extract coefficient
         byte[] coeffBytes = new byte[coeffSizeBytes];
@@ -121,25 +122,18 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
     // Helper function: Convert coefficient to BigInteger
     private BigInteger convertToBigInteger(byte[] data, int start, int length, int sign) {
         int numWords = length / 4;
-    byte[] magnitude = new byte[length];  // This will hold the big-endian representation
+        byte[] magnitude = new byte[length];  // This will hold the big-endian representation
 
-    // For each word in the little-endian data, copy it into the output in reverse order,
-    // and reverse the bytes within each word.
-    for (int i = 0; i < numWords; i++) {
-        // Compute source index in little-endian data
-        int srcPos = start + i * 4;
-        // Compute destination index in the output so that the most-significant word comes first.
-        int destPos = (numWords - 1 - i) * 4;
-        // Reverse the 4 bytes of the current word:
-        magnitude[destPos]     = data[srcPos + 3];
-        magnitude[destPos + 1] = data[srcPos + 2];
-        magnitude[destPos + 2] = data[srcPos + 1];
-        magnitude[destPos + 3] = data[srcPos];
-    }
-    
-    // Create the BigInteger using the sign and the big-endian magnitude.
-    // Note: The constructor BigInteger(int signum, byte[] magnitude) expects the magnitude in big-endian.
-    BigInteger result = new BigInteger(sign, magnitude);
-    return result;
+        // For each word in the little-endian data, copy it into the output in reverse order,
+        // and reverse the bytes within each word.
+        for (int i = 0; i < length; i++) {
+            // Reverse the 4 bytes of the current word:
+            magnitude[length - i - 1]     = data[start + i];
+        }
+        
+        // Create the BigInteger using the sign and the big-endian magnitude.
+        // Note: The constructor BigInteger(int signum, byte[] magnitude) expects the magnitude in big-endian.
+        BigInteger result = new BigInteger(sign, magnitude);
+        return result;
     }
 }

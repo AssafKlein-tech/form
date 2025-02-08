@@ -1,5 +1,6 @@
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.io.BytesWritable;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
