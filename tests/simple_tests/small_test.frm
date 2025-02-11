@@ -2,14 +2,17 @@ format 255;
 Off Parallel;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (a+b+c+d+e+f+g)^8;
+Global F = (a+b-c+d-e+f+g)^7;
 
 
 .Sort
 On Parallel;
-id g =  a + b;
-id f =  a + c; 
-id e =  b + c;
+id g =  17*a + 5*b;
+id f =  19*a + 20*c; 
+id e =  -33*b - 100*c;
 id d =  c;
+
+.sort
+print;
 
 .end

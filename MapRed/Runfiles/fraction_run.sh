@@ -56,7 +56,7 @@ if [ -d "$OUTPUT_DIR" ]; then
     rm -r "$OUTPUT_DIR"
 fi
 
-sudo mkdir -p $OUTPUT_DIR
+mkdir -p $OUTPUT_DIR
 
 # Run the WordCount job
 cd /home/assaf/form

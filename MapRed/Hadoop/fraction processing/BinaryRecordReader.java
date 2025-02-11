@@ -5,6 +5,7 @@ import org.apache.hadoop.io.ArrayWritable;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.commons.codec.binary.Hex;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.mapreduce.lib.input.FileSplit;
@@ -90,7 +91,8 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         int fractionPartSize = coeffSizeBytes / 2;  // Since numerator and denominator are equal in size
         BigInteger numerator = convertToBigInteger(coeffBytes, 0, fractionPartSize,sign);
         BigInteger denominator = convertToBigInteger(coeffBytes, fractionPartSize, fractionPartSize, 1);
-
+        System.out.println("key : " + Hex.encodeHexString( termBytes ));
+        System.out.println("fractionPartSize: " + fractionPartSize + "  Coeffbyets: " + Hex.encodeHexString( coeffBytes ) + " numerator: "+ numerator + " denominator " + denominator);
         // Store extracted values
         currentKey.set(term);
         currentValue = new FractionWritable(numerator, denominator);
@@ -121,7 +123,6 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
 
     // Helper function: Convert coefficient to BigInteger
     private BigInteger convertToBigInteger(byte[] data, int start, int length, int sign) {
-        int numWords = length / 4;
         byte[] magnitude = new byte[length];  // This will hold the big-endian representation
 
         // For each word in the little-endian data, copy it into the output in reverse order,
