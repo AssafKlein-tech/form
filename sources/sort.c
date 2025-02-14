@@ -798,7 +798,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			goto RetRetval;
 		}
 		else { //all the terms are inside the small buffer. write it to outfile
-			MesPrint("SmallBuf: Entering small buf");
+			//MesPrint("SmallBuf: Entering small buf");
 			POSITION oldpos;
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
@@ -1911,7 +1911,7 @@ jumpingsend:
 	}
 */
 	size = (fi->POfill-fi->PObuffer)*sizeof(WORD);
-	MesPrint("FlushOut: need to write %d bytes to file", size);
+	//MesPrint("FlushOut: need to write %d bytes to file", size);
 	if ( fi->handle >= 0 ) {
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
