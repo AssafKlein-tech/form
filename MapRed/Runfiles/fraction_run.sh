@@ -2,28 +2,28 @@
 #Running Map-reduce
 
 #check if first variable is a file
-if [ -z "$1" ]; then
-  echo "Usage: $1 <input file>"
-  exit 1
-fi
+#if [ -z "$1" ]; then
+#  echo "Usage: $1 <input file>"
+#  exit 1
+#fi
 
 # Save the file provided as the first argument in a variable
-export INPUT_FILE="$1"
+#export INPUT_FILE="$1"
 
 
-if [ ! -f "$INPUT_FILE" ]; then
-  echo "File '$INPUT_FILE' does not exist."
-  exit 1
-fi
+#if [ ! -f "$INPUT_FILE" ]; then
+#  echo "File '$INPUT_FILE' does not exist."
+#  exit 1
+#fi
 
 # Check if an number of seed is provided
-if [ -z "$2" ]; then
-  echo "Usage: $2 <output_directory> "
+if [ -z "$1" ]; then
+  echo "Usage: $1 <output_directory> "
   exit 1
 fi
 
 # Save the dir provided as the second argument in a variable
-export OUTPUT_DIR="$2"
+export OUTPUT_DIR="$1"
 
 cd /home/assaf/form
 
