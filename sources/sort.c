@@ -1991,6 +1991,23 @@ jumpingsend:
 	{
 		ADDPOS(*position,sizeof(WORD));
 	}
+#ifdef WITHMPI
+	if ( PF.me != MASTER)
+	{
+		//move "filehandle" file to the hadoop
+		//bash hdfs dfs -put filehandle /input
+		char command[512];
+		snprintf(command, sizeof(command), "bash hdfs dfs -put %s /input", fi->name);
+		int result = system(command);
+		if (result == -1) {
+			perror("system");
+			return 1;
+		} else if (WIFEXITED(result) && WEXITSTATUS(result) != 0) {
+			fprintf(stderr, "Command failed with exit code %d\n", WEXITSTATUS(result));
+			return 1;
+		}
+		printf("File '%s' copied to hdfs\n", fi->name);
+	}
 	return(0);
 }
 
