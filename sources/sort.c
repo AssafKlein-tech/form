@@ -845,6 +845,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				MesPrint("SmallBuf: FlushoutError");
 				goto RetRetval;
 			}
+			MesPrint("SmallBuf: out of flush out");
 #ifdef WITHZLIB
 				AR.gzipCompress = oldgzipCompress;
 			}
@@ -1911,7 +1912,7 @@ jumpingsend:
 	}
 */
 	size = (fi->POfill-fi->PObuffer)*sizeof(WORD);
-	//MesPrint("FlushOut: need to write %d bytes to file", size);
+	MesPrint("FlushOut: need to write %d bytes to file", size);
 	if ( fi->handle >= 0 ) {
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
@@ -1991,12 +1992,14 @@ jumpingsend:
 	{
 		ADDPOS(*position,sizeof(WORD));
 	}
+	MesPrint("FlushOut: before new code");
 #ifdef WITHMPI
-	if ( PF.me != MASTER)
+	if (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )
 	{
 		//move "filehandle" file to the hadoop
 		//bash hdfs dfs -put filehandle /input
 		char command[512];
+
 		snprintf(command, sizeof(command), "bash hdfs dfs -put %s /input", fi->name);
 		int result = system(command);
 		if (result == -1) {
@@ -2006,8 +2009,9 @@ jumpingsend:
 			fprintf(stderr, "Command failed with exit code %d\n", WEXITSTATUS(result));
 			return 1;
 		}
-		printf("File '%s' copied to hdfs\n", fi->name);
+		MesPrint("FlushOut: File '%s' copied to hdfs\n", fi->name);
 	}
+#endif
 	return(0);
 }
 
