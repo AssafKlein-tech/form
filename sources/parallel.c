@@ -935,6 +935,7 @@ int PF_EndSort(void)
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
+/* Loser tree sorting:
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -960,6 +961,7 @@ int PF_EndSort(void)
 /*
 			#[ this is only when new coeff was too long :
 */
+/* losing tree code
 			outterm = PF_WorkSpace;
 			pp = PF_term[PF_loser];
 			cc = *pp;
@@ -974,9 +976,11 @@ int PF_EndSort(void)
 			outterm = PF_WorkSpace;
 			*PF_newcpos[PF_loser] = 0;
 			PF_newclen[PF_loser] = 0;
+*/
 /*
 			#] this is only when new coeff was too long : 
 */
+/*
 		}
 		PRINTFBUF("PF_EndSort to PutOut: ",outterm,*outterm);
 		PutOut(BHEAD outterm,&position,fout,1);
@@ -985,7 +989,9 @@ int PF_EndSort(void)
 		AR.gzipCompress = oldgzipCompress;
 		return(-1);
 	}
-	S->TermsLeft = PF_goutterms = noutterms;
+*/
+	MesPrint("PF_Endsor: Master ready to call the Hadoop");
+	S->TermsLeft = PF_goutterms = 0; //noutterms;
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
 	return(1);

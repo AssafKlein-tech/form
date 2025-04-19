@@ -1817,9 +1817,9 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		  fi->POstop = sbuf->stop[sbuf->active];
 		}
 		*(fi->POfill)++ = 0;
-		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill?
+		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill? (the size of the send)
 		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
-		fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
+		fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active]; // initialize parameters
 		fi->POstop = sbuf->stop[sbuf->active];
 		return(0);
 	}
@@ -2000,16 +2000,20 @@ jumpingsend:
 		//bash hdfs dfs -put filehandle /input
 		char command[512];
 
-		snprintf(command, sizeof(command), "bash hdfs dfs -put %s /input", fi->name);
+		snprintf(command, sizeof(command), "/home/assaf/hadoop/bin/hdfs dfs -put %s /input", fi->name);
 		int result = system(command);
 		if (result == -1) {
 			perror("system");
 			return 1;
 		} else if (WIFEXITED(result) && WEXITSTATUS(result) != 0) {
-			fprintf(stderr, "Command failed with exit code %d\n", WEXITSTATUS(result));
+			
+			fprintf(stderr, "Command failed with exit code %d, on copying %s\n", WEXITSTATUS(result),fi->name);
 			return 1;
 		}
 		MesPrint("FlushOut: File '%s' copied to hdfs\n", fi->name);
+		PF_BUFFER *sbuf = PF.sbuf;
+		sbuf->fill[sbuf->active] = 0;
+		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
 	}
 #endif
 	return(0);
