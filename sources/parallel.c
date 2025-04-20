@@ -1003,7 +1003,7 @@ int PF_EndSort(void)
 		return 1;
 	}
 	char command[2048];
-	snprintf(command, sizeof(command), "hadoop jar \"./MapRed/Hadoop/fraction processing/ComplexTermProcessing.jar\" \ FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
+	snprintf(command, sizeof(command), "hadoop jar ./MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar \ FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
     -D mapreduce.map.memory.mb=1792 \
     -D mapreduce.map.java.opts=-Xmx1280m\
     -D mapreduce.task.io.sort.mb=512 \
