@@ -992,6 +992,33 @@ int PF_EndSort(void)
 */
 	MesPrint("PF_Endsor: Master ready to call the Hadoop");
 	S->TermsLeft = PF_goutterms = 0; //noutterms;
+	int result = system("mkdir -p /output_test");
+	if (result == -1) {
+		perror("system output_test creation");
+		return 1;
+	}
+	result = system("hdfs dfs -rm -r -skipTrash /output");
+	if (result == -1) {
+		perror("system removing output content");
+		return 1;
+	}
+	char command[1024];
+	snprintf(command, sizeof(command), "hadoop jar \"./MapRed/Hadoop/fraction processing/ComplexTermProcessing.jar\" \ FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
+    -D mapreduce.map.memory.mb=1792 \
+    -D mapreduce.map.java.opts=-Xmx1280m\
+    -D mapreduce.task.io.sort.mb=512 \
+    -D mapreduce.map.sort.spill.percent=0.9 \
+    -D mapreduce.task.io.sort.factor=1000 \
+    -D mapreduce.reduce.memory.mb=1560 \
+    -D mapreduce.reduce.java.opts=-Xmx1048m \
+    -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
+    -D mapreduce.map.output.compress=false \
+    /input /output");
+	result = system("hdfs dfs -get /output/* /output_test/");
+	if (result == -1) {
+		perror("system copying results");
+		return 1;
+	}
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
 	return(1);
