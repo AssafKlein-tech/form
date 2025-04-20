@@ -1600,6 +1600,11 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#[ Master:
 			#[ write prototype to outfile:
 */
+
+		int result = system("hdfs dfs -rm -skipTrash /input/*");
+		if (result == -1) {
+			perror("system");
+			return 1;
 		WORD oldBracketOn = AR.BracketOn;
 		WORD *oldBrackBuf = AT.BrackBuf;
 		WORD oldbracketindexflag = AT.bracketindexflag;
