@@ -1605,6 +1605,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if (result == -1) {
 			perror("system");
 			return 1;
+		}
 		WORD oldBracketOn = AR.BracketOn;
 		WORD *oldBrackBuf = AT.BrackBuf;
 		WORD oldbracketindexflag = AT.bracketindexflag;
