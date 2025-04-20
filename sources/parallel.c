@@ -921,7 +921,6 @@ int PF_EndSort(void)
 		//AR.outfile->POstop = 0;
 		MesPrint("buffer %d , fill %d, full %d, filesize %d, buffersize %d", newout->PObuffer, newout->POfill,newout->POfull, newout->filesize,newout->POsize);
 
-/*
  		#] the slaves have to initialize their sendbuffer : 
 */
 		return(0);
@@ -958,7 +957,7 @@ int PF_EndSort(void)
 		noutterms++;
 
 		if ( PF_newclen[PF_loser] != 0 ) {
-/*
+
 			#[ this is only when new coeff was too long :
 */
 /* losing tree code
@@ -992,7 +991,7 @@ int PF_EndSort(void)
 */
 	MesPrint("PF_Endsor: Master ready to call the Hadoop");
 	S->TermsLeft = PF_goutterms = 0; //noutterms;
-	int result = system("mkdir -p /output_test");
+	int result = system("mkdir -p /home/assaf/form/output_test");
 	if (result == -1) {
 		perror("system output_test creation");
 		return 1;
@@ -1003,7 +1002,8 @@ int PF_EndSort(void)
 		return 1;
 	}
 	char command[2048];
-	snprintf(command, sizeof(command), "hadoop jar ./MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar \ FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
+	snprintf(command, sizeof(command), "hadoop jar \"./form/MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar\" \ 
+	FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
     -D mapreduce.map.memory.mb=1792 \
     -D mapreduce.map.java.opts=-Xmx1280m\
     -D mapreduce.task.io.sort.mb=512 \
@@ -1023,7 +1023,7 @@ int PF_EndSort(void)
 		fprintf(stderr, "Command failed with exit code %d, on hadoop starting", WEXITSTATUS(result));
 		return 1;
 	}
-	result = system("hdfs dfs -get /output/* /output_test/");
+	result = system("hdfs dfs -get /output/* /home/assaf/output_test/");
 	if (result == -1) {
 		perror("system copying results");
 		return 1;
