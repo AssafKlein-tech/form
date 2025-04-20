@@ -1950,7 +1950,7 @@ jumpingsend:
 		  }
 		  ADDPOS(fi->filesize,size);
 		  ADDPOS(fi->POposition,size);
-		  fi->POfill = fi->PObuffer;
+		  fi->POfill = fi->PObuffer; //POfill is set to the beggining of the buffer
 		  if ( fi == AR.hidefile ) {
 			UNLOCK(AS.inputslock);
 		  }
@@ -2012,7 +2012,10 @@ jumpingsend:
 		}
 		MesPrint("FlushOut: File '%s' copied to hdfs\n", fi->name);
 		PF_BUFFER *sbuf = PF.sbuf;
-		sbuf->fill[sbuf->active] = 0;
+		fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
+		fi->POstop = sbuf->stop[sbuf->active];
+		*(fi->POfill)++ = 0; //POfill is pointing to the start of the buffer
+		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill? (the size of the send)
 		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
 	}
 #endif
