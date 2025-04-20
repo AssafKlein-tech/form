@@ -845,7 +845,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				MesPrint("SmallBuf: FlushoutError");
 				goto RetRetval;
 			}
-			MesPrint("SmallBuf: out of flush out");
 #ifdef WITHZLIB
 				AR.gzipCompress = oldgzipCompress;
 			}
@@ -1992,7 +1991,6 @@ jumpingsend:
 	{
 		ADDPOS(*position,sizeof(WORD));
 	}
-	MesPrint("FlushOut: before new code");
 #ifdef WITHMPI
 	if (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )
 	{

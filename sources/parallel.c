@@ -1002,7 +1002,7 @@ int PF_EndSort(void)
 		perror("system removing output content");
 		return 1;
 	}
-	char command[1024];
+	char command[2048];
 	snprintf(command, sizeof(command), "hadoop jar \"./MapRed/Hadoop/fraction processing/ComplexTermProcessing.jar\" \ FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
     -D mapreduce.map.memory.mb=1792 \
     -D mapreduce.map.java.opts=-Xmx1280m\
@@ -1014,6 +1014,15 @@ int PF_EndSort(void)
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
     -D mapreduce.map.output.compress=false \
     /input /output");
+	result = system(command);
+	if (result == -1) {
+		perror("system");
+		return 1;
+	} else if (WIFEXITED(result) && WEXITSTATUS(result) != 0) {
+		
+		fprintf(stderr, "Command failed with exit code %d, on hadoop starting", WEXITSTATUS(result));
+		return 1;
+	}
 	result = system("hdfs dfs -get /output/* /output_test/");
 	if (result == -1) {
 		perror("system copying results");
