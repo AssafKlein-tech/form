@@ -882,6 +882,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	if ( S->lPatch > 0 ) {
 		if ( ( S->lPatch >= S->MaxPatches ) ||
 			( ( (WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer) ) >= S->lTop ) ) {
+				MesPrint("Terms volume is greater than large buffer");
 /*
 			The large buffer is too full. Merge and write it
 */
@@ -927,7 +928,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			}
 			*to++ = 0;
 			S->lFill = to;
-			if ( S->file.handle < 0 ) {
+			if ( S->file.handle < 0 ) { // no sortfile - write to output file
 				if ( MergePatches(2) ) {
 					MLOCK(ErrorMessageLock);
 					MesCall("EndSort");
@@ -1123,6 +1124,16 @@ RetRetval:
 	if ( AR.sLevel == 0 && (PF.me == MASTER || PF.exprtodo >= 0) ) {
 		Expressions[AR.CurExpr].counter = S->TermsLeft;
 		Expressions[AR.CurExpr].size = pp;
+	}
+	else if (AR.sLevel ==0 && PF.me != MASTER)
+	{
+		FILEHANDLE *fi = AR.outfile;
+		PF_BUFFER *sbuf = PF.sbuf;
+		fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
+		fi->POstop = sbuf->stop[sbuf->active];
+		*(fi->POfill)++ = 0; //POfill is pointing to the start of the buffer
+		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill? (the size of the send)
+		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
 	}
 #else
 	if ( AR.sLevel == 0 ) {
@@ -2009,12 +2020,12 @@ jumpingsend:
 			return 1;
 		}
 		MesPrint("FlushOut: File '%s' copied to hdfs\n", fi->name);
-		PF_BUFFER *sbuf = PF.sbuf;
-		fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
-		fi->POstop = sbuf->stop[sbuf->active];
-		*(fi->POfill)++ = 0; //POfill is pointing to the start of the buffer
-		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill? (the size of the send)
-		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
+		CloseFile(fi->handle);
+		fi->handle = -1;
+		remove(fi->name);
+		PUTZERO(fi->POposition);
+		PUTZERO(fi->filesize);
+		fi->POfill = fi->POfull = fi->PObuffer;
 	}
 #endif
 	return(0);
@@ -4538,6 +4549,44 @@ WORD StoreTerm(PHEAD WORD *term)
 			S->lPatch = 0;
 			S->lFill = S->lBuffer;
 		}
+#ifdef WITHMPI
+	if (PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 )
+	{
+		POSITION position;
+		FILEHANDLE *fout = AR.outfile;
+		if ( tover > 0 ) { //if there are terms in the small buffer
+			ss = S->sPointer;
+			WORD i;
+			SeekScratch(AR.outfile,&position);
+			//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
+			while ( ( t = *ss++ ) != 0 ) {
+				if ( *t ) S->TermsLeft++;
+				i= PutOut(BHEAD t,&position,fout,-1);
+				if (i < 0 ) { //
+					MesPrint("StoreTerm: error in putout",i);
+					return -1;;
+				}
+				//MesPrint("SmallBuf: %d bytes writen",i);
+			}
+		}
+		//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
+		if ( FlushOut(&position,fout,1) ) {
+			MesPrint("StoreTerm: FlushoutError");
+			return -1;
+		}
+		char filename[50];
+		AR.fileidx++;
+		sprintf(filename, "HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
+		FILEHANDLE *newout = AllocFileHandle(1,filename);
+		AR.outfile = newout;
+		LONG RetCode;
+		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
+			newout->handle = (WORD)RetCode;
+			PUTZERO(newout->filesize);
+			PUTZERO(newout->POposition);
+		}
+	}
+#else
 		S->Patches[S->lPatch++] = S->lFill;
 	    lfill = (WORD *)(((UBYTE *)(S->lFill)) + AM.MaxTer);
 		if ( tover > 0 ) {
@@ -4552,6 +4601,7 @@ WORD StoreTerm(PHEAD WORD *term)
 		}
 		*lfill++ = 0;
 		S->lFill = lfill;
+#endif
 		S->sTerms = 0;
 		S->PoinFill = S->sPointer;
 		*(S->PoinFill) = S->sFill = S->sBuffer;

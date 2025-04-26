@@ -899,7 +899,8 @@ int PF_EndSort(void)
 
 		/*AK: redirecting the output to new file*/
 		char filename[50];
-    	sprintf(filename, "HadoopInput_%d.txt", PF.me);
+		AR.fileidx = 0;
+    	sprintf(filename, "HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
  		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
 		LONG RetCode;
