@@ -35,6 +35,7 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         // Use FileSystem to open the file correctly  //test
         FileSystem fs = filePath.getFileSystem(context.getConfiguration());
         inputStream = fs.open(filePath);  // ✅ Open the actual file (ignores byte range)
+        inputStream.seek(start); // 🔥 CRITICAL: seek to start of split
     }
 
     @Override
@@ -45,11 +46,9 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
 
         // Read the first DWORD (4 bytes) to get the total record size
         byte[] totalLengthBytes = new byte[4];
-        if (inputStream.read(totalLengthBytes) == -1) {
-            finished = true;
-            return false;
-        }
+        inputStream.readFully(totalLengthBytes);
         int totalLengthWords = ByteBuffer.wrap(totalLengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        
 
         // If totalLengthWords is 0, it marks the end of records
         if (totalLengthWords == 0) {
@@ -58,17 +57,17 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         }
         // Read the entire record (totalLengthWords * 4 bytes)
         int totalRecordSizeBytes = (totalLengthWords - 1) * 4;
+        //System.out.println("Total number of bytes: " + (totalLengthWords - 1) );
         byte[] recordBytes = new byte[totalRecordSizeBytes];
-        if (inputStream.read(recordBytes) == -1) {
-            finished = true;
-            return false;
-        }
+        inputStream.readFully(recordBytes);
+        //System.out.println("Record bytes:" + Hex.encodeHexString(recordBytes));
         
         // Extract the last WORD (4 bytes) to get coefficient length
         int coeffLengthBytes = 4;
-        int coeffLengthWords = ByteBuffer.wrap(recordBytes, totalRecordSizeBytes - coeffLengthBytes, coeffLengthBytes)
-                                         .order(ByteOrder.LITTLE_ENDIAN)
-                                         .getInt();
+        int coeffLengthWords = ByteBuffer.wrap(recordBytes, totalRecordSizeBytes - coeffLengthBytes, coeffLengthBytes).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        //System.out.println("The word before: " + lastcoeffLengthWords);
+        //System.out.println("The last word of the buffer: " + coeffLengthWords);
+
         int sign = 1;
         if (coeffLengthWords < 0)
         {
@@ -82,7 +81,8 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         byte[] termBytes = new byte[termLengthBytes];
         System.arraycopy(recordBytes, 0, termBytes, 0, termLengthBytes);
         BytesWritable term = new BytesWritable(termBytes); // Convert binary term to readable format
-
+        
+        
         // Extract coefficient
         byte[] coeffBytes = new byte[coeffSizeBytes];
         System.arraycopy(recordBytes, termLengthBytes, coeffBytes, 0, coeffSizeBytes);
@@ -91,8 +91,8 @@ public class BinaryRecordReader extends RecordReader<BytesWritable, FractionWrit
         int fractionPartSize = coeffSizeBytes / 2;  // Since numerator and denominator are equal in size
         BigInteger numerator = convertToBigInteger(coeffBytes, 0, fractionPartSize,sign);
         BigInteger denominator = convertToBigInteger(coeffBytes, fractionPartSize, fractionPartSize, 1);
-        System.out.println("key : " + Hex.encodeHexString( termBytes ));
-        System.out.println("fractionPartSize: " + fractionPartSize + "  Coeffbyets: " + Hex.encodeHexString( coeffBytes ) + " numerator: "+ numerator + " denominator " + denominator);
+        //System.out.println("Key : " + Hex.encodeHexString( termBytes ));
+        //System.out.println("KractionPartSize: " + fractionPartSize/4 + "  Coeffbyets: " + Hex.encodeHexString( coeffBytes ) + " numerator: "+ numerator + " denominator " + denominator + "/n");
         // Store extracted values
         currentKey.set(term);
         currentValue = new FractionWritable(numerator, denominator);
