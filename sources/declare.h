@@ -841,6 +841,11 @@ extern int    GetPosFile(int,fpos_t *);
 extern int    SetPosFile(int,fpos_t *);
 extern VOID   SynchFile(int);
 extern VOID   TruncateFile(int);
+#ifdef WITHMPI
+extern int    OpenHDFSWriter(HDFSWRITER * writer, const char* hdfsPath);
+extern int 	  WriteHDFSBuffer(HDFSWRITER* writer, const UBYTE * buffer, long size, POSITION *offset);
+extern VOID   CloseHDFSWriter(HDFSWRITER* writer);
+#endif
 extern int    GetChannel(char *,int);
 extern int    GetAppendChannel(char *);
 extern int    CloseChannel(char *);

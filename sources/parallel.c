@@ -896,27 +896,6 @@ int PF_EndSort(void)
 		if ( sbuf->stop[0] > fout->POstop ) return -1;
 		for ( i = 0; i < PF.numsbufs; i++ )
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
-
-		/*AK: redirecting the output to new file*/
-		char filename[50];
-		AR.fileidx = 0;
-    	sprintf(filename, "HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
- 		FILEHANDLE *newout = AllocFileHandle(1,filename);
-		AR.outfile = newout;
-		LONG RetCode;
-		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
-			newout->handle = (WORD)RetCode;
-			PUTZERO(newout->filesize);
-			PUTZERO(newout->POposition);
-		}
-		else {
-			MLOCK(ErrorMessageLock);
-			MesPrint("Cannot create scratch file %s",newout->name);
-			MUNLOCK(ErrorMessageLock);
-			return(-1);
-		}
-		
-
 /*
 		//AR.outfile->POsize = size*sizeof(WORD);
 		//AR.outfile->POstop = 0;
@@ -1003,7 +982,7 @@ int PF_EndSort(void)
 		return 1;
 	}
 	char command[2048];
-	snprintf(command, sizeof(command), "hadoop jar \"./form/MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar\" \ 
+	snprintf(command, sizeof(command), "hadoop jar \"./form/MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar\" \
 	FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
     -D mapreduce.map.memory.mb=1792 \
     -D mapreduce.map.java.opts=-Xmx1280m\
@@ -1014,6 +993,7 @@ int PF_EndSort(void)
     -D mapreduce.reduce.java.opts=-Xmx1048m \
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
     -D mapreduce.map.output.compress=false \
+	-D mapreduce.job.reduces=10\
     /input /output");
 	result = system(command);
 	if (result == -1) {
@@ -1913,6 +1893,25 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
+
+		 /*AK: redirecting the output to new file*/
+		char filename[50];
+		AR.fileidx = 0;
+    	sprintf(filename, "/input/HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
+ 		FILEHANDLE *newout = AllocFileHandle(1,filename);
+		AR.outfile = newout;
+		LONG RetCode;
+		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
+			newout->handle = (WORD)RetCode;
+			PUTZERO(newout->filesize);
+			PUTZERO(newout->POposition);
+		}
+		else {
+			MLOCK(ErrorMessageLock);
+			MesPrint("Cannot create scratch file %s",newout->name);
+			MUNLOCK(ErrorMessageLock);
+			return(-1);
+		}
 
 		// start iterate the terms and call generator for each
 		while ( PF_GetTerm(term) ) {

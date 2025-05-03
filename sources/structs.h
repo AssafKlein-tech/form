@@ -48,6 +48,14 @@
 #include <wchar.h>  /* off_t */
 #endif
 
+#ifdef WITHMPI
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <string.h>
+#include <errno.h>
+#include <hdfs.h>
+#endif
 /*
   	#[ sav&store :
 */
@@ -663,6 +671,12 @@ typedef struct NaMeSpAcE {
 } NAMESPACE;
 
 
+typedef struct HdfsWriter{
+#ifdef WITHMPI
+    hdfsFS fs;
+    hdfsFile file;
+#endif
+} HDFSWRITER;
 /*
   	#] Variables : 
   	#[ Files :
@@ -709,6 +723,9 @@ typedef struct FiLe {
 #endif
     int handle;					/**< Our own handle. Equal -1 if no file exists. */
 	int active;					/* File is open or closed. Not used. */
+#ifdef WITHMPI
+    HDFSWRITER writer;
+#endif
 #ifdef WITHPTHREADS
 #ifdef WITHZLIB
 	PADPOSITION(11,5,2,0,sizeof(pthread_mutex_t));

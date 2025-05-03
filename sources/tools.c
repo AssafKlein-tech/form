@@ -994,6 +994,26 @@ int OpenFile(char *name)
 	return(i);
 }
 
+#ifdef WITHMPI
+int OpenHDFSWriter(HDFSWRITER * writer, const char* hdfsPath) {
+    writer->fs = hdfsConnect("default", 0);
+    if (!writer->fs) {
+        fprintf(stderr, "Failed to connect to HDFS\n");
+        return -1;
+    }
+
+    writer->file = hdfsOpenFile(writer->fs, hdfsPath, O_WRONLY | O_CREAT, 0, 0, 0);
+    if (!writer->file) {
+        fprintf(stderr, "Failed to open HDFS file: %s\n", hdfsPath);
+        hdfsDisconnect(writer->fs);
+        writer->fs = NULL;
+        return -1;
+    }
+
+    return 0;
+}
+#endif
+
 /*
  		#] OpenFile : 
  		#[ OpenAddFile :
@@ -1052,6 +1072,7 @@ int CreateFile(char *name)
 	return(i);
 }
 
+
 /*
  		#] CreateFile : 
  		#[ CreateLogFile :
@@ -1087,6 +1108,20 @@ VOID CloseFile(int handle)
 		Uclose(f);
 	}
 }
+
+#ifdef WITHMPI
+void CloseHDFSWriter(HDFSWRITER* writer) {
+    if (writer->file) {
+        hdfsFlush(writer->fs, writer->file);
+        hdfsCloseFile(writer->fs, writer->file);
+        writer->file = NULL;
+    }
+    if (writer->fs) {
+        hdfsDisconnect(writer->fs);
+        writer->fs = NULL;
+    }
+}
+#endif
 
 /*
  		#] CloseFile : 
@@ -1361,6 +1396,23 @@ LONG (*WriteFile)(int handle, UBYTE *buffer, LONG size) = &WriteFileToFile;
 /*:[17nov2005]*/
 #else
 WRITEFILE WriteFile = &PF_WriteFileToFile;
+#endif
+
+#ifdef WITHMPI
+int WriteHDFSBuffer(HDFSWRITER* writer, const UBYTE * buffer, long size, POSITION *offset) {
+    if (!writer || !writer->fs || !writer->file) {
+        fprintf(stderr, "HDFSWriter not initialized\n");
+        return -1;
+    }
+	if (hdfsSeek(writer->fs, writer->file,  (tOffset)(BASEPOSITION(*offset))) != 0) return -1;
+    tSize written = hdfsWrite(writer->fs, writer->file, buffer, (tSize)size);
+    if (written != size) {
+        fprintf(stderr, "Partial write with hdfsPwrite: %d of %ld bytes\n", written, size);
+        return -1;
+    }
+
+    return 0;
+}
 #endif
 
 /*

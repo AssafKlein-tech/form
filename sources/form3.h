@@ -479,6 +479,16 @@ template<typename T> struct calc {
 #include "declare.h"
 #include "variable.h"
 
+/* Hadoop files
+*/
+#ifdef WITHMPI
+#include <stdio.h>
+#include <stdlib.h>
+#include <stddef.h>
+#include <string.h>
+#include <errno.h>
+#include <hdfs.h>
+#endif
 /*
  * The interface to file routines for UNIX or non-UNIX (Windows).
  */

@@ -809,6 +809,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				fout = &(S->file);
 				PUTZERO(position);
 			}
+
 			oldpos = position;
 			S->TermsLeft = 0;
 /*
@@ -822,6 +823,8 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				ss = S->sPointer;
 				WORD i;
 				//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
+				//MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
+
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
@@ -840,6 +843,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			else
 #endif
 			//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
+			MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1;
 				MesPrint("SmallBuf: FlushoutError");
@@ -1684,7 +1688,10 @@ nocompress:
 			if ( p >= fi->POstop ) {
 				goto writetofile;
 #ifdef WITHMPI /* [16mar1998 ar] */  //writing the term into the buffer
+			  int worker = 0;
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
+				worker = 1;
+				goto writetofile;
 				PF_BUFFER *sbuf = PF.sbuf;
 				sbuf->fill[sbuf->active] = fi->POstop; //set the fill of the active buffer to max
 				PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
@@ -1697,6 +1704,18 @@ nocompress:
 writetofile:
 			  {
 				if ( fi->handle < 0 ) {
+#ifdef WITHMPI
+					if (worker) {
+						if (OpenHDFSWriter(&fi->writer,fi->name) < 0) { 
+							MesPrint("PutOut: HDFS Create error");
+						}
+						fi->handle = 1;
+						PUTZERO(fi->filesize);
+						PUTZERO(fi->POposition);
+					}
+					else
+#endif
+					{
 					MesPrint("PutOut: open new file");
 					if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
 #ifdef GZIPDEBUG
@@ -1719,7 +1738,7 @@ writetofile:
 						MesPrint("Cannot create scratch file %s",fi->name);
 						MUNLOCK(ErrorMessageLock);
 						return(-1);
-					}
+					}}
 				}
 #ifdef WITHZLIB
 				if ( !AR.NoCompress && ncomp > 0 && AR.gzipCompress > 0
@@ -1737,6 +1756,15 @@ writetofile:
 				  if ( fi == AR.hidefile ) {
 					LOCK(AS.inputslock);
 				  }
+#ifdef WITHMPI
+				if(worker){
+					if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
+						MesPrint("PutOut: HDFS Write failed");
+					}
+				}
+				else
+#endif
+				{
 				  SeekFile(fi->handle,&(fi->POposition),SEEK_SET);
 				  if ( ( RetCode = WriteFile(fi->handle,(UBYTE *)(fi->PObuffer),fi->POsize) ) != fi->POsize ) {
 					if ( fi == AR.hidefile ) {
@@ -1752,7 +1780,7 @@ writetofile:
 					MesPrint("RetCode = %l, Buffer address = %l",RetCode,(LONG)(fi->PObuffer));
 					MUNLOCK(ErrorMessageLock);
 					return(-1);
-				  }
+				  }}
 				  ADDPOS(fi->filesize,fi->POsize);
 				  p = fi->PObuffer;
 				  ADDPOS(fi->POposition,fi->POsize);
@@ -1816,9 +1844,12 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 #endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
-	goto jumpingsend;
+
 #ifdef WITHMPI /* [16mar1998 ar] */
+	int worker = 0;
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
+		worker = 1;
+		goto jumpingsend;
 		PF_BUFFER *sbuf = PF.sbuf;
 		if ( fi->POfill >= fi->POstop ){ //if it didn't finished sending terms
 		  sbuf->fill[sbuf->active] = fi->POstop;
@@ -1837,6 +1868,18 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 jumpingsend:
 	if ( fi->POfill >= fi->POstop ) {
 		if ( fi->handle < 0 ) {
+			#ifdef WITHMPI
+			if (worker) {
+				if (OpenHDFSWriter(&fi->writer,fi->name) < 0) { 
+					MesPrint("FlushOut: HDFS Create error");
+				}
+				fi->handle = 1;
+				PUTZERO(fi->filesize);
+				PUTZERO(fi->POposition);
+			}
+			else
+#endif
+			{
 			if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
 #ifdef GZIPDEBUG
 				MLOCK(ErrorMessageLock);
@@ -1858,7 +1901,7 @@ jumpingsend:
 				MesPrint("Cannot create scratch file %s",fi->name);
 				MUNLOCK(ErrorMessageLock);
 				return(-1);
-			}
+			}}
 		}
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
@@ -1875,6 +1918,15 @@ jumpingsend:
 		  if ( fi == AR.hidefile ) {
 			LOCK(AS.inputslock);
 		  }
+#ifdef WITHMPI
+		  if(worker){
+			  if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
+		  		MesPrint("FlushOut: HDFS Write failed");
+			  }
+		  }
+		  else
+#endif
+		  {
 		  SeekFile(fi->handle,&(fi->POposition),SEEK_SET);
 		  if ( ( RetCode = WriteFile(fi->handle,(UBYTE *)(fi->PObuffer),fi->POsize) ) != fi->POsize ) {
 #ifdef ALLLOCK
@@ -1890,7 +1942,7 @@ jumpingsend:
 			MesPrint("RetCode = %l, Buffer address = %l",RetCode,(LONG)(fi->PObuffer));
 			MUNLOCK(ErrorMessageLock);
 			return(-1);
-		  }
+		  }}
 		  ADDPOS(fi->filesize,fi->POsize);
 		  fi->POfill = fi->PObuffer;
 		  ADDPOS(fi->POposition,fi->POsize);
@@ -1922,7 +1974,7 @@ jumpingsend:
 	}
 */
 	size = (fi->POfill-fi->PObuffer)*sizeof(WORD);
-	MesPrint("FlushOut: need to write %d bytes to file", size);
+	//MesPrint("FlushOut: need to write %d bytes to file", size);
 	if ( fi->handle >= 0 ) {
 #ifdef WITHZLIB
 		if ( AT.SS == AT.S0 && !AR.NoCompress && AR.gzipCompress > 0
@@ -1939,10 +1991,16 @@ jumpingsend:
 		  if ( fi == AR.hidefile ) {
 			LOCK(AS.inputslock);
 		  }
+#ifdef WITHMPI
+		  if(worker){
+			  if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
+				  MesPrint("PutOut: HDFS Write failed");
+			  }
+		  }
+		  else
+#endif
+		  {
 		  SeekFile(fi->handle,&(fi->POposition),SEEK_SET);
-/*
-		  MesPrint("FlushOut: writing %l bytes to position %12p",size,&(fi->POposition));
-*/
 		  if ( ( RetCode = WriteFile(fi->handle,(UBYTE *)(fi->PObuffer),size) ) != size ) {
 #ifdef ALLLOCK
 			UNLOCK(fi->pthreadslock);
@@ -1957,7 +2015,7 @@ jumpingsend:
 			MesPrint("RetCode = %l, Buffer address = %l",RetCode,(LONG)(fi->PObuffer));
 			MUNLOCK(ErrorMessageLock);
 			return(-1);
-		  }
+		  }}
 		  ADDPOS(fi->filesize,size);
 		  ADDPOS(fi->POposition,size);
 		  fi->POfill = fi->PObuffer; //POfill is set to the beggining of the buffer
@@ -2003,11 +2061,15 @@ jumpingsend:
 		ADDPOS(*position,sizeof(WORD));
 	}
 #ifdef WITHMPI
-	if (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )
+	if (worker)
 	{
+		if (fi == AR.hidefile)
+		{
+			MesPrint("FlushOut: hidefile error");
+		}
 		//move "filehandle" file to the hadoop
 		//bash hdfs dfs -put filehandle /input
-		char command[512];
+		/*char command[512];
 
 		snprintf(command, sizeof(command), "/home/assaf/hadoop/bin/hdfs dfs -put %s /input", fi->name);
 		int result = system(command);
@@ -2018,9 +2080,9 @@ jumpingsend:
 			
 			fprintf(stderr, "Command failed with exit code %d, on copying %s\n", WEXITSTATUS(result),fi->name);
 			return 1;
-		}
-		MesPrint("FlushOut: File '%s' copied to hdfs\n", fi->name);
-		CloseFile(fi->handle);
+		}*/
+		MesPrint("FlushOut: File '%s' writen to hdfs\n", fi->name);
+		CloseHDFSWriter(&fi->writer);
 		fi->handle = -1;
 		remove(fi->name);
 		PUTZERO(fi->POposition);
@@ -4501,6 +4563,13 @@ WORD StoreTerm(PHEAD WORD *term)
 /*
 	The small buffer is full. It has to be sorted and written.
 */
+		if ( S->sTerms >= S->TermsInSmall)
+		{
+			MesPrint("StoreTerm: #terms in SmallBuffer exceeded %d", S->TermsInSmall);
+		}
+		else{
+			MesPrint("StoreTerm: SmallBuffer is full size: %d", (S->sTop - S->sBuffer));
+		}
 		tover = over = S->sTerms;
 		ss = S->sPointer;
 		ss[over] = 0;
@@ -4511,6 +4580,7 @@ WORD StoreTerm(PHEAD WORD *term)
 #ifdef SPLITTIME
 		PrintTime((UBYTE *)"After SplitMerge");
 #endif
+		MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
 		sSpace = 0;
 		if ( over > 0 ) {
 			sSpace = ComPress(ss,&RetCode);
@@ -4557,7 +4627,7 @@ WORD StoreTerm(PHEAD WORD *term)
 		if ( tover > 0 ) { //if there are terms in the small buffer
 			ss = S->sPointer;
 			WORD i;
-			SeekScratch(AR.outfile,&position);
+			SeekScratch(fout,&position);
 			//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
 			while ( ( t = *ss++ ) != 0 ) {
 				if ( *t ) S->TermsLeft++;
@@ -4571,20 +4641,18 @@ WORD StoreTerm(PHEAD WORD *term)
 		}
 		//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
 		if ( FlushOut(&position,fout,1) ) {
-			MesPrint("StoreTerm: FlushoutError");
+			MesPrint("StoreTerm: FlushOut Error");
 			return -1;
 		}
 		char filename[50];
 		AR.fileidx++;
-		sprintf(filename, "HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
+		sprintf(filename, "/input/HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
 		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
 		LONG RetCode;
-		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
-			newout->handle = (WORD)RetCode;
-			PUTZERO(newout->filesize);
-			PUTZERO(newout->POposition);
-		}
+		newout->handle = 1;
+		PUTZERO(newout->filesize);
+		PUTZERO(newout->POposition);
 	}
 #else
 		S->Patches[S->lPatch++] = S->lFill;

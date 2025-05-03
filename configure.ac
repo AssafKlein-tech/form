@@ -338,6 +338,8 @@ AC_ARG_WITH([zlib],
 		CPPFLAGS="$CPPFLAGS -I$withval/include"
 		LDFLAGS="$LDFLAGS -L$withval/lib"])],
 	[with_zlib=check])
+
+
 AS_IF([test "x$with_zlib" != xno],
 	[flag=:
 	AS_IF([$flag], [AC_CHECK_HEADER([zlib.h], [], [flag=false])])
@@ -646,6 +648,19 @@ AS_IF([test "x$enable_parform" != xno],
 		AS_IF([test "x$enable_debug" = xyes],
 			[AC_MSG_NOTICE([building parvorm has been disabled])])
 		enable_parform=no])])
+
+# Check for hdfs
+AC_ARG_WITH([hdfs],
+    AS_HELP_STRING([--with-hdfs=DIR], [path to libhdfs installation prefix]),
+    [HDFS_DIR=$withval],
+    [HDFS_DIR=$HADOOP_HOME]  # default
+)
+MPI_CFLAGS="$MPI_CFLAGS -I$HDFS_DIR/include"
+MPI_CXXFLAGS="$MPI_CXXFLAGS -I$HDFS_DIR/include"
+MPI_STATIC_LDFLAGS="$MPI_STATIC_LDFLAGS -L$HDFS_DIR/lib/native -lhdfs"
+LDFLAGS="$LDFLAGS -L$HDFS_DIR/lib/native"
+LIBS="$LIBS -lhdfs"
+
 build_parform=$enable_parform
 AS_IF([test "x$enable_parform" = xyes && test "x$enable_debug" = xyes], [build_parvorm=yes], [build_parvorm=no])
 AM_CONDITIONAL([BUILD_PARFORM], [test "x$build_parform" = xyes])
