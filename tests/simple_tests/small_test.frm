@@ -4,7 +4,7 @@ format 255;
 Off Parallel;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g)^13;
+Global F = (-a-b+c+d-e+f+g)^12;
 
 
 .Sort

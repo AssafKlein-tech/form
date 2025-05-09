@@ -7464,6 +7464,7 @@ MPI_CFLAGS="$MPI_CFLAGS -I$HDFS_DIR/include"
 MPI_CXXFLAGS="$MPI_CXXFLAGS -I$HDFS_DIR/include"
 MPI_STATIC_LDFLAGS="$MPI_STATIC_LDFLAGS -L$HDFS_DIR/lib/native -lhdfs"
 LDFLAGS="$LDFLAGS -L$HDFS_DIR/lib/native"
+LIBS="$LIBS -lhdfs"
 
 build_parform=$enable_parform
 if test "x$enable_parform" = xyes && test "x$enable_debug" = xyes

@@ -994,7 +994,7 @@ int PF_EndSort(void)
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
     -D mapreduce.map.output.compress=false \
 	-D mapreduce.job.reduces=10\
-    /input /output");
+    ./input /output");
 	result = system(command);
 	if (result == -1) {
 		perror("system");
@@ -1900,18 +1900,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
     	sprintf(filename, "/input/HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
  		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
-		LONG RetCode;
-		if ( ( RetCode = CreateFile(newout->name) ) >= 0 ) {
-			newout->handle = (WORD)RetCode;
-			PUTZERO(newout->filesize);
-			PUTZERO(newout->POposition);
-		}
-		else {
-			MLOCK(ErrorMessageLock);
-			MesPrint("Cannot create scratch file %s",newout->name);
-			MUNLOCK(ErrorMessageLock);
-			return(-1);
-		}
+
 
 		// start iterate the terms and call generator for each
 		while ( PF_GetTerm(term) ) {

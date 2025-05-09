@@ -996,15 +996,15 @@ int OpenFile(char *name)
 
 #ifdef WITHMPI
 int OpenHDFSWriter(HDFSWRITER * writer, const char* hdfsPath) {
-    writer->fs = hdfsConnect("default", 0);
+    writer->fs = hdfsConnect("Gpu-plx02", 9000);
     if (!writer->fs) {
-        fprintf(stderr, "Failed to connect to HDFS\n");
+        MesPrint("OpenHDFSWrite: Failed to connect to HDFS to Gpu-plx02\n");
         return -1;
     }
 
-    writer->file = hdfsOpenFile(writer->fs, hdfsPath, O_WRONLY | O_CREAT, 0, 0, 0);
+    writer->file = hdfsOpenFile(writer->fs, hdfsPath, O_WRONLY | O_CREAT | O_APPEND, 0, 0, 0);
     if (!writer->file) {
-        fprintf(stderr, "Failed to open HDFS file: %s\n", hdfsPath);
+        MesPrint("OpenHDFSWrite:  to open HDFS file: %s\n", hdfsPath);
         hdfsDisconnect(writer->fs);
         writer->fs = NULL;
         return -1;
@@ -1401,13 +1401,24 @@ WRITEFILE WriteFile = &PF_WriteFileToFile;
 #ifdef WITHMPI
 int WriteHDFSBuffer(HDFSWRITER* writer, const UBYTE * buffer, long size, POSITION *offset) {
     if (!writer || !writer->fs || !writer->file) {
-        fprintf(stderr, "HDFSWriter not initialized\n");
+        MesPrint("WriteHDFSBuffer: HDFSWriter not initialized\n");
         return -1;
     }
-	if (hdfsSeek(writer->fs, writer->file,  (tOffset)(BASEPOSITION(*offset))) != 0) return -1;
+	if (!offset) {
+		MesPrint("WriteHDFSBuffer: Offset pointer is NULL!\n");
+		return -1;
+	}
+	//#include <inttypes.h>
+	//tOffset pos = hdfsTell(writer->fs, writer->file);
+	//MesPrint("Current position: %" PRId64 "\n", pos);
+	/*if (hdfsSeek(writer->fs, writer->file,  (tOffset)(offset->p1)) != 0)
+	{
+		MesPrint("HDFS seek error - Seeking to position: %ld\n", (long)offset->p1);
+		return -1;	
+	} */
     tSize written = hdfsWrite(writer->fs, writer->file, buffer, (tSize)size);
     if (written != size) {
-        fprintf(stderr, "Partial write with hdfsPwrite: %d of %ld bytes\n", written, size);
+        MesPrint("WriteHDFSBuffer: Write with hdfsWrite: %d of %ld bytes\n", written, size);
         return -1;
     }
 

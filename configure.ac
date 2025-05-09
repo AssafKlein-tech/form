@@ -658,7 +658,7 @@ AC_ARG_WITH([hdfs],
 MPI_CFLAGS="$MPI_CFLAGS -I$HDFS_DIR/include"
 MPI_CXXFLAGS="$MPI_CXXFLAGS -I$HDFS_DIR/include"
 MPI_STATIC_LDFLAGS="$MPI_STATIC_LDFLAGS -L$HDFS_DIR/lib/native -lhdfs"
-LDFLAGS="$LDFLAGS -L$HDFS_DIR/lib/native"
+LDFLAGS="$LDFLAGS -L$HDFS_DIR/lib/native -L$JAVA_HOME/lib/server -Wl,-rpath,$JAVA_HOME/lib/server"
 LIBS="$LIBS -lhdfs"
 
 build_parform=$enable_parform

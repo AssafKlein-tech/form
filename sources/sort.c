@@ -1686,7 +1686,6 @@ nocompress:
 		p = fi->POfill;
 		do {
 			if ( p >= fi->POstop ) {
-				goto writetofile;
 #ifdef WITHMPI /* [16mar1998 ar] */  //writing the term into the buffer
 			  int worker = 0;
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
@@ -1708,6 +1707,9 @@ writetofile:
 					if (worker) {
 						if (OpenHDFSWriter(&fi->writer,fi->name) < 0) { 
 							MesPrint("PutOut: HDFS Create error");
+						}
+						else{
+							MesPrint("PutOut: opened file %s", fi->name);
 						}
 						fi->handle = 1;
 						PUTZERO(fi->filesize);
@@ -1759,7 +1761,7 @@ writetofile:
 #ifdef WITHMPI
 				if(worker){
 					if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
-						MesPrint("PutOut: HDFS Write failed");
+						MesPrint("PutOut: HDFS Write failed (full)");
 					}
 				}
 				else
@@ -1868,7 +1870,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 jumpingsend:
 	if ( fi->POfill >= fi->POstop ) {
 		if ( fi->handle < 0 ) {
-			#ifdef WITHMPI
+#ifdef WITHMPI
 			if (worker) {
 				if (OpenHDFSWriter(&fi->writer,fi->name) < 0) { 
 					MesPrint("FlushOut: HDFS Create error");
@@ -1994,7 +1996,7 @@ jumpingsend:
 #ifdef WITHMPI
 		  if(worker){
 			  if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
-				  MesPrint("PutOut: HDFS Write failed");
+				  MesPrint("FLushOut: HDFS Write failed");
 			  }
 		  }
 		  else
