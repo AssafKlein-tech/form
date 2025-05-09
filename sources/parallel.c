@@ -971,7 +971,7 @@ int PF_EndSort(void)
 */
 	MesPrint("PF_Endsor: Master ready to call the Hadoop");
 	S->TermsLeft = PF_goutterms = 0; //noutterms;
-	int result = system("mkdir -p /home/assaf/form/output_test");
+	int result = system("mkdir -p /home/assaf/output_test");
 	if (result == -1) {
 		perror("system output_test creation");
 		return 1;
@@ -984,16 +984,19 @@ int PF_EndSort(void)
 	char command[2048];
 	snprintf(command, sizeof(command), "hadoop jar \"./form/MapRed/Hadoop/fraction_processing/ComplexTermProcessing.jar\" \
 	FractionDriver -D mapreduce.task.io.file.buffer.size=131072  \
-    -D mapreduce.map.memory.mb=1792 \
-    -D mapreduce.map.java.opts=-Xmx1280m\
-    -D mapreduce.task.io.sort.mb=512 \
+    -D mapreduce.map.memory.mb=1024 \
+    -D mapreduce.map.java.opts=-Xmx768m\
+    -D mapreduce.task.io.sort.mb=448 \
     -D mapreduce.map.sort.spill.percent=0.9 \
     -D mapreduce.task.io.sort.factor=1000 \
-    -D mapreduce.reduce.memory.mb=1560 \
-    -D mapreduce.reduce.java.opts=-Xmx1048m \
+    -D mapreduce.reduce.memory.mb=2048 \
+    -D mapreduce.reduce.java.opts=-Xmx1536m \
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
-    -D mapreduce.map.output.compress=false \
-	-D mapreduce.job.reduces=10\
+	-D mapreduce.map.output.compress.codec=org.apache.hadoop.io.compress.SnappyCodec \
+    -D mapreduce.map.output.compress=true \
+    -D mapreduce.reduce.shuffle.merge.percent=0.8\
+    -D mapred.job.reduce.input.buffer.percent=0.75\
+	-D mapreduce.job.reduces=15\
     ./input /output");
 	result = system(command);
 	if (result == -1) {
@@ -1004,11 +1007,11 @@ int PF_EndSort(void)
 		fprintf(stderr, "Command failed with exit code %d, on hadoop starting", WEXITSTATUS(result));
 		return 1;
 	}
-	result = system("hdfs dfs -get /output/* /home/assaf/output_test/");
+	/*result = system("hdfs dfs -get /output/* /home/assaf/output_test/");
 	if (result == -1) {
 		perror("system copying results");
 		return 1;
-	}
+	}*/
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
 	return(1);
@@ -1618,7 +1621,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#[ write prototype to outfile:
 */
 
-		int result = system("hdfs dfs -rm -skipTrash /input/*");
+		int result = system("hdfs dfs -rm -skipTrash ./input/*");
 		if (result == -1) {
 			perror("system");
 			return 1;

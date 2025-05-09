@@ -843,7 +843,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			else
 #endif
 			//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
-			MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
+			MesPrint("EndSort: Writing : %d bytes", ((S->sFill - S->sBuffer)));
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1;
 				MesPrint("SmallBuf: FlushoutError");
@@ -4582,7 +4582,7 @@ WORD StoreTerm(PHEAD WORD *term)
 #ifdef SPLITTIME
 		PrintTime((UBYTE *)"After SplitMerge");
 #endif
-		MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
+		MesPrint("StoreTerm: Writing : %d bytes", ((S->sFill - S->sBuffer)));
 		sSpace = 0;
 		if ( over > 0 ) {
 			sSpace = ComPress(ss,&RetCode);
@@ -4651,8 +4651,6 @@ WORD StoreTerm(PHEAD WORD *term)
 		sprintf(filename, "/input/HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
 		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
-		LONG RetCode;
-		newout->handle = 1;
 		PUTZERO(newout->filesize);
 		PUTZERO(newout->POposition);
 	}

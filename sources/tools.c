@@ -1002,7 +1002,7 @@ int OpenHDFSWriter(HDFSWRITER * writer, const char* hdfsPath) {
         return -1;
     }
 
-    writer->file = hdfsOpenFile(writer->fs, hdfsPath, O_WRONLY | O_CREAT | O_APPEND, 0, 0, 0);
+    writer->file = hdfsOpenFile(writer->fs, hdfsPath, O_WRONLY | O_CREAT, 0, 0, 0);
     if (!writer->file) {
         MesPrint("OpenHDFSWrite:  to open HDFS file: %s\n", hdfsPath);
         hdfsDisconnect(writer->fs);

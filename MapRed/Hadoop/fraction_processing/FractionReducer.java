@@ -29,13 +29,13 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
 
         if (commonDenominator == BigInteger.ZERO) {
             // First fraction: Use it as the initial sum
-            System.out.println("new key: " + key);
-            System.out.println("initial value: " + value.getNumerator() + " / " + value.getDenominator());
+            //System.out.println("new key: " + key);
+            //System.out.println("initial value: " + value.getNumerator() + " / " + value.getDenominator());
             commonDenominator = denominator;
             summedNumerator = numerator;
         } else {
             // Compute new Least Common Denominator (LCD)
-            System.out.println("next value: " + value.getNumerator() + " / " + value.getDenominator());
+            //System.out.println("next value: " + value.getNumerator() + " / " + value.getDenominator());
             oldCommonDenominator = commonDenominator;
             commonDenominator = lcm(commonDenominator, denominator);
 
@@ -45,7 +45,7 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
 
             // Add numerators
             summedNumerator = convertedSummedNumerator.add(convertedCurrentNumerator);
-            System.out.println("after add: " + summedNumerator + " / " + commonDenominator);
+            //System.out.println("after add: " + summedNumerator + " / " + commonDenominator);
         }
     }
     if (summedNumerator != BigInteger.ZERO )
@@ -54,7 +54,7 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
         BigInteger gcdValue = summedNumerator.gcd(commonDenominator);
         summedNumerator = summedNumerator.divide(gcdValue);
         commonDenominator = commonDenominator.divide(gcdValue);
-        System.out.println("final value: " + summedNumerator + " / " + commonDenominator);
+        //System.out.println("final value: " + summedNumerator + " / " + commonDenominator);
         // Emit optimized result
         context.write(key, new FractionWritable(summedNumerator, commonDenominator));
     }
