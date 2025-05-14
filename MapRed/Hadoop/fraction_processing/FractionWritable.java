@@ -16,6 +16,11 @@ public class FractionWritable implements Writable {
         this.denominator = denominator;
     }
 
+    public void set(BigInteger numerator, BigInteger denominator) {
+        this.numerator = numerator;
+        this.denominator = denominator;
+    }
+
     public BigInteger getNumerator() {
         return numerator;
     }
@@ -23,6 +28,7 @@ public class FractionWritable implements Writable {
     public BigInteger getDenominator() {
         return denominator;
     }
+
 
 
     @Override

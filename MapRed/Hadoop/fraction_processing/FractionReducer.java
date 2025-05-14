@@ -14,6 +14,7 @@ import javax.naming.Context;
 public class FractionReducer extends Reducer<BytesWritable, FractionWritable, BytesWritable, FractionWritable> {
 
     private static final long UINT32_MAX = 0xFFFFFFFFL;
+    private final FractionWritable result = new FractionWritable();
 
     @Override
 protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Context context) 
@@ -26,8 +27,10 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
     for (FractionWritable value : values) {
         BigInteger numerator = value.getNumerator();
         BigInteger denominator = value.getDenominator();
+        BigInteger convertedSummedNumerator;
+        BigInteger convertedCurrentNumerator;
 
-        if (commonDenominator == BigInteger.ZERO) {
+        if (commonDenominator.equals(BigInteger.ZERO)) {
             // First fraction: Use it as the initial sum
             //System.out.println("new key: " + key);
             //System.out.println("initial value: " + value.getNumerator() + " / " + value.getDenominator());
@@ -37,11 +40,14 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
             // Compute new Least Common Denominator (LCD)
             //System.out.println("next value: " + value.getNumerator() + " / " + value.getDenominator());
             oldCommonDenominator = commonDenominator;
-            commonDenominator = lcm(commonDenominator, denominator);
+            if (!commonDenominator.equals(denominator))
+            {
+                commonDenominator = lcm(commonDenominator, denominator);
+            }
 
             // Convert both numerators to the new common denominator
-            BigInteger convertedSummedNumerator = convertToCommonDenominator(summedNumerator,oldCommonDenominator, commonDenominator);
-            BigInteger convertedCurrentNumerator = convertToCommonDenominator(numerator, denominator, commonDenominator);
+            convertedSummedNumerator = convertToCommonDenominator(summedNumerator,oldCommonDenominator, commonDenominator);
+            convertedCurrentNumerator = convertToCommonDenominator(numerator, denominator, commonDenominator);
 
             // Add numerators
             summedNumerator = convertedSummedNumerator.add(convertedCurrentNumerator);
@@ -56,7 +62,8 @@ protected void reduce(BytesWritable key, Iterable<FractionWritable> values, Cont
         commonDenominator = commonDenominator.divide(gcdValue);
         //System.out.println("final value: " + summedNumerator + " / " + commonDenominator);
         // Emit optimized result
-        context.write(key, new FractionWritable(summedNumerator, commonDenominator));
+        result.set(summedNumerator, commonDenominator);
+        context.write(key, result);
     }
 }
 

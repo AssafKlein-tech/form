@@ -896,11 +896,12 @@ int PF_EndSort(void)
 		if ( sbuf->stop[0] > fout->POstop ) return -1;
 		for ( i = 0; i < PF.numsbufs; i++ )
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
-/*
-		//AR.outfile->POsize = size*sizeof(WORD);
-		//AR.outfile->POstop = 0;
-		MesPrint("buffer %d , fill %d, full %d, filesize %d, buffersize %d", newout->PObuffer, newout->POfill,newout->POfull, newout->filesize,newout->POsize);
 
+		//fout->PObuffer = sbuf->buff[sbuf->active];
+		//fout->POstop = sbuf->stop[sbuf->active];
+		//fout->POsize = size*sizeof(WORD);
+		//fout->POfill = fout->POfull = fout->PObuffer;
+/*
  		#] the slaves have to initialize their sendbuffer : 
 */
 		return(0);
@@ -988,7 +989,7 @@ int PF_EndSort(void)
     -D mapreduce.map.java.opts=-Xmx768m\
     -D mapreduce.task.io.sort.mb=448 \
     -D mapreduce.map.sort.spill.percent=0.9 \
-    -D mapreduce.task.io.sort.factor=1000 \
+    -D mapreduce.task.io.sort.factor=100 \
     -D mapreduce.reduce.memory.mb=2048 \
     -D mapreduce.reduce.java.opts=-Xmx1536m \
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
@@ -996,8 +997,10 @@ int PF_EndSort(void)
     -D mapreduce.map.output.compress=true \
     -D mapreduce.reduce.shuffle.merge.percent=0.8\
     -D mapred.job.reduce.input.buffer.percent=0.75\
-	-D mapreduce.job.reduces=15\
-    ./input /output");
+	-D mapreduce.job.reduces=%d\
+	-D mapreduce.job.maps=%d \
+	-D mapreduce.tasktracker.map.tasks.maximum=16\
+    ./input /output",(PF.numtasks-1),(PF.numtasks-1));
 	result = system(command);
 	if (result == -1) {
 		perror("system");
@@ -1007,11 +1010,11 @@ int PF_EndSort(void)
 		fprintf(stderr, "Command failed with exit code %d, on hadoop starting", WEXITSTATUS(result));
 		return 1;
 	}
-	/*result = system("hdfs dfs -get /output/* /home/assaf/output_test/");
+	result = system("hdfs dfs -get /output/* /home/assaf/output_test/");
 	if (result == -1) {
 		perror("system copying results");
 		return 1;
-	}*/
+	}
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
 	return(1);

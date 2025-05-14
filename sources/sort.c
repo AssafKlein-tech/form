@@ -809,7 +809,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				fout = &(S->file);
 				PUTZERO(position);
 			}
-
 			oldpos = position;
 			S->TermsLeft = 0;
 /*
@@ -821,18 +820,15 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 			if ( tover > 0 ) { //if there are terms in the small buffer
 				ss = S->sPointer;
-				WORD i;
 				//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
 				//MesPrint("Writing : %d bytes", ((S->sFill - S->sBuffer)*sizeof(WORD)));
-
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
 					if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD t); }
 					else
 #endif
-					i= PutOut(BHEAD t,&position,fout,-1);
-					if (i < 0 ) { //
+					if (PutOut(BHEAD t,&position,fout,1) < 0 ) { //
 						retval = -1; goto RetRetval;
 					}
 					//MesPrint("SmallBuf: %d bytes writen",i);
@@ -842,8 +838,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
 #endif
-			//MesPrint("SmallBuf: number of bytes writen %d",(fout->POfill-fout->PObuffer));
-			MesPrint("EndSort: Writing : %d bytes", ((S->sFill - S->sBuffer)));
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1;
 				MesPrint("SmallBuf: FlushoutError");
@@ -1131,12 +1125,18 @@ RetRetval:
 	}
 	else if (AR.sLevel ==0 && PF.me != MASTER)
 	{
+		//CloseHDFSWriter(&fout->writer);
 		FILEHANDLE *fi = AR.outfile;
 		PF_BUFFER *sbuf = PF.sbuf;
 		fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
 		fi->POstop = sbuf->stop[sbuf->active];
 		*(fi->POfill)++ = 0; //POfill is pointing to the start of the buffer
 		sbuf->fill[sbuf->active] = fi->POfill; //setting the current fill? (the size of the send)
+		/*fout->handle = -1;
+		remove(fout->name);
+		PUTZERO(fout->POposition);
+		PUTZERO(fout->filesize);
+		fout->POfill = fout->POfull = fout->PObuffer;*/
 		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG); //telling the master that the slave finished sending sortedterms
 	}
 #else
@@ -1846,7 +1846,6 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 #endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
-
 #ifdef WITHMPI /* [16mar1998 ar] */
 	int worker = 0;
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
@@ -1995,7 +1994,7 @@ jumpingsend:
 		  }
 #ifdef WITHMPI
 		  if(worker){
-			  if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), fi->POsize, &(fi->POposition)) != 0) {
+			  if (WriteHDFSBuffer(&fi->writer, (UBYTE *)(fi->PObuffer), size, &(fi->POposition)) != 0) {
 				  MesPrint("FLushOut: HDFS Write failed");
 			  }
 		  }
@@ -3975,7 +3974,7 @@ ConMer:
 				   PutToMaster. */
 				if ( AS.MasterSort && ( fout == AR.outfile ) && S == AT.S0 ) {
 					im = PutToMaster(BHEAD m1);
-				} 	
+				}
 				else
 #endif
 				if ( ( im = PutOut(BHEAD m1,&position,fout,1) ) < 0 ) goto ReturnError;
@@ -4567,7 +4566,7 @@ WORD StoreTerm(PHEAD WORD *term)
 */
 		if ( S->sTerms >= S->TermsInSmall)
 		{
-			MesPrint("StoreTerm: #terms in SmallBuffer exceeded %d", S->TermsInSmall);
+			MesPrint("StoreTerm: terms in SmallBuffer exceeded %d", S->TermsInSmall);
 		}
 		else{
 			MesPrint("StoreTerm: SmallBuffer is full size: %d", (S->sTop - S->sBuffer));
@@ -4628,14 +4627,11 @@ WORD StoreTerm(PHEAD WORD *term)
 		FILEHANDLE *fout = AR.outfile;
 		if ( tover > 0 ) { //if there are terms in the small buffer
 			ss = S->sPointer;
-			WORD i;
 			SeekScratch(fout,&position);
 			//MesPrint("SmallBuf: before PutOut need to store %d terms on pos %d, posize = %d", tover, position, AR.outfile->POsize);
 			while ( ( t = *ss++ ) != 0 ) {
 				if ( *t ) S->TermsLeft++;
-				i= PutOut(BHEAD t,&position,fout,-1);
-				if (i < 0 ) { //
-					MesPrint("StoreTerm: error in putout",i);
+				if (PutOut(BHEAD t,&position,fout,1) < 0 ) { //
 					return -1;;
 				}
 				//MesPrint("SmallBuf: %d bytes writen",i);
@@ -4651,6 +4647,8 @@ WORD StoreTerm(PHEAD WORD *term)
 		sprintf(filename, "/input/HadoopInput_%d_%d.txt", PF.me,AR.fileidx);
 		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
+		LONG RetCode;
+		newout->handle = 1;
 		PUTZERO(newout->filesize);
 		PUTZERO(newout->POposition);
 	}
