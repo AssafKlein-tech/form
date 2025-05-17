@@ -1846,6 +1846,39 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
+
+		/* redirecting for printing terms to a local file*/
+
+		char filename[50];
+    	sprintf(filename, "/home/assaf/form/output_%d.txt", PF.me);
+
+		// Save the original standard output file descriptor
+		int stdout_fd = dup(STDOUT_FILENO);
+		if (stdout_fd == -1) {
+			perror("dup failed");
+			return 1;
+		}
+
+		// Open the file to redirect output
+		int file_fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (file_fd == -1) {
+			perror("open failed");
+			return 1;
+		}
+
+		// Redirect standard output to the file
+		if (dup2(file_fd, STDOUT_FILENO) == -1) {
+			perror("dup2 failed");
+			close(file_fd);
+			return 1;
+		}
+
+		// Close the file descriptor (not needed anymore)
+		close(file_fd);
+
+		// Write some output (this goes to the file)
+		//printf("This output will go to the file.\n");
+
 		while ( PF_GetTerm(term) ) {
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
 			AT.WorkPointer = term + *term;
@@ -1877,6 +1910,19 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			}
 			PF_linterms += dd; AN.ninterms += dd;
 		}
+		
+		// Restore the original standard output
+		if (dup2(stdout_fd, STDOUT_FILENO) == -1) {
+			perror("dup2 restore failed");
+			close(stdout_fd);
+			return 1;
+		}
+
+		// Close the saved file descriptor (not needed anymore)
+		close(stdout_fd);
+
+		// Write some output (this goes to the terminal)
+		printf("This output will go to the terminal.\n");
 		PF_linterms += dd; AN.ninterms += dd;
 		{
 			/*
@@ -3739,7 +3785,7 @@ static int PF_Wait4MasterIP(int tag)
 		fprintf(stderr,"[%d] Starting to send to Master\n",PF.me);
 		fflush(stderr);
 	}
-
+	
 	PF_PreparePack();
 	cpu = TimeCPU(1);
 	PF_Pack(&cpu               ,1,PF_LONG);

@@ -72,6 +72,9 @@
  * argument names in the MPI-3.0 standard.
  */
 #undef indices
+#include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
 
 /* Avoid messy padding warnings which may appear in mpi.h. */
 #if GNUC_PREREQ(4, 6, 0)

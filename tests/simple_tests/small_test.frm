@@ -1,6 +1,5 @@
 format 255;
 #create <smallterms_presort.text>;
-#create <smallterms_postsort.text>;
 #:ThreadLoadBalancing ON
 
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
@@ -15,10 +14,7 @@ id d =  j + k ;
 id f =  o + p ;
 
  
-print <smallterms_presort.text> +s " %t";
+#write <smallterms_presort.text> "       + %+E",F
 
-.Sort
-
-#write <smallterms_postsort.text> "       + %+E",F
 
 .end
