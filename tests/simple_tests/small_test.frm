@@ -1,11 +1,11 @@
-#: SmallSize 200M
+#: SmallSize 800M
 #: TermsInSmall 20M
 format 255;
 Off Parallel;
 on memdebugflag;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^13;
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^15;
 
 
 .Sort

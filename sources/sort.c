@@ -4648,7 +4648,7 @@ WORD StoreTerm(PHEAD WORD *term)
 		FILEHANDLE *newout = AllocFileHandle(1,filename);
 		AR.outfile = newout;
 		LONG RetCode;
-		newout->handle = 1;
+		newout->handle = -1;
 		PUTZERO(newout->filesize);
 		PUTZERO(newout->POposition);
 	}
