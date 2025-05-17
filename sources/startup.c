@@ -194,6 +194,18 @@ static void PrintHeader(int with_full_info)
 			AC.LineLength = oldLineLength;
 		}
 	}
+#ifdef WINDOWS
+	PrintDeprecation("the native Windows version", "issues/623");
+#endif
+#ifdef ILP32
+	PrintDeprecation("the 32-bit version", "issues/624");
+#endif
+#ifdef WITHMPI
+	PrintDeprecation("the MPI version (ParFORM)", "issues/625");
+#endif
+	if ( AC.CheckpointFlag ) {
+		PrintDeprecation("the checkpoint mechanism", "issues/626");
+	}
 }
 
 /*
@@ -261,9 +273,17 @@ int DoTail(int argc, UBYTE **argv)
 							AM.FileOnlyFlag = 1; AM.LogType = 1; break;
 				case 'h': /* For old systems: wait for key before exit */
 							AM.HoldFlag = 1; break;
+				case 'i':
+							if ( StrCmp(s, (UBYTE *)"ignore-deprecation") == 0 ) {
+								AM.IgnoreDeprecation = 1;
+								break;
+							}
 #ifdef WITHINTERACTION
-				case 'i': /* Interactive session (not used yet) */
-							AM.Interact = 1; break;
+							/* Interactive session (not used yet) */
+							AM.Interact = 1;
+							break;
+#else
+							goto IllegalOption;
 #endif
 				case 'I': /* Next arg is dir for inc/prc/sub files */
 							TAKEPATH(AM.IncDir)  break;
@@ -426,6 +446,7 @@ printversion:;
 							}
 						}
 						else {
+IllegalOption:
 #ifdef WITHMPI
 							if ( PF.me == MASTER )
 #endif
@@ -801,6 +822,23 @@ classic:;
 	while ( *t ) { *s++ = *t++; i++; }
 	s[-2] = 'o'; *s = 0;
 	}
+/*
+	Try to create the sort file already, so we can Terminate earlier if this fails.
+*/
+#ifdef WITHPTHREADS
+	if ( par <= 1 ) {
+#endif
+	if ( ( AM.S0->file.handle = CreateFile((char *)AM.S0->file.name) ) < 0 ) {
+		MesPrint("Could not create sort file: %s", AM.S0->file.name);
+		Terminate(-1);
+	};
+	/* Close and clean up the test file */
+	CloseFile(AM.S0->file.handle);
+	AM.S0->file.handle = -1;
+	remove(AM.S0->file.name);
+#ifdef WITHPTHREADS
+	}
+#endif
 /*
 	With the stage4 and scratch file names we have to be a bit more careful.
 	They are to be allocated after the threads are initialized when there
@@ -1613,6 +1651,9 @@ int main(int argc, char **argv)
 #ifdef TRAPSIGNALS
 	setSignalHandlers();
 #endif
+#ifdef WINDOWS
+	_setmode(_fileno(stdout),O_BINARY);
+#endif
 
 #ifdef WITHPTHREADS
 	AB = ABdummy;
@@ -1707,6 +1748,9 @@ VOID CleanUp(WORD par)
 	int i;
 
 	if ( FG.fname ) {
+#ifdef WITHPTHREADS
+	if ( B ) {
+#endif
 	CleanUpSort(0);
 	for ( i = 0; i < 3; i++ ) {
 		if ( AR.Fscr[i].handle >= 0 ) {
@@ -1722,6 +1766,9 @@ VOID CleanUp(WORD par)
 			AR.Fscr[i].POfill = 0;
 		}
 	}
+#ifdef WITHPTHREADS
+	}
+#endif
 	if ( par > 0 ) {
 /*
 	Close all input levels above the lowest?
@@ -1739,12 +1786,18 @@ VOID CleanUp(WORD par)
 			}
 		}
 		CloseFile(AC.StoreHandle);
+#ifdef WITHPTHREADS
+	if ( B )
+#endif
 		if ( par >= 0 || AR.StoreData.Handle < 0 || AM.ClearStore ) {
 			remove(FG.fname);
 		}
 dontremove:;
 #else
 		CloseFile(AC.StoreHandle);
+#ifdef WITHPTHREADS
+	if ( B )
+#endif
 		if ( par >= 0 || AR.StoreData.Handle < 0 || AM.ClearStore > 0 ) {
 			remove(FG.fname);
 		}
@@ -1858,6 +1911,36 @@ VOID Terminate(int errorcode)
 
 /*
  		#] Terminate : 
+ 		#[ PrintDeprecation :
+*/
+
+/**
+ * Prints a deprecation warning for a given feature.
+ *
+ * @param feature  The name of the deprecated feature.
+ * @param issue    The associated issue, e.g., "issues/700".
+ */
+void PrintDeprecation(const char *feature, const char *issue) {
+#ifdef WITHMPI
+	if ( PF.me != MASTER ) return;
+#endif
+	if ( AM.IgnoreDeprecation ) return;
+
+	UBYTE *e = (UBYTE *)getenv("FORM_IGNORE_DEPRECATION");
+	if ( e && e[0] && StrCmp(e, (UBYTE *)"0") && StrICmp(e, (UBYTE *)"false") && StrICmp(e, (UBYTE *)"no") ) return;
+
+	MesPrint("DeprecationWarning: We are considering deprecating %s.", feature);
+	MesPrint("If you want this support to continue, leave a comment at:");
+	MesPrint("");
+	MesPrint("    https://github.com/vermaseren/form/%s", issue);
+	MesPrint("");
+	MesPrint("Otherwise, it will be discontinued in the future.");
+	MesPrint("To suppress this warning, use the -ignore-deprecation command line option or");
+	MesPrint("set the environment variable FORM_IGNORE_DEPRECATION=1.");
+}
+
+/*
+ 		#] PrintDeprecation : 
  		#[ PrintRunningTime :
 */
 

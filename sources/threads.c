@@ -737,7 +737,8 @@ ALLPRIVATES *InitializeOneThread(int identity)
 						 ,AM.S0->MaxPatches
 /*						 ,AM.S0->MaxPatches/numberofworkers  */
 						 ,AM.S0->MaxFpatches/numberofworkers
-						 ,AM.S0->file.POsize);
+						 ,AM.S0->file.POsize
+						 ,0);
 	}
 	AR.CompressPointer = AR.CompressBuffer;
 /*
@@ -3308,8 +3309,20 @@ restart:;
 		}
 		goto intercepted;
 	}
+/* This has always been commented. Indeed no lock is held here. */
 /*	UNLOCK(thr->lock); */
-	if ( numbusy > 0 ) return(1); /* Wait a bit.... */
+	if ( numbusy > 0 ) {
+		/* JD: this avoids large runtimes for tform tests under valgrind.
+		   What seems to happen is we return from here, goto Finalize, and
+		   end up in LoadReadjusted again without the threads having a
+		   chance to update their busy status. Then we end up here again.
+		   Sleep the thread for, say, 1us to allow threads to aquire the lock. */
+		struct timespec sleeptime;
+		sleeptime.tv_sec = 0;
+		sleeptime.tv_nsec = 1000L;
+		nanosleep(&sleeptime, NULL);
+		return(1); /* Wait a bit.... */
+	}
 	return(0);
 intercepted:;
 /*
@@ -3318,8 +3331,9 @@ intercepted:;
 	2: find the first untreated term.
 	3: put the terms in the free buckets.
 
-	Remember: we have the lock to avoid interference from the thread
-	that is being robbed.
+	Remember: we still have the lock to avoid interference from the thread
+	that is being robbed. We were holding it and then jumped here with
+	goto intercepted.
 */
 	numinput = thr->firstterm + thr->usenum;
 	nperbucket = numtogo / numfree;
@@ -4769,6 +4783,75 @@ int IniSortBlocks(int numworkers)
 
 /*
   	#] IniSortBlocks : 
+  	#[ UpdateSortBlocks :
+*/
+ 
+/**
+ *	A version of IniSortBlocks which only updates the pointers in the master's
+ *	buffer, to be used after reallocation of that buffer.
+ */
+int UpdateSortBlocks(int numworkers)
+{
+	ALLPRIVATES *B;
+	SORTING *S;
+	LONG totalsize, workersize, blocksize, numberofterms;
+	int maxter, id, j;
+	int numberofblocks = NUMBEROFBLOCKSINSORT, numparts;
+	WORD *w;
+
+	if ( numworkers == 0 ) return(0);
+
+#ifdef WITHSORTBOTS
+	if ( numworkers > 2 ) {
+		numparts = 2*numworkers - 2;
+		numberofblocks = numberofblocks/2;
+	}
+	else {
+		numparts = numworkers;
+	}
+#else
+	numparts = numworkers;
+#endif
+	S = AM.S0;
+	totalsize = S->LargeSize + S->SmallEsize;
+	workersize = totalsize / numparts;
+	maxter = AM.MaxTer/sizeof(WORD);
+	blocksize = ( workersize - maxter )/numberofblocks;
+	numberofterms = blocksize / maxter;
+	if ( numberofterms < MINIMUMNUMBEROFTERMS ) {
+/*
+		This should have been taken care of in RecalcSetups.
+*/
+		MesPrint("We have a problem with the size of the blocks in UpdateSortBlocks");
+		Terminate(-1);
+	}
+/*
+	Layout:  For each worker
+				block 0: size is maxter WORDS
+				numberofblocks blocks of size blocksize WORDS
+*/
+	w = S->lBuffer;
+	if ( w == 0 ) w = S->sBuffer;
+	for ( id = 1; id <= numparts; id++ ) {
+		B = AB[id];
+		AT.SB.MasterFill[0] = AT.SB.MasterStart[0] = w;
+		w += maxter;
+		AT.SB.MasterStop[0] = w;
+		for ( j = 1; j <= numberofblocks; j++ ) {
+			AT.SB.MasterFill[j] = AT.SB.MasterStart[j] = w;
+			w += blocksize;
+			AT.SB.MasterStop[j] = w;
+		}
+	}
+	if ( w > S->sTop2 ) {
+		MesPrint("Counting problem in UpdateSortBlocks");
+		Terminate(-1);
+	}
+	return(0);
+}
+
+/*
+  	#] UpdateSortBlocks : 
   	#[ DefineSortBotTree :
 */
  

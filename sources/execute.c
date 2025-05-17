@@ -1046,6 +1046,44 @@ if ( AC.SwitchInArray > 0 ) {
 	  AC.MultiBracketBuf = 0;
 	}
 
+	if ( AC.SortReallocateFlag ) {
+		/* Reallocate the sort buffers to reduce resident set usage */
+		/* AT.SS is the same as AT.S0 here */
+		SORTING* S = AT.S0;
+		M_free(S->lBuffer, "SortReallocate lBuffer+sBuffer");
+		S->lBuffer = Malloc1(sizeof(*(S->lBuffer))*(S->LargeSize+S->SmallEsize), "SortReallocate lBuffer+sBuffer");
+		S->lTop = S->lBuffer+S->LargeSize;
+		S->sBuffer = S->lTop;
+		if ( S->LargeSize == 0 ) { S->lBuffer = 0; S->lTop = 0; }
+		S->sTop = S->sBuffer + S->SmallSize;
+		S->sTop2 = S->sBuffer + S->SmallEsize;
+		S->sHalf = S->sBuffer + (LONG)((S->SmallSize+S->SmallEsize)>>1);
+
+#ifdef WITHPTHREADS
+		/* We have to re-set the pointers into master lBuffer in the SortBlocks */
+		UpdateSortBlocks(AM.totalnumberofthreads-1);
+
+		/* The SortBots do not have a real sort buffer to reallocate. */
+		/* AB[0] has been reallocated above already. */
+		for ( i = 1; i < AM.totalnumberofthreads; i++ ) {
+			SORTING* S = AB[i]->T.S0;
+			M_free(S->lBuffer, "SortReallocate lBuffer+sBuffer");
+			S->lBuffer = Malloc1(sizeof(*(S->lBuffer))*(S->LargeSize+S->SmallEsize), "SortReallocate lBuffer+sBuffer");
+			S->lTop = S->lBuffer+S->LargeSize;
+			S->sBuffer = S->lTop;
+			if ( S->LargeSize == 0 ) { S->lBuffer = 0; S->lTop = 0; }
+			S->sTop = S->sBuffer + S->SmallSize;
+			S->sTop2 = S->sBuffer + S->SmallEsize;
+			S->sHalf = S->sBuffer + (LONG)((S->SmallSize+S->SmallEsize)>>1);
+		}
+#endif
+	}
+	if ( AC.SortReallocateFlag == 2 ) {
+		/* The Flag was set for a single module by the preprocessor #sortreallocate,
+		   so turn it off again. */
+		AC.SortReallocateFlag = 0;
+	}
+
 	return(RetCode);
 }
 
@@ -1813,13 +1851,17 @@ int GetFirstBracket(WORD *term, int num)
  		#[ GetFirstTerm :
 */
 
-int GetFirstTerm(WORD *term, int num)
+/**
+ * Gets the first term of an expression. Routine should be thread safe.
+ *
+ * @param[out] term Pointer to the buffer where the term should be written.
+ * @param[in] num   The expression number from which to get the term.
+ * @param[in] pre   Denotes a pre-processor call (1) or not (0). Used to
+ *                  determine the correct source file for the expression.
+ * @return          First WORD of term, a negative value denotes an error.
+ */
+int GetFirstTerm(WORD *term, int num, int pre)
 {
-/*
-		Gets the first term of the expression 'num'
-		Puts it in term.
-		Routine should be thread-safe
-*/
 	GETIDENTITY
 	POSITION position, oldposition;
 	RENUMBER renumber;
@@ -1862,9 +1904,27 @@ int GetFirstTerm(WORD *term, int num)
 		}
 		else {
 			AR.GetOneFile = 0;
-			if ( Expressions[num].replace == NEWLYDEFINEDEXPRESSION )
-			     fi = AR.outfile;
-			else fi = AR.infile;
+			if ( Expressions[num].replace == NEWLYDEFINEDEXPRESSION ) {
+				/* During execution, if the expression has already been processed it
+				   will be in the outfile. If it has not, the usage is illegal according
+				   to the manual, though no error is given. */
+				if ( pre == 0 ) { fi = AR.outfile; }
+				/* During preprocessing, the expression certainly has not been processed
+				   yet. Print an error and terminate. */
+				else {
+					MesPrint("&isnumerical: expression is not yet defined!");
+					SETERROR(-1);
+				}
+			}
+			else {
+				/* During execution, we should use the definition as stored at the end
+				   of the previous module. This is in the infile. */
+				if ( pre == 0 ) { fi = AR.infile; }
+				/* During preprocessing, this function is called before the RevertScratch
+				   at the beginning of this module's execution. Thus the expressions are
+				   in the outfile of the previous module. */
+				else { fi = AR.outfile; }
+			}
 		}
 		if ( fi->handle >= 0 ) {
 			PUTZERO(oldposition);
