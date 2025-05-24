@@ -75,12 +75,13 @@ time hadoop jar /home/assaf/Repos/form/MapRed/Hadoop/fraction_num_term/ComplexTe
     -D mapreduce.reduce.shuffle.input.buffer.percent=0.9 \
     -D mapreduce.reduce.shuffle.merge.percent=0.8\
     -D mapred.job.reduce.input.buffer.percent=0.75\
+    -D mapreduce.reduce.shuffle.parallelcopies = 20 \
     -D mapreduce.map.speculative=false \
     -D mapreduce.job.reduces=8\
     -D mapreduce.reduce.speculative=false \
     -D mapreduce.input.fileinputformat.split.minsize=536870912\
     $DFS_INPUT_DIR $DFS_OUTPUT_DIR #> $OUTPUT_DIR/log.txt 2>&1
-    #-D mapreduce.reduce.shuffle.parallelcopies = 8 \
+    
     #-D mapred.job.reduce.input.buffer.percent=0.7\
     #-D mapreduce.reduce.shuffle.memory.limit.percent=1.0\
     #-D mapreduce.input.fileinputformat.split.maxsize=67108864 \

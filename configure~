@@ -833,7 +833,6 @@ enable_threaded
 enable_parform
 enable_debug
 enable_float
-with_hdfs
 enable_static_link
 enable_native
 enable_profile
@@ -1525,7 +1524,6 @@ Optional Packages:
                           prefix DIR) [default=check]
   --with-zlib[=DIR]       use zlib for compression (installed in prefix DIR)
                           [default=check]
-  --with-hdfs=DIR         path to libhdfs installation prefix
 
 Some influential environment variables:
   CC          C compiler command
@@ -6510,8 +6508,6 @@ else $as_nop
   with_zlib=check
 fi
 
-
-
 if test "x$with_zlib" != xno
 then :
   flag=:
@@ -7448,24 +7444,6 @@ fi
 		enable_parform=no
 fi
 fi
-
-# Check for hdfs
-
-# Check whether --with-hdfs was given.
-if test ${with_hdfs+y}
-then :
-  withval=$with_hdfs; HDFS_DIR=$withval
-else $as_nop
-  HDFS_DIR=$HADOOP_HOME  # default
-
-fi
-
-MPI_CFLAGS="$MPI_CFLAGS -I$HDFS_DIR/include"
-MPI_CXXFLAGS="$MPI_CXXFLAGS -I$HDFS_DIR/include"
-MPI_STATIC_LDFLAGS="$MPI_STATIC_LDFLAGS -L$HDFS_DIR/lib/native -lhdfs"
-LDFLAGS="$LDFLAGS -L$HDFS_DIR/lib/native"
-LIBS="$LIBS -lhdfs"
-
 build_parform=$enable_parform
 if test "x$enable_parform" = xyes && test "x$enable_debug" = xyes
 then :

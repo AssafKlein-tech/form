@@ -90,6 +90,6 @@ def analyze_multiple_nodes(file_paths, device_name):
     plot_combined_with_cpu(io_dfs, cpu_dfs, device_name)
 
 # Example usage
-file_paths = ["./iostat_node1.log", "./iostat_node2.log"]  # Replace with your actual paths
+file_paths = ["./iostat_node1_16proc_hadoop.log", "./iostat_node2_16proc_hadoop.log"]  # Replace with your actual paths
 device_name = "sda"  # Or "sda", etc.
 analyze_multiple_nodes(file_paths, device_name)

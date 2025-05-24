@@ -35,7 +35,7 @@ public class FractionDriver extends Configured implements Tool{
         job.setOutputValueClass(FractionWritable.class);
 
         // Use custom InputFormat and OutputFormat
-        job.setInputFormatClass(BinaryInputFormat.class);
+        job.setInputFormatClass(CombinedBinaryInputFormat.class);
         job.setOutputFormatClass(BinaryOutputFormat.class);
 
         // Set paths

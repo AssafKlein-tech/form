@@ -755,7 +755,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			ss[over] = 0;
 			sSpace = ComPress(ss,&spare); //Does regular commpression of the small buffer.
 			S->TermsLeft -= over - spare;
-			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); } //in PF par = 0
+			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); } //in PF always par = 0
 		}
 		else if ( S != AT.S0 ) { //we are not wrking on the lowest level of sort
 			ss[over] = 0;
@@ -891,7 +891,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			MUNLOCK(ErrorMessageLock);
 #endif
 
-			if ( MergePatches(1) ) { //writing the large buffer into the sort file. get inside the if if there is an error
+			if ( MergePatches(1) ) { //writing the large buffer into the sort file. get inside the if there is an error
 				MLOCK(ErrorMessageLock);
 				MesCall("EndSort");
 				MUNLOCK(ErrorMessageLock);
