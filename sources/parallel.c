@@ -1567,7 +1567,11 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 	}
 
-	if ( AC.mparallelflag != PARALLELFLAG ) return(0);
+	if ( AC.mparallelflag != PARALLELFLAG ){
+		if(AC.sMRflag == NO_MAPREDUCE) {return(0);}
+		MesPrint("ERROR: Calling Map Reduce without parallel");
+		return (-1);
+	}
 
 	if ( PF.me == MASTER ) {
 /*

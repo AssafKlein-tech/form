@@ -845,6 +845,10 @@ WORD DoExecute(WORD par, WORD skip)
 		else if ( AC.mparallelflag & NOPARALLEL_NPROC ) {
 			HighWarning("This module is forced to run in sequential mode because there is only one processor");
 		}
+		if ((AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) && AC.mMRflag == MAPREDUCE) {AC.sMRflag =  MAPREDUCE_FIRST;}
+		else if ( AC.sMRflag == MAPREDUCE_FIRST && AC.mMRflag == MAPREDUCE){AC.sMRflag = MAPREDUCE;}
+		else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
+		else if  (AC.sMRflag == MAPREDUCE_LAST && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;}
 	}
 /*
 	Now the actual execution

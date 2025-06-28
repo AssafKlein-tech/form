@@ -1853,6 +1853,7 @@ struct C_const {
     int     mparallelflag;         /* (C) parallel allowed in this module? */
     int     MRflag;                /* (C) Do mapreduce parallel job */
     int     mMRflag;               /* (C) mapreduce allowed in this module */
+    int     sMRflag;               /* (C) mapreduce last module state */
     int     inparallelflag;        /* (C) inparallel allowed? */
     int     partodoflag;           /* (C) parallel allowed? */
     int     properorderflag;       /* (C) clean normalizing. */
