@@ -163,7 +163,7 @@ WORD Processor(VOID)
 		AC.mparallelflag = Oldmparallelflag;
 	}
 #endif
-	if (AC.MRflag == NO_MAPREDUCE){MesPrint("\n\n\nMAPREDUCE NOT ACTIVE \n\n\n\n");}
+	if (AC.mMRflag == NO_MAPREDUCE){MesPrint("\n\n\nMAPREDUCE NOT ACTIVE \n\n\n\n");}
 	else{MesPrint("\n\n\nMAPREDUCE ACTIVE \n\n\n\n");}
 	
 #ifdef WITHMPI

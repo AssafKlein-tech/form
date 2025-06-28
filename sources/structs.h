@@ -1850,8 +1850,9 @@ struct C_const {
     int     dumnumflag;            /* (C) Where there dummy indices in tokenizer? */
     int     bracketindexflag;      /* (C) Are brackets going to be indexed? */
     int     parallelflag;          /* (C) parallel allowed? */
-    int     MRflag;                /* (C) Do mapreduce parallel job */
     int     mparallelflag;         /* (C) parallel allowed in this module? */
+    int     MRflag;                /* (C) Do mapreduce parallel job */
+    int     mMRflag;               /* (C) mapreduce allowed in this module */
     int     inparallelflag;        /* (C) inparallel allowed? */
     int     partodoflag;           /* (C) parallel allowed? */
     int     properorderflag;       /* (C) clean normalizing. */

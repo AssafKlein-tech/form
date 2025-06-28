@@ -642,6 +642,7 @@ int CoOff(UBYTE *s)
 	 	*onoffoptions[i].var = onoffoptions[i].flags; 
 		AR.SortType = AC.SortType;
 		AC.mparallelflag = AC.parallelflag | AM.hparallelflag;
+		AC.mMRflag = (AC.mparallelflag==PARALLELFLAG) & AC.MRflag;
 	}
 }
 
@@ -890,6 +891,7 @@ int CoOn(UBYTE *s)
 	 	*onoffoptions[i].var = onoffoptions[i].type; 
 		AR.SortType = AC.SortType;
 		AC.mparallelflag = AC.parallelflag | AM.hparallelflag;
+		AC.mMRflag = (AC.mparallelflag==PARALLELFLAG) & AC.MRflag;
 	}
 }
 
