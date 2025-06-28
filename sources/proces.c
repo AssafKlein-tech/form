@@ -163,6 +163,9 @@ WORD Processor(VOID)
 		AC.mparallelflag = Oldmparallelflag;
 	}
 #endif
+	if (AC.MRflag == NO_MAPREDUCE){MesPrint("\n\n\nMAPREDUCE NOT ACTIVE \n\n\n\n");}
+	else{MesPrint("\n\n\nMAPREDUCE ACTIVE \n\n\n\n");}
+	
 #ifdef WITHMPI
  	if ( AC.RhsExprInModuleFlag && PF.rhsInParallel && (AC.mparallelflag == PARALLELFLAG || AC.partodoflag) ) {
 		if ( PF_BroadcastRHS() ) {

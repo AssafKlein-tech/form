@@ -963,6 +963,7 @@ VOID StartVariables(VOID)
 	AC.cbufList.num = 0;
 	AM.hparallelflag = AM.gparallelflag =
 	AC.parallelflag = AC.mparallelflag = PARALLELFLAG;
+	AC.MRflag = NO_MAPREDUCE;
 #ifdef WITHMPI
 	if ( PF.numtasks < 2 ) AM.hparallelflag |= NOPARALLEL_NPROC;
 #endif

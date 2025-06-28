@@ -1850,6 +1850,7 @@ struct C_const {
     int     dumnumflag;            /* (C) Where there dummy indices in tokenizer? */
     int     bracketindexflag;      /* (C) Are brackets going to be indexed? */
     int     parallelflag;          /* (C) parallel allowed? */
+    int     MRflag;                /* (C) Do mapreduce parallel job */
     int     mparallelflag;         /* (C) parallel allowed in this module? */
     int     inparallelflag;        /* (C) inparallel allowed? */
     int     partodoflag;           /* (C) parallel allowed? */
@@ -1948,15 +1949,15 @@ struct C_const {
 #elif defined(WITHMPI)
 	PADPOSITION(50,12+3*MAXNEST,75,49+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
 #else
-	PADPOSITION(48,12+3*MAXNEST,73,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
+	PADPOSITION(48,12+3*MAXNEST,74,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
 #endif
 #else
 #if defined(WITHPTHREADS)
-	PADPOSITION(50,8+3*MAXNEST,75,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17+sizeof(pthread_mutex_t));
+	PADPOSITION(50,8+3*MAXNEST,76,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17+sizeof(pthread_mutex_t));
 #elif defined(WITHMPI)
-	PADPOSITION(50,8+3*MAXNEST,75,49+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
+	PADPOSITION(50,8+3*MAXNEST,76,49+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
 #else
-	PADPOSITION(48,8+3*MAXNEST,73,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
+	PADPOSITION(48,8+3*MAXNEST,74,48+3*MAXNEST+MAXREPEAT,COMMERCIALSIZE+MAXFLAGS+4+sizeof(LIST)*17);
 #endif
 #endif
 };
