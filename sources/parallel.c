@@ -382,7 +382,7 @@ static int PF_InitTree(void)
 	GETIDENTITY
 	PF_BUFFER **rbuf = PF.rbufs;
 	UBYTE *p, *stop;
-	int numrbufs,numtasks = PF.numtasks;
+	int numrbufs,numtasks = PF.nummappers;
 	int i, j, src, numnodes;
 	int numslaves = numtasks - 1;
 	LONG size;
@@ -417,7 +417,7 @@ static int PF_InitTree(void)
 /*
 		this is the size we have in the combined sortbufs for one slave
 */
-	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
+	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
 
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
@@ -883,7 +883,7 @@ int PF_EndSort(void)
 		sortiosize on the master and the POsize of our file.
 		First save the original PObuffer and POstop of the outfile
 */
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks - 1);
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.nummappers - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if ( fout->POsize < (LONG)(size*sizeof(WORD)) ) size = fout->POsize/sizeof(WORD);
 		if ( sbuf == NULL ) {
@@ -1393,13 +1393,13 @@ static int PF_WaitAllSlaves(void)
 	int i, readySlaves, tag, next = PF_ANY_SOURCE;
 	UBYTE *has_sent = 0;
 
-	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
-	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0;
+	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.nummappers + 1),"PF_WaitAllSlaves");
+	for ( i = 0; i < PF.nummappers; i++ ) has_sent[i] = 0;
 
-	for ( readySlaves = 1; readySlaves < PF.numtasks; ) {
+	for ( readySlaves = 1; readySlaves < PF.nummappers; ) {
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
-			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
-				if ( ++next >= PF.numtasks ) next = 1;
+			do{ /*Note, here readySlaves<PF.nummappers, so this loop can't be infinite*/
+				if ( ++next >= PF.nummappers) next = 1;
 			} while ( has_sent[next] == 1 );
 		}
 /*
@@ -1507,7 +1507,7 @@ static int PF_WaitAllSlaves(void)
 					Indicates the error. This will force exit from the main loop:
 */
 				MesPrint("!!!Unexpected MPI message src=%d tag=%d.", next, tag);
-				readySlaves = PF.numtasks+1;
+				readySlaves = PF.nummappers+1;
 				break;
 		}
 	}
@@ -1515,16 +1515,15 @@ static int PF_WaitAllSlaves(void)
 	if ( has_sent ) M_free(has_sent,"PF_WaitAllSlaves");
 /*
 		0 on success (exit from the main loop by loop condition), or -1 if fails
-		(exit from the main loop since readySlaves=PF.numtasks+1):
 */
-	return(PF.numtasks-readySlaves);
+	return(PF.nummappers-readySlaves);
 }
 
 /*
  		#] PF_WaitAllSlaves : 
  		#[ PF_Processor :
 */
-
+enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
 /**
  * Replaces parts of Processor() on the masters and slaves.
  * On the master PF_Processor() is responsible for proper distribution of terms
@@ -1548,6 +1547,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	POSITION position;
 	int k, src, tag;
 	FILEHANDLE *oldoutfile = AR.outfile;
+	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks/2 + 1) : PF.numtasks;
+	PF.numreducers = PF.numtasks - PF.nummappers;
+	if (PF.mapComm != MPI_COMM_NULL) {
+		MPI_Comm_free(&PF.mapComm);  // This cleans up the communicator
+		PF.mapComm = MPI_COMM_NULL;  // Safe reset
+	}
+	int role = (PF.me < PF.nummappers) ? ROLE_MAPPER : ROLE_REDUCER;
+	MPI_Comm_split(PF_COMM, role, PF.me, &PF.mapComm);
 
 #ifdef MPI2
 	if ( PF_shared_buff == NULL ) {
@@ -1594,6 +1601,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			return(-1);
 		}
 		term[3] = i;
+		MesPrint("We have %d mappers and %d reducers", PF.nummappers, PF.numreducers);
 		if ( AR.outtohide ) {
 			SeekScratch(AR.hidefile,&position);
 			e->onfile = position;
@@ -1623,22 +1631,22 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 */
 		NewSort(BHEAD0);   /* we need AT.SS to be set for this!!! */
 		if ( sb == 0 || sb->buff[0] != AT.SS->lBuffer ) {
-			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
+			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.nummappers));
 			if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
 				size = AR.infile->POsize/sizeof(WORD) - 1;
 			if ( sb == 0 ) {
-				if ( ( sb = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
+				if ( ( sb = PF_AllocBuf(PF.nummappers,size*sizeof(WORD),PF.nummappers) ) == NULL )
 					return(-1);
 			}
 			sb->buff[0] = AT.SS->lBuffer;
 			sb->full[0] = sb->fill[0] = sb->buff[0];
-			for ( j = 1; j < PF.numtasks; j++ ) {
+			for ( j = 1; j < PF.nummappers; j++ ) {
 				sb->stop[j-1] = sb->buff[j] = sb->buff[j-1] + size;
 			}
-			sb->stop[PF.numtasks-1] = sb->buff[PF.numtasks-1] + size;
+			sb->stop[PF.nummappers-1] = sb->buff[PF.nummappers-1] + size;
 			PF.sbuf = sb;
 		}
-		for ( j = 0; j < PF.numtasks; j++ ) {
+		for ( j = 0; j < PF.nummappers; j++ ) {
 			sb->full[j] = sb->fill[j] = sb->buff[j];
 		}
 /*
@@ -1652,8 +1660,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		 * workers busy as soon as possible.
 		 */
 		maxinterms = ProcessBucketSize / 100;
-		if ( maxinterms > e->counter / (PF.numtasks - 1) / 4 )
-			maxinterms = e->counter / (PF.numtasks - 1) / 4;
+		if ( maxinterms > e->counter / (PF.nummappers - 1) / 4 )
+			maxinterms = e->counter / (PF.nummappers - 1) / 4;
 		if ( maxinterms < 1 ) maxinterms = 1;
 		cmaxinterms = 0;
 		/*
@@ -1697,7 +1705,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				 * For the "slow startup". We double maxinterms up to ProcessBucketSize
 				 * after (hopefully) the all workers got some terms.
 				 */
-				if ( cmaxinterms >= PF.numtasks - 2 ) {
+				if ( cmaxinterms >= PF.nummappers - 2 ) {
 					maxinterms *= 2;
 					if ( maxinterms >= ProcessBucketSize ) {
 						cmaxinterms = -1;
@@ -1759,7 +1767,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
-		for ( k = 1; k < PF.numtasks; k++ ) {
+		for ( k = 1; k < PF.nummappers; k++ ) {
 			PF_LongSingleReceive(PF_ANY_SOURCE, PF_ENDSORT_MSGTAG, &src, &tag);
 			PF_LongSingleUnpack(PF_stats[src], PF_STATS_SIZE, PF_LONG);
 			{
@@ -1780,7 +1788,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if ( ! AC.OldParallelStats ) {
 			/* Now we can calculate AT.SS->GenTerms from the statistics of the slaves. */
 			LONG genterms = 0;
-			for ( k = 1; k < PF.numtasks; k++ ) {
+			for ( k = 1; k < PF.nummappers; k++ ) {
 				genterms += PF_stats[k][3];
 			}
 			AT.SS->GenTerms = genterms;
@@ -1812,6 +1820,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			loop for all terms to get from master, call Generator for each of them
 			then call EndSort and do cleanup (to be implemented)
 */
+		if (role==ROLE_REDUCER) return(0);
 		WORD oldBracketOn = AR.BracketOn;
 		WORD *oldBrackBuf = AT.BrackBuf;
 		WORD oldbracketindexflag = AT.bracketindexflag;
@@ -1896,6 +1905,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
+			MesPrint( " Process %d is going to endsort", PF.me);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
@@ -4570,7 +4580,7 @@ static void PF_CatchErrorMessagesForAll(void)
 {
 	/* Only on the master. */
 	int i;
-	for ( i = 1; i < PF.numtasks; i++ ) {
+	for ( i = 1; i < PF.nummappers; i++ ) {
 		int src = i;
 		int tag = PF_ANY_MSGTAG;
 		PF_CatchErrorMessages(&src, &tag);

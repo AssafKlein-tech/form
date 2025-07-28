@@ -174,14 +174,17 @@ typedef struct ParallelVars {
 	int         numtasks;       /* total number of tasks */
 	int         parallel;       /* flags telling the master and slaves to do the sorting parallel */
 	                            /* [05nov2003 mt] This flag must be set to 0 in iniModule! */
+	int 		nummappers;		/* number of mappers*/
+	int 		numreducers;	/* number of reducers*/
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
+	MPI_Comm    mapComm;			/*communicator for mappers*/
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
-	PADPOSITION(2,0,8,2,0);
+	PADPOSITION(3,0,10,2,0);
 } PARALLELVARS;
 
 extern PARALLELVARS PF;
