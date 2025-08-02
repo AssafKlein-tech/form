@@ -202,7 +202,7 @@ extern LONG PF_maxDollarChunkSize;
 extern int    PF_ISendSbuf(int,int);
 extern int    PF_Bcast(void *buffer, int count);
 extern int    PF_RawSend(int,void *,LONG,int);
-extern LONG   PF_RawRecv(int *,void *,LONG,int *);
+extern LONG   PF_RawRecv(int *,void *,LONG,int *, MPI_Comm);
 
 extern int    PF_PreparePack(void);
 extern int    PF_Pack(const void *buffer, size_t count, MPI_Datatype type);

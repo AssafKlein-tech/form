@@ -466,7 +466,7 @@ int PF_Bcast(void *buffer, int count)
 
 int PF_RawSend(int dest, void *buf, LONG l, int tag)
 {
-	int ret=MPI_Ssend(buf,(int)l,MPI_BYTE,dest,tag,PF.mapComm);
+	int ret=MPI_Ssend(buf,(int)l,MPI_BYTE,dest,tag,PF_COMM);
 	if ( ret != MPI_SUCCESS ) return(-1);
 	return(0);
 }
@@ -483,12 +483,13 @@ int PF_RawSend(int dest, void *buf, LONG l, int tag)
  * @param[out]     buf      the receive buffer.
  * @param          thesize  the size of the receive buffer in bytes.
  * @param[out]     tag      the message tag of the actual received message.
+ * @param[in]      comm     the communicator for the receive operation.
  * @return                  the actual sizeof received data in bytes, or -1 on failure.
  */
-LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag)
+LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag, MPI_Comm comm)
 {
 	MPI_Status stat;
-	int ret=MPI_Recv(buf,(int)thesize,MPI_BYTE,*src,MPI_ANY_TAG,PF.mapComm,&stat);
+	int ret=MPI_Recv(buf,(int)thesize,MPI_BYTE,*src,MPI_ANY_TAG,comm,&stat);
 	if ( ret != MPI_SUCCESS ) return(-1);
 	if ( MPI_Get_count(&stat,MPI_BYTE,&ret) != MPI_SUCCESS ) return(-1);
 	*tag = stat.MPI_TAG;
@@ -507,14 +508,15 @@ LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag)
  * @param[in,out]  src       the source process number. In output, that of the actual received message.
  * @param[in,out]  tag       the message tag. In output, that of the actual received message.
  * @param[out]     bytesize  the size of incoming data in bytes.
+ * @param[in]      comm      the communicator.
  * @return                   0 if OK, nonzero on error.
  */
-int PF_RawProbe(int *src, int *tag, int *bytesize)
+int PF_RawProbe(int *src, int *tag, int *bytesize, MPI_Comm comm)
 {
 	MPI_Status stat;
 	int srcval = src != NULL ? *src : PF_ANY_SOURCE;
 	int tagval = tag != NULL ? *tag : PF_ANY_MSGTAG;
-	int ret = MPI_Probe(srcval, tagval, PF.mapComm, &stat);
+	int ret = MPI_Probe(srcval, tagval, comm, &stat);
 	if ( ret != MPI_SUCCESS ) return -1;
 	if ( src != NULL ) *src = stat.MPI_SOURCE;
 	if ( tag != NULL ) *tag = stat.MPI_TAG;
@@ -1399,7 +1401,7 @@ static inline int PF_longSingleReset(int is_sender)
 	PF_longPackPos=0;
 	if ( is_sender ) {
 		ret = MPI_Pack(&PF_longPackTop,1,MPI_INT,
-			PF_longPackBuf,PF_longPackTop,&PF_longPackPos,PF.mapComm);
+			PF_longPackBuf,PF_longPackTop,&PF_longPackPos,PF_COMM);
 		if ( ret != MPI_SUCCESS ) return(ret);
 		PF_longPackN = 1;
 	}
@@ -1475,7 +1477,7 @@ int PF_LongSinglePack(const void *buffer, size_t count, MPI_Datatype type)
 	int ret, bytes;
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
-	ret = MPI_Pack_size((int)count,type,PF.mapComm,&bytes);
+	ret = MPI_Pack_size((int)count,type,PF_COMM,&bytes);
 	if ( ret != MPI_SUCCESS ) return(ret);
 
 	while ( PF_longPackPos+bytes > PF_longPackTop ) {
@@ -1510,7 +1512,7 @@ int PF_LongSingleUnpack(void *buffer, size_t count, MPI_Datatype type)
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
 	ret = MPI_Unpack(PF_longPackBuf,PF_longPackTop,&PF_longPackPos,
-	                 buffer,(int)count,type,PF.mapComm);
+	                 buffer,(int)count,type,PF_COMM);
 	if ( ret != MPI_SUCCESS ) return(ret);
 	return(0);
 }
@@ -1555,12 +1557,12 @@ int PF_LongSingleSend(int to, int tag)
 			Negative value means there will be the second buffer
 */
 		ret = MPI_Pack(&tmp, 1,PF_INT,
-		               PF_longPackSmallBuf,PF_longPackTop,&pos,PF.mapComm);
+		               PF_longPackSmallBuf,PF_longPackTop,&pos,PF_COMM);
 		if ( ret != MPI_SUCCESS ) return(ret);
-		ret = MPI_Ssend(PF_longPackSmallBuf,pos,MPI_PACKED,to,tag,PF.mapComm);
+		ret = MPI_Ssend(PF_longPackSmallBuf,pos,MPI_PACKED,to,tag,PF_COMM);
 		if ( ret != MPI_SUCCESS ) return(ret);
 	}
-	ret = MPI_Ssend(PF_longPackBuf,PF_longPackPos,MPI_PACKED,to,tag,PF.mapComm);
+	ret = MPI_Ssend(PF_longPackBuf,PF_longPackPos,MPI_PACKED,to,tag,PF_COMM);
 	if ( ret != MPI_SUCCESS ) return(ret);
 	return(0);
 }
@@ -1591,7 +1593,7 @@ int PF_LongSingleReceive(int src, int tag, int *psrc, int *ptag)
 	PF_longSingleReset(0);
 	do {
 		ret = MPI_Recv(PF_longPackBuf,PF_longPackTop,MPI_PACKED,src,tag,
-		               PF.mapComm,&status);
+		               PF_COMM,&status);
 		if ( ret != MPI_SUCCESS ) return(ret);
 /*
 			The source and tag must be specified here for the case if
@@ -1606,7 +1608,7 @@ int PF_LongSingleReceive(int src, int tag, int *psrc, int *ptag)
 			or just a regular chunk.
 */
 		ret = MPI_Unpack(PF_longPackBuf,PF_longPackTop,&PF_longPackPos,
-		                 &missed,1,MPI_INT,PF.mapComm);
+		                 &missed,1,MPI_INT,PF_COMM);
 		if ( ret != MPI_SUCCESS ) return(ret);
 
 		if ( missed < 0 ) { /* The small buffer was received. */

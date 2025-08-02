@@ -61,8 +61,8 @@ int PF_RecvWbuf(WORD*,LONG*,int*);
 int PF_IRecvRbuf(PF_BUFFER*,int,int);
 int PF_WaitRbuf(PF_BUFFER *,int,LONG *);
 int PF_RawSend(int dest, void *buf, LONG l, int tag);
-LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag);
-int PF_RawProbe(int *src, int *tag, int *bytesize);
+LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag, MPI_Comm comm);
+int PF_RawProbe(int *src, int *tag, int *bytesize, MPI_Comm comm);
 
 /* Private functions */
 
@@ -80,8 +80,8 @@ static int PF_WalkThrough(WORD *t, LONG l, LONG chunk, LONG *count);
 static int PF_SendChunkIP(FILEHANDLE *curfile,  POSITION *position, int to, LONG thesize);
 static int PF_RecvChunkIP(FILEHANDLE *curfile, int from, LONG thesize);
 
-static void PF_ReceiveErrorMessage(int src, int tag);
-static void PF_CatchErrorMessages(int *src, int *tag);
+static void PF_ReceiveErrorMessage(int src, int tag, MPI_Comm comm);
+static void PF_CatchErrorMessages(int *src, int *tag, MPI_Comm comm);
 static void PF_CatchErrorMessagesForAll(void);
 static int PF_ProbeWithCatchingErrorMessages(int *src);
 
@@ -1307,7 +1307,7 @@ static int PF_Wait4Slave(int src)
 	int j, tag, next;
 
 	tag = PF_ANY_MSGTAG;
-	PF_CatchErrorMessages(&src, &tag);
+	PF_CatchErrorMessages(&src, &tag, PF.mapComm);
 	PF_Receive(src, tag, &next, &tag);
 
 	if ( tag != PF_READY_MSGTAG ) {
@@ -1354,7 +1354,7 @@ static int PF_Wait4SlaveIP(int *src)
 	int j,tag,next;
 
 	tag = PF_ANY_MSGTAG;
-	PF_CatchErrorMessages(src, &tag);
+	PF_CatchErrorMessages(src, &tag, PF_COMM);
 	PF_Receive(*src, tag, &next, &tag);
 	*src=tag;
 	if ( PF_W4Sstats == 0 ) {
@@ -1767,7 +1767,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
-		for ( k = 1; k < PF.nummappers; k++ ) {
+		for ( k = 1; k < PF.numtasks; k++ ) {
 			PF_LongSingleReceive(PF_ANY_SOURCE, PF_ENDSORT_MSGTAG, &src, &tag);
 			PF_LongSingleUnpack(PF_stats[src], PF_STATS_SIZE, PF_LONG);
 			{
@@ -1788,7 +1788,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if ( ! AC.OldParallelStats ) {
 			/* Now we can calculate AT.SS->GenTerms from the statistics of the slaves. */
 			LONG genterms = 0;
-			for ( k = 1; k < PF.nummappers; k++ ) {
+			for ( k = 1; k < PF.numtasks; k++ ) {
 				genterms += PF_stats[k][3];
 			}
 			AT.SS->GenTerms = genterms;
@@ -1810,7 +1810,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#] Master: 
 */
 	}
-	else {
+	else if (role==ROLE_MAPPER) {
 /*
  		#[ Slave :
 */
@@ -1820,7 +1820,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			loop for all terms to get from master, call Generator for each of them
 			then call EndSort and do cleanup (to be implemented)
 */
-		if (role==ROLE_REDUCER) return(0);
 		WORD oldBracketOn = AR.BracketOn;
 		WORD *oldBrackBuf = AT.BrackBuf;
 		WORD oldbracketindexflag = AT.bracketindexflag;
@@ -1919,6 +1918,45 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#] Generator Loop & EndSort : 
 			#[ Collect (stats,prepro...) :
 */
+		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
+		PF_PrepareLongSinglePack();
+		cpu = TimeCPU(1);
+		size = 0;
+		PF_LongSinglePack(&cpu,              1, PF_LONG);
+		PF_LongSinglePack(&size,             1, PF_LONG);
+		PF_LongSinglePack(&PF_linterms,      1, PF_LONG);
+		PF_LongSinglePack(&AM.S0->GenTerms,  1, PF_LONG);
+		PF_LongSinglePack(&AM.S0->TermsLeft, 1, PF_LONG);
+		{
+			WORD numdummies = AR.MaxDum - AM.IndDum;
+			PF_LongSinglePack(&numdummies,    1, PF_WORD);
+			PF_LongSinglePack(&AR.expchanged, 1, PF_WORD);
+		}
+		/* Now handle redefined preprocessor variables. */
+		if ( AC.numpfirstnum > 0 ) PF_PackRedefinedPreVars();
+		PF_LongSingleSend(MASTER, PF_ENDSORT_MSGTAG);
+		/* Broadcast redefined preprocessor variables. */
+		if ( AC.numpfirstnum > 0 ) {
+			int RetCode = PF_BroadcastRedefinedPreVars();
+			if ( RetCode ) return RetCode;
+		}
+/*
+			#] Collect (stats,prepro...) : 
+
+		This operation is moved to the beginning of each block, see PreProcessor
+		in pre.c.
+
+ 		#] Slave : 
+*/
+		if ( PF.log ) {
+			UBYTE lbuf[24];
+			NumToStr(lbuf,AC.CModule);
+			fprintf(stderr,"[%d|%s] Endsort,Collect,Broadcast done\n",PF.me,lbuf);
+			fflush(stderr);
+		}
+	}
+	else {
+		/*#[ Collect (stats,prepro...) :*/
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
 		cpu = TimeCPU(1);
@@ -3988,7 +4026,7 @@ static int PF_Slave2MasterIP(int src)/*both master and slave*/
 	/*partodoexr[src] is the number of expression.*/
 	e = Expressions +partodoexr[src];
 	/*Get metadata:*/
-	if (PF_RawRecv(&src, &exprData,sizeof(bufIPstruct_t),&i)!= sizeof(bufIPstruct_t))
+	if (PF_RawRecv(&src, &exprData,sizeof(bufIPstruct_t),&i, PF_COMM)!= sizeof(bufIPstruct_t))
 		return(-1);
 	/*Fill in the expression data:*/
 /*	memcpy(e, &(exprData.e), sizeof(struct ExPrEsSiOn)); */
@@ -4080,7 +4118,7 @@ static int PF_ReadMaster(void)/*reads directly to its scratch!*/
 	LONG ll=0;
 	int l;
 	/*Get metadata:*/
-	if (PF_RawRecv(&m, &exprData,sizeof(bufIPstruct_t),&tag)!= sizeof(bufIPstruct_t))
+	if (PF_RawRecv(&m, &exprData,sizeof(bufIPstruct_t),&tag, PF_COMM)!= sizeof(bufIPstruct_t))
 		return(-1);
 
 	if(tag == PF_EMPTY_MSGTAG)/*No data, no job*/
@@ -4159,7 +4197,7 @@ static int PF_RecvChunkIP(FILEHANDLE *curfile, int from, LONG thesize)
 	/*Now there is enough space from curfile->POfill to curfile->POstop*/
 	{/*Block:*/
 		int tag=0;
-		receivedBytes=PF_RawRecv(&from,curfile->POfull,thesize,&tag);
+		receivedBytes=PF_RawRecv(&from,curfile->POfull,thesize,&tag, PF_COMM);
 	}/*:Block*/
 	if(receivedBytes >= 0 ){
 		curfile->POfull+=receivedBytes/sizeof(WORD);
@@ -4276,7 +4314,7 @@ int PF_RecvFile(int from, FILE *fd)
 	do{
 		char buf[PF_SNDFILEBUFSIZE];
 		int l;
-			l=PF_RawRecv(&from,buf,PF_SNDFILEBUFSIZE,&tag);
+			l=PF_RawRecv(&from,buf,PF_SNDFILEBUFSIZE,&tag, PF_COMM);
 			if(l<0)
 				return(-1);
 			if(tag == PF_EMPTY_MSGTAG)
@@ -4512,17 +4550,17 @@ void PF_FlushStdOutBuffer(void)
  * @param  src  the source process.
  * @param  tag  the tag value (must be PF_STDOUT_MSGTAG or PF_LOG_MSGTAG or PF_ANY_MSGTAG).
  */
-static void PF_ReceiveErrorMessage(int src, int tag)
+static void PF_ReceiveErrorMessage(int src, int tag, MPI_Comm comm)
 {
 	/* Only on the master. */
 	int size;
-	int ret = PF_RawProbe(&src, &tag, &size);
+	int ret = PF_RawProbe(&src, &tag, &size, comm);
 	CHECK(ret == 0);
 	switch ( tag ) {
 		case PF_STDOUT_MSGTAG:
 		case PF_LOG_MSGTAG:
 			VectorReserve(recvBuffer, size);
-			ret = PF_RawRecv(&src, VectorPtr(recvBuffer), size, &tag);
+			ret = PF_RawRecv(&src, VectorPtr(recvBuffer), size, &tag, PF_COMM);
 			CHECK(ret == size);
 			if ( size > 0 ) {
 				int handle = (tag == PF_STDOUT_MSGTAG) ? AM.StdOut : AC.LogHandle;
@@ -4549,16 +4587,16 @@ static void PF_ReceiveErrorMessage(int src, int tag)
  * @param[in,out]  src  the source process.
  * @param[in,out]  tag  the tag value.
  */
-static void PF_CatchErrorMessages(int *src, int *tag)
+static void PF_CatchErrorMessages(int *src, int *tag, MPI_Comm comm)
 {
 	/* Only on the master. */
 	for (;;) {
 		int asrc = *src;
 		int atag = *tag;
-		int ret = PF_RawProbe(&asrc, &atag, NULL);
+		int ret = PF_RawProbe(&asrc, &atag, NULL, comm);
 		CHECK(ret == 0);
 		if ( atag == PF_STDOUT_MSGTAG || atag == PF_LOG_MSGTAG ) {
-			PF_ReceiveErrorMessage(asrc, atag);
+			PF_ReceiveErrorMessage(asrc, atag, comm);
 			continue;
 		}
 		*src = asrc;
@@ -4580,10 +4618,10 @@ static void PF_CatchErrorMessagesForAll(void)
 {
 	/* Only on the master. */
 	int i;
-	for ( i = 1; i < PF.nummappers; i++ ) {
+	for ( i = 1; i < PF.numtasks; i++ ) {
 		int src = i;
 		int tag = PF_ANY_MSGTAG;
-		PF_CatchErrorMessages(&src, &tag);
+		PF_CatchErrorMessages(&src, &tag, PF_COMM);
 	}
 }
 
@@ -4607,7 +4645,7 @@ static int PF_ProbeWithCatchingErrorMessages(int *src)
 		int newsrc = *src;
 		int tag = PF_Probe(&newsrc);
 		if ( tag == PF_STDOUT_MSGTAG || tag == PF_LOG_MSGTAG ) {
-			PF_ReceiveErrorMessage(newsrc, tag);
+			PF_ReceiveErrorMessage(newsrc, tag , PF_COMM);
 			continue;
 		}
 		if ( tag > 0 ) *src = newsrc;
