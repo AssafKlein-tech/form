@@ -855,11 +855,16 @@ WORD DoExecute(WORD par, WORD skip)
 	 * Turn on AS.printflag to print runtime errors occurring on slaves.
 	 */
 	AS.printflag = 1;
+	if ( AC.mparallelflag != PARALLELFLAG  && (AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST)){
+		if (PF.me== MASTER) 
+			MesPrint("\n**Must be parrallel to collect distributed inputs.**\n\n");
+		return (-1);
+	}
+	if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE;
 	if ((AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) && AC.mMRflag == MAPREDUCE) {AC.sMRflag =  MAPREDUCE_FIRST;}
 	else if ( AC.sMRflag == MAPREDUCE_FIRST && AC.mMRflag == MAPREDUCE){AC.sMRflag = MAPREDUCE;}
 	else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
 	else if  (AC.sMRflag == MAPREDUCE_LAST && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;}
-	
 #endif
 	if ( AP.preError == 0 && ( Processor() || WriteAll() ) ) RetCode = -1;
 #ifdef WITHMPI
