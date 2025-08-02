@@ -1904,7 +1904,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
-			MesPrint( " Process %d is going to endsort", PF.me);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
