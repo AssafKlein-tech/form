@@ -37,6 +37,7 @@
   	#[ macros & definitions :
 */
 #define MASTER 0
+#define REDUCER 1
 
 #define PF_RESET 0
 #define PF_TIME  1
@@ -55,6 +56,7 @@
 #define PF_OPT_HORNER_MSGTAG    71  /* master <-> slave: optimization */
 #define PF_OPT_COLLECT_MSGTAG   72  /* slave -> master: optimization */
 #define PF_MISC_MSGTAG         100
+#define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
 
 /*
  * A macro for checking the version of gcc.

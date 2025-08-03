@@ -1666,6 +1666,7 @@ nocompress:
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 				PF_BUFFER *sbuf = PF.sbuf;
 				sbuf->fill[sbuf->active] = fi->POstop;
+				//PF_WISendSbuf(PF_BUFFER_MSGTAG);
 				PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
 				p = fi->PObuffer = fi->POfill = fi->POfull =
 				  sbuf->buff[sbuf->active];

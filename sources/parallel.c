@@ -1310,6 +1310,9 @@ static int PF_Wait4Slave(int src)
 	PF_CatchErrorMessages(&src, &tag, PF.mapComm);
 	PF_Receive(src, tag, &next, &tag);
 
+	if (tag == PF_BUFFER_MSGTAG ) {
+		return next;
+	}
 	if ( tag != PF_READY_MSGTAG ) {
 		MesPrint("[%d] PF_Wait4Slave: received MSGTAG %d",(WORD)PF.me,(WORD)tag);
 		return(-1);
@@ -1422,6 +1425,7 @@ static int PF_WaitAllSlaves(void)
 				else {  /*error?*/
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
+				PF_Wait4Slave(next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -1812,7 +1816,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	}
 	else if (role==ROLE_MAPPER) {
 /*
- 		#[ Slave :
+ 		#[ Mapper/Slave :
 */
 /*
 			#[ Generator Loop & EndSort :

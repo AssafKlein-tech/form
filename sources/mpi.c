@@ -65,6 +65,7 @@
 */
 
 static int PF_packsize = 0;
+static int first = 0;
 static MPI_Status PF_status;
 LONG PF_maxDollarChunkSize = 0;      /*:[04oct2005 mt]*/
 
@@ -249,6 +250,48 @@ int PF_Probe(int *src)
 
 /*
   	#] PF_Probe : 
+	#[ PF_GetDestReducer :
+*/
+
+/**
+ * @brief Calculates the reducer process ID for the current process.
+ *
+ * This function determines which reducer process should handle the output
+ * from the current process in a parallel computation setup.
+ *
+ * @return The ID of the reducer process assigned to the current process.
+ *         The returned value is always in the range [PF.nummappers, PF.numtasks - 1].
+ */
+int PF_GetDestReducer()
+{
+    return  MASTER;//(PF.me % PF.numreducers + PF.nummappers);
+}
+
+/*
+	#] PF_GetDestReducer :
+	#[ PF_WISendSbuf :
+*/
+
+/**
+ * @brief Sends the contents of the send buffer to the appropriate destination based on the MapReduce flag.
+ *
+ * This function determines the destination for sending the buffer contents based on whether
+ * MapReduce is enabled or not. If MapReduce is disabled, it sends to the MASTER. Otherwise,
+ * it sends to the reducer determined by PF_GetReducer().
+ *
+ * @param tag The message tag to be used for the send operation.
+ * @return Returns the result of the PF_ISendSbuf function call, which is typically
+ *         0 on success, or a non-zero error code on failure.
+ */
+int PF_WISendSbuf(int tag)
+{
+    if (AC.sMRflag == NO_MAPREDUCE)
+        return PF_ISendSbuf(MASTER, tag);
+    return PF_ISendSbuf(PF_GetDestReducer(), tag);
+}
+
+/*
+	#] PF_WISendSbuf :
   	#[ PF_ISendSbuf :
 */
 
@@ -270,10 +313,16 @@ int PF_ISendSbuf(int to, int tag)
 	int r = 0;
 
 	static int finished;
+	MPI_Comm comm = (tag == PF_BUFFER_MSGTAG || tag == PF_ENDBUFFER_MSGTAG ) ? PF_COMM : PF.mapComm;
 
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
-		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,PF.mapComm);
+		if (first == 0){ 
+			PF_Send(MASTER, PF_BUFFER_MSGTAG);
+			first =  1;
+		}
+		first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
+		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,comm);
 		if ( r != MPI_SUCCESS ) {
 			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d \n",
 			        PF.me,(int)AC.CModule,r);
@@ -293,7 +342,13 @@ int PF_ISendSbuf(int to, int tag)
 			break;
 	}
 
-	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF.mapComm,&s->request[a]);
+	if (comm != PF.mapComm && first == 0)
+	{
+		PF_Send(MASTER, PF_BUFFER_MSGTAG);
+		first =  1;
+	}
+	first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
+	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,comm,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);
 
@@ -378,7 +433,7 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 	}
 	else {
 		ret = MPI_Irecv(r->full[bn],(int)(r->stop[bn] - r->full[bn]),PF_WORD,from,
-		                MPI_ANY_TAG,PF.mapComm,&r->request[bn]);
+		                MPI_ANY_TAG,PF_COMM,&r->request[bn]);
 		if (ret != MPI_SUCCESS) { if(ret > 0) ret *= -1; return(ret); }
 	}
 	return(0);
@@ -408,7 +463,7 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 	if ( r->numbufs == 1 ) {
 		*size = r->stop[bn] - r->full[bn];
 		ret = MPI_Recv(r->full[bn],(int)*size,r->type[bn],r->from[bn],r->tag[bn],
-		               PF.mapComm,&(r->status[bn]));
+		               PF_COMM,&(r->status[bn]));
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
