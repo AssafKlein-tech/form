@@ -57,6 +57,7 @@
 #define PF_OPT_COLLECT_MSGTAG   72  /* slave -> master: optimization */
 #define PF_MISC_MSGTAG         100
 #define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
+#define PF_ENDSHUFFLE_MSGTAG   111  /* msame as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
 
 /*
  * A macro for checking the version of gcc.
@@ -201,10 +202,12 @@ extern LONG PF_maxDollarChunkSize;
 */
 
 /* mpi.c */
-extern int    PF_ISendSbuf(int,int);
+extern int    PF_GetDestReducer();
+extern int    PF_ISendSbuf(int,int, MPI_Comm comm);
+extern int    PF_WISendSbuf(int , FILEHANDLE *file);
 extern int    PF_Bcast(void *buffer, int count);
 extern int    PF_RawSend(int,void *,LONG,int);
-extern LONG   PF_RawRecv(int *,void *,LONG,int *, MPI_Comm);
+extern LONG   PF_RawRecv(int *,void *,LONG,int *);
 
 extern int    PF_PreparePack(void);
 extern int    PF_Pack(const void *buffer, size_t count, MPI_Datatype type);
@@ -239,6 +242,7 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 #define PF_LongMultiUnpack(buffer, count, type) PF_LongMultiUnpackImpl(buffer, count, sizeof_datatype(type), type)
 
 /* parallel.c */
+extern int    PF_ForwardTermsToMaster(void);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);

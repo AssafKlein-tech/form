@@ -58,11 +58,11 @@ int PF_LibInit(int*, char***);
 int PF_LibTerminate(int);
 int PF_Probe(int*);
 int PF_RecvWbuf(WORD*,LONG*,int*);
-int PF_IRecvRbuf(PF_BUFFER*,int,int);
-int PF_WaitRbuf(PF_BUFFER *,int,LONG *);
+int PF_IRecvRbuf(PF_BUFFER*,int,int,MPI_Comm);
+int PF_WaitRbuf(PF_BUFFER *,int,LONG *,MPI_Comm);
 int PF_RawSend(int dest, void *buf, LONG l, int tag);
-LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag, MPI_Comm comm);
-int PF_RawProbe(int *src, int *tag, int *bytesize, MPI_Comm comm);
+LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag);
+int PF_RawProbe(int *src, int *tag, int *bytesize,MPI_Comm);
 
 /* Private functions */
 
@@ -382,7 +382,8 @@ static int PF_InitTree(void)
 	GETIDENTITY
 	PF_BUFFER **rbuf = PF.rbufs;
 	UBYTE *p, *stop;
-	int numrbufs,numtasks = PF.nummappers;
+	int workerIdx,numrbufs,numtasks = (AC.sMRflag == NO_MAPREDUCE) ? PF.nummappers : PF.numreducers+1;
+	MPI_Comm comm = (AC.sMRflag == NO_MAPREDUCE) ? PF.mapComm : PF_COMM;
 	int i, j, src, numnodes;
 	int numslaves = numtasks - 1;
 	LONG size;
@@ -442,7 +443,8 @@ static int PF_InitTree(void)
 		}
 		PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 		*PF_term[i] = 0;
-		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
+		workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? i : i % PF.numreducers + PF.nummappers;
+		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,workerIdx, comm);
 	}
 	rbuf[0]->active = 0;
 	PF_term[0] = rbuf[0]->buff[0];
@@ -528,6 +530,7 @@ static WORD *PF_PutIn(int src)
 	WORD *m1, *m2;
 	LONG size;
 	PF_BUFFER *rbuf = PF.rbufs[src];
+	int workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? src : src % PF.numreducers + PF.nummappers;
 	int a = rbuf->active;
 	int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
 	WORD *lastterm = PF_term[src];
@@ -539,7 +542,10 @@ static WORD *PF_PutIn(int src)
 /*
 			very first term from this src
 */
-		tag = PF_WaitRbuf(rbuf,a,&size);
+		//MesPrint("PF_PutIn: Wait the buffer to be filled %d active buffer %d ", ident, a);
+		MPI_Comm comm = ( AC.sMRflag == NO_MAPREDUCE) ? PF.mapComm : PF_COMM;
+		tag = PF_WaitRbuf(rbuf,a,&size, comm);
+		//MesPrint("PF_PutIn: Waited" );
 		rbuf->full[a] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) *rbuf->full[a]++ = 0;
 		else if ( rbuf->numbufs > 1 ) {
@@ -548,7 +554,8 @@ static WORD *PF_PutIn(int src)
 */
 			rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 			size = (LONG)(rbuf->stop[next] - rbuf->full[next]);
-			PF_IRecvRbuf(rbuf,next,src);
+			//MesPrint("PF_PutIn: Post non blocking receive from %d to comm %d PFCOMM %d buffer %d", workerIdx, comm, PF_COMM, next);
+			PF_IRecvRbuf(rbuf,next,workerIdx,comm);
 		}
 	}
 	if ( *term == 0 && term != rbuf->full[a] ) return(PF_term[0]);
@@ -577,16 +584,18 @@ newterms:
 			while ( m2 >= term ) *m1-- = *m2--;
 			rbuf->fill[next] = term = m1 + 1;
 		}
+		MPI_Comm comm = ( AC.sMRflag == NO_MAPREDUCE) ? PF.mapComm : PF_COMM;
 		if ( rbuf->numbufs == 1 ) {
 			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 			size = (LONG)(rbuf->stop[a] - rbuf->full[a]);
-			PF_IRecvRbuf(rbuf,a,src);
+			PF_IRecvRbuf(rbuf,a,workerIdx,comm);
 		}
 /*
 			wait for new terms in the next buffer
 */
+		//MesPrint("PF_PutIn: Wait the next buffer to be filled %d active buffer %d ", workerIdx, next);
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
-		tag = PF_WaitRbuf(rbuf,next,&size);
+		tag = PF_WaitRbuf(rbuf,next,&size,comm);
 		rbuf->full[next] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) {
 			*rbuf->full[next]++ = 0;
@@ -597,7 +606,7 @@ newterms:
 */
 			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 			size = (LONG)(rbuf->stop[a] - rbuf->full[a]);
-			PF_IRecvRbuf(rbuf,a,src);
+			PF_IRecvRbuf(rbuf,a,workerIdx,comm);
 		}
 /*
 			now safely make next buffer active
@@ -915,6 +924,7 @@ int PF_EndSort(void)
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
+	MesPrint("PF_EndSort: Master starts collecting terms from slaves");
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -931,8 +941,10 @@ int PF_EndSort(void)
 
 	noutterms = 0;
 
+	MesPrint("PF_EndSort: PF_GetLoser");
 	while ( PF_loser >= 0 ) {
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
+		//MesPrint("PF_EndSort: PF_GetLoser found loser %d", PF_loser);
 		outterm = PF_term[PF_loser];
 		noutterms++;
 
@@ -961,6 +973,7 @@ int PF_EndSort(void)
 		PRINTFBUF("PF_EndSort to PutOut: ",outterm,*outterm);
 		PutOut(BHEAD outterm,&position,fout,1);
 	}
+	//MesPrint("PF_EndSort : FlushOut");
 	if ( FlushOut(&position,fout,0) ) {
 		AR.gzipCompress = oldgzipCompress;
 		return(-1);
@@ -1425,7 +1438,7 @@ static int PF_WaitAllSlaves(void)
 				else {  /*error?*/
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
-				PF_Wait4Slave(next);
+				if ( AC.sMRflag != NO_MAPREDUCE ) PF_Wait4Slave(next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -1503,7 +1516,7 @@ static int PF_WaitAllSlaves(void)
 /*
 					Send ENDSORT
 */
-				PF_ISendSbuf(next,PF_ENDSORT_MSGTAG);
+				PF_ISendSbuf(next,PF_ENDSORT_MSGTAG, PF.mapComm);
 				break;
 			default:
 /*
@@ -1700,7 +1713,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					printf("PF_Put_origin error...\n");
 				}
 #else
-				PF_ISendSbuf(next,PF_TERM_MSGTAG);
+				PF_ISendSbuf(next,PF_TERM_MSGTAG, PF.mapComm);
 #endif
 				/* Initialize the next bucket. */
 				termsinbucket = 0;
@@ -1743,6 +1756,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		if ( AR.outtohide ) AR.outfile = AR.hidefile;
 		PF.parallel = 1;
+		MesPrint("PF_Processor: Master enters end sort");
 		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
 		PF.parallel = 0;
 		if ( AR.outtohide ) {
@@ -1768,6 +1782,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#] Clean up & EndSort: 
 			#[ Collect (stats,prepro,...):
 */
+		MesPrint("Master waits for all slaves to finish");
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
@@ -1958,7 +1973,70 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fflush(stderr);
 		}
 	}
-	else {
+	else { // role==ROLE_REDUCER
+/*
+		#[ the receive buffers :
+*/
+		GETIDENTITY
+		int i, j;
+		PF_BUFFER **rbuf = PF.rbufs;
+		int numtasks = PF.nummappers; 
+		int numrbufs = PF.numrbufs; //for each mapper
+/*
+		this is the size we have in the combined sortbufs for one slave
+*/
+		NewSort(BHEAD0);
+		size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
+		//size = size / 4096;
+		MesPrint("PF_Processor: size of receive buffer for each slave = %d words", size);
+		if ( rbuf == NULL ) {
+			if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
+			if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
+			for ( i = 1; i < numtasks; i++ ) {
+				if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
+				//MesPrint("PF_Processor: rbufs[%d] = %p", i, (void*)rbuf[i]);
+			}
+		}
+		PF_Dispatch d = PF.dispatch;
+		d.N = numtasks - 1;
+    	d.total = 0;
+    	d.offset = (int*)malloc(sizeof(int)*d.N);
+
+		rbuf[0]->buff[0] = AT.SS->lBuffer;
+		rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
+		rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
+		rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
+		for ( i = 2; i < numtasks; i++ ) {
+			rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
+			rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
+		}
+		rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
+		for ( i = 1; i < numtasks; i++ ) {
+			for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
+				rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
+			}
+			//PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
+			//*PF_term[i] = 0;
+			//MesPrint("PF_Processor: rbuf[%d] = %p, PF_term[%d] = %p", i, (void*)rbuf[i], i, (void*)PF_term[i]);
+			size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
+			MesPrint("PF_Processor: Post non blocking receive buffer %d size %d", rbuf[i]->active, size);
+			PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i, PF_COMM);
+		}
+		rbuf[0]->active = 0;
+		//PF_term[0] = rbuf[0]->buff[0];
+		//PF_term[0][0] = 0;  /* PF_term[0] is used for a zero term. */
+		PF.rbufs = rbuf;
+/*
+ 		#] the receive buffers : 
+		#[ Reducer Loop & EndSort :
+*/
+		//MesPrint("PF_Processor: starts forwarding terms to master");
+		int ret = PF_ForwardTermsToMaster();
+		if ( ret < 0 ) {
+			MesPrint("PF_forwardTermsToMaster error");
+			return ret;
+		}
+		MesPrint("PF_Processor: finished forwarding terms to master");
 		/*#[ Collect (stats,prepro...) :*/
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
@@ -2002,6 +2080,75 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 
 /*
  		#] PF_Processor : 
+  	 	#[ PF_ForwardTermsToMaster : 
+*/ 
+int PF_ForwardTermsToMaster()
+{
+    int num_mappers = PF.nummappers; //excluding master
+    //int numrbufs = PF.numrbufs;
+    int done_mappers = 0;
+    int *mapper_done = Malloc1(num_mappers * sizeof(int),"PF_ForwardTermsToMaster");
+	for(  int i=1; i<num_mappers; i++ ) mapper_done[i] = 0;
+    PF_BUFFER **rbuf = PF.rbufs;
+	PF_BUFFER *buf;
+    LONG size;
+    int src, tag;
+
+    while (done_mappers < (num_mappers -1)) {
+		MesPrint("PF_ForwardTermsToMaster: loop done_mappers=%d", done_mappers);
+        src = 1;
+		buf = rbuf[src];
+		int a = buf->active;
+		int next = a+1 >= buf->numbufs ? 0 : a+1 ;
+
+		MesPrint("PF_ForwardTermsToMaster: waiting for messages from mappers");
+		//size = buf->stop[a] - buf->buff[a];
+    	//MPI_Irecv(buf, count, PF_WORD, src, tag, PF_COMM, &r);
+		//MPI_Waitany()
+		tag = PF_WaitRbuf(buf,a,&size, PF_COMM);
+		buf->full[a] += size;
+		if ( tag == PF_ENDSHUFFLE_MSGTAG ) *buf->full[a]++ = 0;
+		MesPrint("PF_ForwardTermsToMaster: waited");
+        if (tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) {
+
+			//make sbuf point to the rbuf
+			PF.sbuf = buf;
+			
+            // Forward to master
+            int forward_tag = (tag == PF_SHUFFLE_MSGTAG) ? PF_BUFFER_MSGTAG : PF_ENDBUFFER_MSGTAG;
+			MesPrint("PF_ForwardTermsToMaster: send to master tag %d done %d buffer size %d with tag %d", tag, mapper_done[src], size, forward_tag );
+			size = (LONG)(buf->full[a] - buf->buff[a]);
+			buf->fill[a] = buf->full[a]; //mark buffer as empty
+			PF_ISendSbuf(MASTER, forward_tag, PF_COMM);
+			//MesPrint("PF_ForwardTermsToMaster: sent to master");
+            if (tag == PF_ENDSHUFFLE_MSGTAG && mapper_done[src] == 0) { //last message from this mapper
+                mapper_done[src] = 1;
+                done_mappers++;
+            }
+			else { //post next receive
+				buf->full[next] = buf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
+				size = (LONG)(buf->stop[next] - buf->full[next]);
+				MesPrint("Forward: Post non blocking receive from %d to buffer %d", src,  next);
+				PF_IRecvRbuf(buf,next,src,PF_COMM);
+			}
+			//update active buffer
+			buf->active = next;
+			
+		}
+		else
+		{
+			// Handle unexpected tags or errors
+			MesPrint("!!!Unexpected MPI message src=%d tag=%d.", src, tag);
+			return (-1); // Exit with error
+		}
+	}
+		
+        // Optionally handle errors or other tags
+    free(mapper_done);
+    return (0);
+}
+/*
+ 	#] PF_ForwardTermsToMaster : 
   	#] proces.c : 
   	#[ startup :, prepro & compile
  		#[ PF_Init :
@@ -4029,7 +4176,7 @@ static int PF_Slave2MasterIP(int src)/*both master and slave*/
 	/*partodoexr[src] is the number of expression.*/
 	e = Expressions +partodoexr[src];
 	/*Get metadata:*/
-	if (PF_RawRecv(&src, &exprData,sizeof(bufIPstruct_t),&i, PF_COMM)!= sizeof(bufIPstruct_t))
+	if (PF_RawRecv(&src, &exprData,sizeof(bufIPstruct_t),&i)!= sizeof(bufIPstruct_t))
 		return(-1);
 	/*Fill in the expression data:*/
 /*	memcpy(e, &(exprData.e), sizeof(struct ExPrEsSiOn)); */
@@ -4121,7 +4268,7 @@ static int PF_ReadMaster(void)/*reads directly to its scratch!*/
 	LONG ll=0;
 	int l;
 	/*Get metadata:*/
-	if (PF_RawRecv(&m, &exprData,sizeof(bufIPstruct_t),&tag, PF_COMM)!= sizeof(bufIPstruct_t))
+	if (PF_RawRecv(&m, &exprData,sizeof(bufIPstruct_t),&tag)!= sizeof(bufIPstruct_t))
 		return(-1);
 
 	if(tag == PF_EMPTY_MSGTAG)/*No data, no job*/
@@ -4200,7 +4347,7 @@ static int PF_RecvChunkIP(FILEHANDLE *curfile, int from, LONG thesize)
 	/*Now there is enough space from curfile->POfill to curfile->POstop*/
 	{/*Block:*/
 		int tag=0;
-		receivedBytes=PF_RawRecv(&from,curfile->POfull,thesize,&tag, PF_COMM);
+		receivedBytes=PF_RawRecv(&from,curfile->POfull,thesize,&tag);
 	}/*:Block*/
 	if(receivedBytes >= 0 ){
 		curfile->POfull+=receivedBytes/sizeof(WORD);
@@ -4317,7 +4464,7 @@ int PF_RecvFile(int from, FILE *fd)
 	do{
 		char buf[PF_SNDFILEBUFSIZE];
 		int l;
-			l=PF_RawRecv(&from,buf,PF_SNDFILEBUFSIZE,&tag, PF_COMM);
+			l=PF_RawRecv(&from,buf,PF_SNDFILEBUFSIZE,&tag);
 			if(l<0)
 				return(-1);
 			if(tag == PF_EMPTY_MSGTAG)
@@ -4563,7 +4710,7 @@ static void PF_ReceiveErrorMessage(int src, int tag, MPI_Comm comm)
 		case PF_STDOUT_MSGTAG:
 		case PF_LOG_MSGTAG:
 			VectorReserve(recvBuffer, size);
-			ret = PF_RawRecv(&src, VectorPtr(recvBuffer), size, &tag, PF_COMM);
+			ret = PF_RawRecv(&src, VectorPtr(recvBuffer), size, &tag);
 			CHECK(ret == size);
 			if ( size > 0 ) {
 				int handle = (tag == PF_STDOUT_MSGTAG) ? AM.StdOut : AC.LogHandle;

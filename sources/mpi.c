@@ -262,9 +262,9 @@ int PF_Probe(int *src)
  * @return The ID of the reducer process assigned to the current process.
  *         The returned value is always in the range [PF.nummappers, PF.numtasks - 1].
  */
-int PF_GetDestReducer()
+inline int PF_GetDestReducer()
 {
-    return  MASTER;//(PF.me % PF.numreducers + PF.nummappers);
+    return  (PF.me % PF.numreducers + PF.nummappers);
 }
 
 /*
@@ -280,14 +280,52 @@ int PF_GetDestReducer()
  * it sends to the reducer determined by PF_GetReducer().
  *
  * @param tag The message tag to be used for the send operation.
+ * @param fi  Pointer to the FILEHANDLE structure containing the file information.
  * @return Returns the result of the PF_ISendSbuf function call, which is typically
  *         0 on success, or a non-zero error code on failure.
  */
-int PF_WISendSbuf(int tag)
+int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 {
     if (AC.sMRflag == NO_MAPREDUCE)
-        return PF_ISendSbuf(MASTER, tag);
-    return PF_ISendSbuf(PF_GetDestReducer(), tag);
+        return PF_ISendSbuf(MASTER, tag, PF.mapComm);
+	int dest = PF_GetDestReducer();
+	if (tag == PF_BUFFER_MSGTAG)
+	{
+		PF_BUFFER *s = PF.sbuf;
+		int a = s->active;
+		int size = s->fill[a] - s->buff[a];
+		MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
+    	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG,PF_COMM);
+	}
+	int ret;
+	PF_BUFFER *sbuf = PF.sbuf;
+	if (tag == PF_ENDBUFFER_MSGTAG) {
+		for (int  i = 0; i < PF.numreducers; i++ ) {
+			if ( i % PF.numreducers + PF.nummappers == dest ){
+				//MesPrint("PF_WISendSbuf: sending end of shuffle to %d", dest);
+				ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG, PF_COMM);
+				if (ret != 0) return (ret);
+				break;
+			}
+		}
+		for (int i = 0; i < PF.nummappers; i++ ) {
+			if ( i % PF.numreducers + PF.nummappers != dest ){
+				// reset the buffer and send empty buffers to other reducers
+				fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
+				fi->POstop = sbuf->stop[sbuf->active];
+				*(fi->POfill)++ = 0;
+				sbuf->fill[sbuf->active] = fi->POfill;
+				ret = PF_ISendSbuf(i % PF.numreducers+ PF.nummappers, PF_ENDSHUFFLE_MSGTAG, PF_COMM);
+				if (ret != 0) return (ret);
+			}
+		}
+		ret = MPI_Waitall(sbuf->numbufs,sbuf->request,sbuf->status); // Wait for all sends to finish
+		MesPrint("PF_WISendSbuf: all sends finished with error %d %d", ret, sbuf->status[0].MPI_ERROR);
+		if ( ret != MPI_SUCCESS ) return(ret);
+		first = 0; //reset fisrt flag to indicate it finished the round
+		return(0);
+	}
+	return -1;
 }
 
 /*
@@ -303,17 +341,18 @@ int PF_WISendSbuf(int tag)
  *
  * @param  to   the destination process number.
  * @param  tag  the message tag.
+ * @param  comm the MPI communicator to use for the send operation.
  * @return      0 if OK, nonzero on error.
  */
-int PF_ISendSbuf(int to, int tag)
+int PF_ISendSbuf(int to, int tag, MPI_Comm comm)
 {
+	//MesPrint("PF_ISendSbuf: from=%d to=%d, tag=%d",PF.me, to, tag);
 	PF_BUFFER *s = PF.sbuf;
 	int a = s->active;
 	int size = s->fill[a] - s->buff[a];
 	int r = 0;
 
 	static int finished;
-	MPI_Comm comm = (tag == PF_BUFFER_MSGTAG || tag == PF_ENDBUFFER_MSGTAG ) ? PF_COMM : PF.mapComm;
 
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
@@ -342,12 +381,13 @@ int PF_ISendSbuf(int to, int tag)
 			break;
 	}
 
-	if (comm != PF.mapComm && first == 0)
+	if ((tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) && first == 0) // Mapper updates master it is starting shuffling on PF.mapComm
 	{
+		//MesPrint("PF_ISendSbuf: %d Send first shuffle msg", PF.me);
 		PF_Send(MASTER, PF_BUFFER_MSGTAG);
 		first =  1;
 	}
-	first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
+	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d to %d ", PF.me, size, to, tag,comm);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,comm,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);
@@ -361,22 +401,26 @@ int PF_ISendSbuf(int to, int tag)
 				r = MPI_Waitall(s->numbufs,s->request,s->status);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
+		case PF_SHUFFLE_MSGTAG:
+		case PF_ENDSHUFFLE_MSGTAG:
 		case PF_BUFFER_MSGTAG:
-			if ( ++s->active >= s->numbufs ) s->active = 0;
-			while ( s->request[s->active] != MPI_REQUEST_NULL ) {
+			if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
+			while ( s->request[s->active] != MPI_REQUEST_NULL ) { // busy wait until the active buffer is free
 				r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
 				if ( r != MPI_SUCCESS ) return(r);
 			}
 			break;
 		case PF_ENDBUFFER_MSGTAG:
-			if ( ++s->active >= s->numbufs ) s->active = 0;
+			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
+			//MesPrint("PF_ISendSbuf: finished waiting for all sends to finish %d", r);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:
 			return(-99);
 			break;
 	}
+	//MesPrint("PF_ISendSbuf: finished send");
 	return(0);
 }
 
@@ -420,9 +464,10 @@ int PF_RecvWbuf(WORD *b, LONG *s, int *src)
  * @param  r     the \c PF_BUFFER struct for the nonblocking receive.
  * @param  bn    the index of the cyclic buffer.
  * @param  from  the source process number.
+ * @param  comm  the MPI communicator to use for the receive operation.
  * @return       0 if OK, nonzero on error.
  */
-int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
+int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from, MPI_Comm comm)
 {
 	int ret;
 	r->type[bn] = PF_WORD;
@@ -433,7 +478,7 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 	}
 	else {
 		ret = MPI_Irecv(r->full[bn],(int)(r->stop[bn] - r->full[bn]),PF_WORD,from,
-		                MPI_ANY_TAG,PF_COMM,&r->request[bn]);
+		                MPI_ANY_TAG,comm,&r->request[bn]);
 		if (ret != MPI_SUCCESS) { if(ret > 0) ret *= -1; return(ret); }
 	}
 	return(0);
@@ -454,16 +499,17 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
  * @param       r     the \c PF_BUFFER struct for the pending nonblocking receive.
  * @param       bn    the index of the cyclic buffer.
  * @param[out]  size  the actual size of received data.
+ * @param      comm   the communicator for the receive operation.
  * @return            the received message tag. A negative value indicates an error.
  */
-int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
+int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size, MPI_Comm comm)
 {
 	int ret, rsize;
 
 	if ( r->numbufs == 1 ) {
 		*size = r->stop[bn] - r->full[bn];
 		ret = MPI_Recv(r->full[bn],(int)*size,r->type[bn],r->from[bn],r->tag[bn],
-		               PF_COMM,&(r->status[bn]));
+		               comm,&(r->status[bn]));
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
@@ -472,6 +518,7 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 	}
 	else {
 		while ( r->request[bn] != MPI_REQUEST_NULL ) {
+			//MesPrint("PF_WaitRbuf: waiting for buffer %d to finish from buffer %d", bn, r );
 			ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
 			if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 			while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
@@ -538,13 +585,12 @@ int PF_RawSend(int dest, void *buf, LONG l, int tag)
  * @param[out]     buf      the receive buffer.
  * @param          thesize  the size of the receive buffer in bytes.
  * @param[out]     tag      the message tag of the actual received message.
- * @param[in]      comm     the communicator for the receive operation.
  * @return                  the actual sizeof received data in bytes, or -1 on failure.
  */
-LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag, MPI_Comm comm)
+LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag)
 {
 	MPI_Status stat;
-	int ret=MPI_Recv(buf,(int)thesize,MPI_BYTE,*src,MPI_ANY_TAG,comm,&stat);
+	int ret=MPI_Recv(buf,(int)thesize,MPI_BYTE,*src,MPI_ANY_TAG,PF_COMM,&stat);
 	if ( ret != MPI_SUCCESS ) return(-1);
 	if ( MPI_Get_count(&stat,MPI_BYTE,&ret) != MPI_SUCCESS ) return(-1);
 	*tag = stat.MPI_TAG;

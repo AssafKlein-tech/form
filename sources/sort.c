@@ -1666,8 +1666,7 @@ nocompress:
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
 				PF_BUFFER *sbuf = PF.sbuf;
 				sbuf->fill[sbuf->active] = fi->POstop;
-				//PF_WISendSbuf(PF_BUFFER_MSGTAG);
-				PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);
 				p = fi->PObuffer = fi->POfill = fi->POfull =
 				  sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
@@ -1799,13 +1798,13 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		PF_BUFFER *sbuf = PF.sbuf;
 		if ( fi->POfill >= fi->POstop ){
 		  sbuf->fill[sbuf->active] = fi->POstop;
-		  PF_ISendSbuf(MASTER,PF_BUFFER_MSGTAG);
+		  PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);
 		  fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
 		  fi->POstop = sbuf->stop[sbuf->active];
 		}
 		*(fi->POfill)++ = 0;
 		sbuf->fill[sbuf->active] = fi->POfill;
-		PF_ISendSbuf(MASTER,PF_ENDBUFFER_MSGTAG);
+		PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, fi);
 		fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
 		fi->POstop = sbuf->stop[sbuf->active];
 		return(0);
