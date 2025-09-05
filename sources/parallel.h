@@ -184,10 +184,10 @@ typedef struct ParallelVars {
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
-	MPI_Comm    mapComm;			/*communicator for mappers*/
+	//MPI_Comm    mapComm;			/*communicator for mappers*/
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
-	PADPOSITION(3,0,10,2,0);
+	PADPOSITION(2,0,10,2,0);
 } PARALLELVARS;
 
 extern PARALLELVARS PF;
@@ -203,7 +203,7 @@ extern LONG PF_maxDollarChunkSize;
 
 /* mpi.c */
 extern int    PF_GetDestReducer();
-extern int    PF_ISendSbuf(int,int, MPI_Comm comm);
+extern int    PF_ISendSbuf(int,int);
 extern int    PF_WISendSbuf(int , FILEHANDLE *file);
 extern int    PF_Bcast(void *buffer, int count);
 extern int    PF_RawSend(int,void *,LONG,int);

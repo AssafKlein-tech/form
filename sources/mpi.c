@@ -131,9 +131,6 @@ int PF_LibInit(int *argcp, char ***argvp)
 	ret = MPI_Comm_size(PF_COMM,&PF.numtasks);
 	if ( ret != MPI_SUCCESS ) return(ret);
 	PF.nummappers = PF.numtasks;
-	PF.mapComm = MPI_COMM_NULL;
-	int role = (PF.me < PF.nummappers) ? 1 : MPI_UNDEFINED;
-	MPI_Comm_split(PF_COMM, role, PF.me, &PF.mapComm);
 
 	/* Initialization of packed communications. */
 	PF_packsize = PF_PACKSIZE/sizeof(int)*sizeof(int);
@@ -236,11 +233,11 @@ int PF_Probe(int *src)
 {
 	int ret, flag;
 	if ( *src == PF_ANY_SOURCE ) { /*Blocking call*/
-		ret = MPI_Probe(*src,MPI_ANY_TAG,PF.mapComm,&PF_status);
+		ret = MPI_Probe(*src,MPI_ANY_TAG,PF_COMM,&PF_status);
 		flag = 1;
 	}
 	else { /*Non-blocking call*/
-		ret = MPI_Iprobe(*src,MPI_ANY_TAG,PF.mapComm,&flag,&PF_status);
+		ret = MPI_Iprobe(*src,MPI_ANY_TAG,PF_COMM,&flag,&PF_status);
 	}
 	*src = PF_status.MPI_SOURCE;
 	if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
@@ -287,15 +284,15 @@ inline int PF_GetDestReducer()
 int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 {
     if (AC.sMRflag == NO_MAPREDUCE)
-        return PF_ISendSbuf(MASTER, tag, PF.mapComm);
+        return PF_ISendSbuf(MASTER, tag);
 	int dest = PF_GetDestReducer();
 	if (tag == PF_BUFFER_MSGTAG)
 	{
 		PF_BUFFER *s = PF.sbuf;
 		int a = s->active;
 		int size = s->fill[a] - s->buff[a];
-		MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
-    	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG,PF_COMM);
+		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
+    	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	}
 	int ret;
 	PF_BUFFER *sbuf = PF.sbuf;
@@ -303,7 +300,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 		for (int  i = 0; i < PF.numreducers; i++ ) {
 			if ( i % PF.numreducers + PF.nummappers == dest ){
 				//MesPrint("PF_WISendSbuf: sending end of shuffle to %d", dest);
-				ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG, PF_COMM);
+				ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 				if (ret != 0) return (ret);
 				break;
 			}
@@ -315,12 +312,12 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 				fi->POstop = sbuf->stop[sbuf->active];
 				*(fi->POfill)++ = 0;
 				sbuf->fill[sbuf->active] = fi->POfill;
-				ret = PF_ISendSbuf(i % PF.numreducers+ PF.nummappers, PF_ENDSHUFFLE_MSGTAG, PF_COMM);
+				ret = PF_ISendSbuf(i % PF.numreducers+ PF.nummappers, PF_ENDSHUFFLE_MSGTAG);
 				if (ret != 0) return (ret);
 			}
 		}
 		ret = MPI_Waitall(sbuf->numbufs,sbuf->request,sbuf->status); // Wait for all sends to finish
-		MesPrint("PF_WISendSbuf: all sends finished with error %d %d", ret, sbuf->status[0].MPI_ERROR);
+		//MesPrint("PF_WISendSbuf: all sends finished with error %d %d", ret, sbuf->status[0].MPI_ERROR);
 		if ( ret != MPI_SUCCESS ) return(ret);
 		first = 0; //reset fisrt flag to indicate it finished the round
 		return(0);
@@ -341,10 +338,9 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
  *
  * @param  to   the destination process number.
  * @param  tag  the message tag.
- * @param  comm the MPI communicator to use for the send operation.
  * @return      0 if OK, nonzero on error.
  */
-int PF_ISendSbuf(int to, int tag, MPI_Comm comm)
+int PF_ISendSbuf(int to, int tag)
 {
 	//MesPrint("PF_ISendSbuf: from=%d to=%d, tag=%d",PF.me, to, tag);
 	PF_BUFFER *s = PF.sbuf;
@@ -361,7 +357,7 @@ int PF_ISendSbuf(int to, int tag, MPI_Comm comm)
 			first =  1;
 		}
 		first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
-		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,comm);
+		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,PF_COMM);
 		if ( r != MPI_SUCCESS ) {
 			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d \n",
 			        PF.me,(int)AC.CModule,r);
@@ -381,14 +377,14 @@ int PF_ISendSbuf(int to, int tag, MPI_Comm comm)
 			break;
 	}
 
-	if ((tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) && first == 0) // Mapper updates master it is starting shuffling on PF.mapComm
+	if ((tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) && first == 0) // Mapper updates master it is starting shuffling
 	{
 		//MesPrint("PF_ISendSbuf: %d Send first shuffle msg", PF.me);
 		PF_Send(MASTER, PF_BUFFER_MSGTAG);
 		first =  1;
 	}
 	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d to %d ", PF.me, size, to, tag,comm);
-	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,comm,&s->request[a]);
+	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);
 
@@ -441,7 +437,7 @@ int PF_RecvWbuf(WORD *b, LONG *s, int *src)
 {
 	int i, r = 0;
 
-	r = MPI_Recv(b,(int)*s,PF_WORD,*src,PF_ANY_MSGTAG,PF.mapComm,&PF_status);
+	r = MPI_Recv(b,(int)*s,PF_WORD,*src,PF_ANY_MSGTAG,PF_COMM,&PF_status);
 	if ( r != MPI_SUCCESS ) { if ( r > 0 ) r *= -1; return(r); }
 
 	r = MPI_Get_count(&PF_status,PF_WORD,&i);
@@ -464,10 +460,9 @@ int PF_RecvWbuf(WORD *b, LONG *s, int *src)
  * @param  r     the \c PF_BUFFER struct for the nonblocking receive.
  * @param  bn    the index of the cyclic buffer.
  * @param  from  the source process number.
- * @param  comm  the MPI communicator to use for the receive operation.
  * @return       0 if OK, nonzero on error.
  */
-int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from, MPI_Comm comm)
+int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 {
 	int ret;
 	r->type[bn] = PF_WORD;
@@ -478,7 +473,7 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from, MPI_Comm comm)
 	}
 	else {
 		ret = MPI_Irecv(r->full[bn],(int)(r->stop[bn] - r->full[bn]),PF_WORD,from,
-		                MPI_ANY_TAG,comm,&r->request[bn]);
+		                MPI_ANY_TAG,PF_COMM,&r->request[bn]);
 		if (ret != MPI_SUCCESS) { if(ret > 0) ret *= -1; return(ret); }
 	}
 	return(0);
@@ -499,17 +494,16 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from, MPI_Comm comm)
  * @param       r     the \c PF_BUFFER struct for the pending nonblocking receive.
  * @param       bn    the index of the cyclic buffer.
  * @param[out]  size  the actual size of received data.
- * @param      comm   the communicator for the receive operation.
  * @return            the received message tag. A negative value indicates an error.
  */
-int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size, MPI_Comm comm)
+int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 {
 	int ret, rsize;
 
 	if ( r->numbufs == 1 ) {
 		*size = r->stop[bn] - r->full[bn];
 		ret = MPI_Recv(r->full[bn],(int)*size,r->type[bn],r->from[bn],r->tag[bn],
-		               comm,&(r->status[bn]));
+		               PF_COMM,&(r->status[bn]));
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
@@ -609,15 +603,14 @@ LONG PF_RawRecv(int *src,void *buf,LONG thesize,int *tag)
  * @param[in,out]  src       the source process number. In output, that of the actual received message.
  * @param[in,out]  tag       the message tag. In output, that of the actual received message.
  * @param[out]     bytesize  the size of incoming data in bytes.
- * @param[in]      comm      the communicator.
  * @return                   0 if OK, nonzero on error.
  */
-int PF_RawProbe(int *src, int *tag, int *bytesize, MPI_Comm comm)
+int PF_RawProbe(int *src, int *tag, int *bytesize)
 {
 	MPI_Status stat;
 	int srcval = src != NULL ? *src : PF_ANY_SOURCE;
 	int tagval = tag != NULL ? *tag : PF_ANY_MSGTAG;
-	int ret = MPI_Probe(srcval, tagval, comm, &stat);
+	int ret = MPI_Probe(srcval, tagval, PF_COMM, &stat);
 	if ( ret != MPI_SUCCESS ) return -1;
 	if ( src != NULL ) *src = stat.MPI_SOURCE;
 	if ( tag != NULL ) *tag = stat.MPI_TAG;
@@ -752,11 +745,11 @@ int PF_Pack(const void *buffer, size_t count, MPI_Datatype type)
 
 	if ( count > INT_MAX ) return -99;
 
-	err = MPI_Pack_size((int)count, type, PF.mapComm, &bytes);
+	err = MPI_Pack_size((int)count, type, PF_COMM, &bytes);
 	MPI_ERRCODE_CHECK(err);
 	if ( PF_packpos + bytes > PF_packstop - PF_packbuf ) return -99;
 
-	err = MPI_Pack((void *)buffer, (int)count, type, PF_packbuf, PF_packsize, &PF_packpos, PF.mapComm);
+	err = MPI_Pack((void *)buffer, (int)count, type, PF_packbuf, PF_packsize, &PF_packpos, PF_COMM);
 	MPI_ERRCODE_CHECK(err);
 
 	return 0;
@@ -781,7 +774,7 @@ int PF_Unpack(void *buffer, size_t count, MPI_Datatype type)
 
 	if ( count > INT_MAX ) return -99;
 
-	err = MPI_Unpack(PF_packbuf, PF_packsize, &PF_packpos, buffer, (int)count, type, PF.mapComm);
+	err = MPI_Unpack(PF_packbuf, PF_packsize, &PF_packpos, buffer, (int)count, type, PF_COMM);
 	MPI_ERRCODE_CHECK(err);
 
 	return 0;
@@ -929,7 +922,7 @@ int PF_UnpackString(UBYTE *str)
 int PF_Send(int to, int tag)
 {
 	int err;
-	err = MPI_Ssend(PF_packbuf, PF_packpos, MPI_PACKED, to, tag, PF.mapComm);
+	err = MPI_Ssend(PF_packbuf, PF_packpos, MPI_PACKED, to, tag, PF_COMM);
 	MPI_ERRCODE_CHECK(err);
 	return 0;
 }
@@ -957,7 +950,7 @@ int PF_Receive(int src, int tag, int *psrc, int *ptag)
 	int err;
 	MPI_Status status;
 	PF_InitPackBuf();
-	err = MPI_Recv(PF_packbuf, PF_packsize, MPI_PACKED, src, tag, PF.mapComm, &status);
+	err = MPI_Recv(PF_packbuf, PF_packsize, MPI_PACKED, src, tag, PF_COMM, &status);
 	MPI_ERRCODE_CHECK(err);
 	if ( psrc ) *psrc = status.MPI_SOURCE;
 	if ( ptag ) *ptag = status.MPI_TAG;
@@ -1589,7 +1582,7 @@ int PF_LongSinglePack(const void *buffer, size_t count, MPI_Datatype type)
 		be increased by 1 and re-allocated
 */
 	ret = MPI_Pack((void *)buffer,(int)count,type,
-	               PF_longPackBuf,PF_longPackTop,&PF_longPackPos,PF.mapComm);
+	               PF_longPackBuf,PF_longPackTop,&PF_longPackPos,PF_COMM);
 	if ( ret != MPI_SUCCESS ) return(ret);
 	return(0);
 }
