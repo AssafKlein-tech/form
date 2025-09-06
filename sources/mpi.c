@@ -294,25 +294,19 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
     	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	}
-	int ret;
-	PF_BUFFER *sbuf = PF.sbuf;
-	if (tag == PF_ENDBUFFER_MSGTAG) {
-		for (int  i = 0; i < PF.numreducers; i++ ) {
-			if ( i % PF.numreducers + PF.nummappers == dest ){
-				//MesPrint("PF_WISendSbuf: sending end of shuffle to %d", dest);
-				ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
-				if (ret != 0) return (ret);
-				break;
-			}
-		}
-		for (int i = 0; i < PF.nummappers; i++ ) {
+	else if (tag == PF_ENDBUFFER_MSGTAG) {
+		int ret;
+		PF_BUFFER *sbuf = PF.sbuf;
+		ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
+		if (ret != 0) return (ret);
+		for (int i = 0; i < PF.numreducers; i++ ) {
 			if ( i % PF.numreducers + PF.nummappers != dest ){
 				// reset the buffer and send empty buffers to other reducers
 				fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
 				*(fi->POfill)++ = 0;
 				sbuf->fill[sbuf->active] = fi->POfill;
-				ret = PF_ISendSbuf(i % PF.numreducers+ PF.nummappers, PF_ENDSHUFFLE_MSGTAG);
+				ret = PF_ISendSbuf((i % PF.numreducers + PF.nummappers), PF_ENDSHUFFLE_MSGTAG);
 				if (ret != 0) return (ret);
 			}
 		}
@@ -322,7 +316,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 		first = 0; //reset fisrt flag to indicate it finished the round
 		return(0);
 	}
-	return -1;
+	return (-1);
 }
 
 /*
@@ -379,7 +373,7 @@ int PF_ISendSbuf(int to, int tag)
 
 	if ((tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) && first == 0) // Mapper updates master it is starting shuffling
 	{
-		//MesPrint("PF_ISendSbuf: %d Send first shuffle msg", PF.me);
+		//MesPrint("[%d] PF_ISendSbuf: Sends first shuffle msg", PF.me);
 		PF_Send(MASTER, PF_BUFFER_MSGTAG);
 		first =  1;
 	}

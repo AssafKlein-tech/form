@@ -2025,7 +2025,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			//MesPrint("PF_Processor: rbuf[%d] = %p, PF_term[%d] = %p", i, (void*)rbuf[i], i, (void*)PF_term[i]);
 			size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
 			MLOCK(ErrorMessageLock);
-			MesPrint("[%d] PF_Processor: Post non blocking receive buffer %d size %d", PF.me, rbuf[i]->active, size);
+			//MesPrint("[%d] PF_Processor: Post non blocking receive from %d buffer %d size %d", PF.me, i,rbuf[i]->active, size);
 			MUNLOCK(ErrorMessageLock);
 			PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
 		}
@@ -2101,10 +2101,11 @@ int PF_ForwardTermsToMaster()
     PF_BUFFER **rbuf = PF.rbufs;
 	PF_BUFFER *buf;
     LONG size;
-    int src, tag, r;
-    while (done_mappers < (num_mappers -1)) {
+    int tag, r,src;
+    while (done_mappers < (2 -1)) {
 		//MesPrint("PF_ForwardTermsToMaster: loop done_mappers=%d", done_mappers);
-        src = 1;
+        src = (PF.me - 2)% PF.numreducers + 1; //get next mapper in round robin fashion
+		//MesPrint("[%d] PF_ForwardTermsToMaster: Probe from ANY_SOURCE", PF.me);
 		buf = rbuf[src];
 		int a = buf->active;
 		int next = a+1 >= buf->numbufs ? 0 : a+1 ;
@@ -2136,6 +2137,18 @@ int PF_ForwardTermsToMaster()
 				MesPrint("[%d] PF_ForwardTermsToMaster: done with mapper %d", PF.me, src);
                 mapper_done[src] = 1;
                 done_mappers++;
+				for( int i=1; i<num_mappers; i++ ) {
+					if ( i != src )
+					{
+						buf = rbuf[src];
+						tag = PF_WaitRbuf(buf,a,&size);
+						if( tag =! PF_ENDSHUFFLE_MSGTAG )
+						{
+							MesPrint("!!!Unexpected MPI message src=%d tag=%d.", src, tag);
+							return (-1); // Exit with error
+						}
+					}
+				}
             }
 			else { //post next receive
 				while ( buf->request[next] != MPI_REQUEST_NULL ) { // busy wait until the next buffer is free
