@@ -290,7 +290,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 	{
 		PF_BUFFER *s = PF.sbuf;
 		int a = s->active;
-		int size = s->fill[a] - s->buff[a];
+		//int size = s->fill[a] - s->buff[a];
 		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
     	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	}

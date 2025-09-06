@@ -167,6 +167,10 @@ typedef struct {
   	#] s/r-bufs : 
   	#[ global variables used by the PF_functions : need to be known everywhere
 */
+typedef struct {
+    MPI_Request *reqs;  // flat array of persistent requests
+	PADPOSITION(1,0,0,0,0);
+} PF_Dispatch;
 
 typedef struct ParallelVars {
 	FILEHANDLE  slavebuf;       /* (slave) allocated if there are RHS expressions */
@@ -185,9 +189,10 @@ typedef struct ParallelVars {
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
 	//MPI_Comm    mapComm;			/*communicator for mappers*/
+	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
-	PADPOSITION(2,0,10,2,0);
+	PADPOSITION(3,0,10,2,0);
 } PARALLELVARS;
 
 extern PARALLELVARS PF;
@@ -243,6 +248,8 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 
 /* parallel.c */
 extern int    PF_ForwardTermsToMaster(void);
+extern int    PF_ForwardTermsToMaster(void);
+extern void   PF_SetupFlatRequestsView(void);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);

@@ -1983,6 +1983,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 */
 		GETIDENTITY
 		int i, j;
+		int err;
 		PF_BUFFER **rbuf = PF.rbufs;
 		int numtasks = PF.nummappers; 
 		int numrbufs = PF.numrbufs; //for each mapper
@@ -2012,10 +2013,10 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			}
 			rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
 		}
-		//PF_Dispatch d = PF.dispatch;
-		//d.N = numtasks - 1;
-    	//d.total = 0;
-    	//d.offset = (int*)malloc(sizeof(int)*d.N);
+		// create a receivers requests flat view
+		PF_SetupFlatRequestsView();
+		PF_Dispatch* d = &PF.dispatch;
+
 		for ( i = 1; i < numtasks; i++ ) {
 			for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
 				rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
@@ -2024,10 +2025,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			//*PF_term[i] = 0;
 			//MesPrint("PF_Processor: rbuf[%d] = %p, PF_term[%d] = %p", i, (void*)rbuf[i], i, (void*)PF_term[i]);
 			size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
-			MLOCK(ErrorMessageLock);
+			//MLOCK(ErrorMessageLock);
 			//MesPrint("[%d] PF_Processor: Post non blocking receive from %d buffer %d size %d", PF.me, i,rbuf[i]->active, size);
-			MUNLOCK(ErrorMessageLock);
-			PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
+			//MUNLOCK(ErrorMessageLock);
+			err = PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
+			if (err) return err;
+			int k = (i-1) * numrbufs;
+			d->reqs[k] = rbuf[i]->request[j];
 		}
 		rbuf[0]->active = 0;
 		//PF_term[0] = rbuf[0]->buff[0];
@@ -2089,6 +2093,22 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 
 /*
  		#] PF_Processor : 
+		#[ PF_SetupFlatRequestsView :
+*/
+void PF_SetupFlatRequestsView()
+{
+	PF_Dispatch* d = &PF.dispatch;
+	int total = (PF.nummappers - 1) * PF.numrbufs;
+	d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*total,  "Reducer: dispatch");
+    if (!d->reqs ) {
+		MesPrint("PF_SetupFlatRequestsView: malloc error");
+		exit(-1);
+	}
+	for (int i=0; i<total; i++) d->reqs[i] = MPI_REQUEST_NULL;
+    return ;
+}
+/*
+		#] PF_SetupFlatRequestsView :
   	 	#[ PF_ForwardTermsToMaster : 
 */ 
 int PF_ForwardTermsToMaster()
@@ -2140,19 +2160,20 @@ int PF_ForwardTermsToMaster()
 				for( int i=1; i<num_mappers; i++ ) {
 					if ( i != src )
 					{
-						buf = rbuf[src];
+						buf = rbuf[i];
 						tag = PF_WaitRbuf(buf,a,&size);
-						if( tag =! PF_ENDSHUFFLE_MSGTAG )
+						if( tag != PF_ENDSHUFFLE_MSGTAG )
 						{
-							MesPrint("!!!Unexpected MPI message src=%d tag=%d.", src, tag);
+							MesPrint("[%d] !!!Unexpected MPI message src=%d tag=%d.", PF.me, i, tag);
 							return (-1); // Exit with error
 						}
 					}
 				}
             }
 			else { //post next receive
+				int rsize;
 				while ( buf->request[next] != MPI_REQUEST_NULL ) { // busy wait until the next buffer is free
-					r = MPI_Waitsome(buf->numbufs,buf->request,&size,buf->index,buf->retstat);
+					r = MPI_Waitsome(buf->numbufs,buf->request,&rsize,buf->index,buf->retstat);
 					if ( r != MPI_SUCCESS ) return(r);
 				}
 				buf->full[next] = buf->fill[next] = buf->buff[next];
