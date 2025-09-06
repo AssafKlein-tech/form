@@ -472,6 +472,9 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 		r->from[bn] = from;
 	}
 	else {
+		//MLOCK(errorMessageLock);
+		//MesPrint("[%d] PF_IRecvRbuf: posting Irecv for buffer %d from %d size %d ", PF.me, bn, from, (int)(r->stop[bn] - r->full[bn]));
+		//MUNLOCK(errorMessageLock);
 		ret = MPI_Irecv(r->full[bn],(int)(r->stop[bn] - r->full[bn]),PF_WORD,from,
 		                MPI_ANY_TAG,PF_COMM,&r->request[bn]);
 		if (ret != MPI_SUCCESS) { if(ret > 0) ret *= -1; return(ret); }
