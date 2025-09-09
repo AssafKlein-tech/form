@@ -2016,10 +2016,15 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		// create a receivers requests flat view
 		PF_SetupFlatRequestsView();
 		PF_Dispatch* d = &PF.dispatch;
+		for ( j = 0; j < PF.numrbufs; j++ ) {
+			rbuf[0]->request[j] = MPI_REQUEST_NULL;
+			//MesPrint("PF_Processor: rbuf[0]->request[%d] = %p", j, (void*)rbuf[0]->request[j]);
+		}
 
 		for ( i = 1; i < numtasks; i++ ) {
 			for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
 				rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
+				rbuf[i]->request[j] = MPI_REQUEST_NULL;
 			}
 			//PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 			//*PF_term[i] = 0;
@@ -2030,8 +2035,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			//MUNLOCK(ErrorMessageLock);
 			err = PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
 			if (err) return err;
-			int k = (i-1) * numrbufs;
-			d->reqs[k] = rbuf[i]->request[j];
+			int k = i * numrbufs;
+			d->reqs[k] = rbuf[i]->request[rbuf[i]->active];
+			//MesPrint("PF_Processor: posted Irecv from %d into rbuf[%d]->buff[%d] = %p reqs[%d]=%p", i, i, rbuf[i]->active, (void*)rbuf[i]->buff[j], k, (void*)d->reqs[k]);
 		}
 		rbuf[0]->active = 0;
 		//PF_term[0] = rbuf[0]->buff[0];
@@ -2098,7 +2104,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 void PF_SetupFlatRequestsView()
 {
 	PF_Dispatch* d = &PF.dispatch;
-	int total = (PF.nummappers - 1) * PF.numrbufs;
+	const int total = PF.nummappers * PF.numrbufs;
 	d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*total,  "Reducer: dispatch");
     if (!d->reqs ) {
 		MesPrint("PF_SetupFlatRequestsView: malloc error");
@@ -2109,6 +2115,24 @@ void PF_SetupFlatRequestsView()
 }
 /*
 		#] PF_SetupFlatRequestsView :
+		#[ PF_FreeReceiveRequests :
+*/
+void PF_FreeReceiveRequests(PF_BUFFER *rbuf, int index)
+{
+	PF_Dispatch* d = &PF.dispatch;
+	const int base = index * PF.numrbufs;
+	for (int s = 0;s < PF.numrbufs; s++) {
+        MPI_Request *r = &rbuf->request[s];
+        MPI_Cancel(r);                 // harmless if already matched
+        MPI_Status sttmp;
+        MPI_Wait(r, &sttmp);           // complete a cancelled request
+        MPI_Request_free(r);           // free persistent handle
+        ((MPI_Request*)d->reqs)[base + s] = MPI_REQUEST_NULL;
+	}
+    return ;
+}
+/*
+		#] PF_FreeReceiveRequests :
   	 	#[ PF_ForwardTermsToMaster : 
 */ 
 int PF_ForwardTermsToMaster()
@@ -2120,57 +2144,74 @@ int PF_ForwardTermsToMaster()
 	for(  int i=1; i<num_mappers; i++ ) mapper_done[i] = 0;
     PF_BUFFER **rbuf = PF.rbufs;
 	PF_BUFFER *buf;
-    LONG size;
-    int tag, r,src;
-    while (done_mappers < (2 -1)) {
+	PF_Dispatch* d = &PF.dispatch;
+	const int total = PF.nummappers * PF.numrbufs;
+    LONG size = 0;
+    int tag, r,src, idx = MPI_UNDEFINED;
+    while (done_mappers < (PF.nummappers -1)) {
 		//MesPrint("PF_ForwardTermsToMaster: loop done_mappers=%d", done_mappers);
-        src = (PF.me - 2)% PF.numreducers + 1; //get next mapper in round robin fashion
+        //src = (PF.me - 2)% PF.numreducers + 1; //get next mapper in round robin fashion
 		//MesPrint("[%d] PF_ForwardTermsToMaster: Probe from ANY_SOURCE", PF.me);
+		MPI_Status st;
+		//MLOCK(ErrorMessageLock);
+		//MesPrint("[%d] PF_ForwardTermsToMaster: waiting for messages from mappers. total %d d->reqs %d , idx %d , st %d ", PF.me, total, d->reqs, idx, st);
+		/*MesPrint("Requests: null=%p", MPI_REQUEST_NULL);
+		for (int i=0; i<total; i++) {
+			MesPrint("Reqs[%d] = %p", i,(void*)d->reqs[i]);
+			MesPrint("rbuf %d active %d",i/PF.numrbufs, i%PF.numrbufs);
+			MesPrint("req %p",(void*)rbuf[i/PF.numrbufs]->request[i%PF.numrbufs]);
+		}
+		MesPrint("\n");*/
+		int err = MPI_Waitany(total, d->reqs, &idx, &st);
+		//MesPrint("[%d] PF_ForwardTermsToMaster: got message from %d", PF.me, idx);
+		if (err != MPI_SUCCESS) { free(mapper_done); free(d->reqs); return err; }
+		if (idx == MPI_UNDEFINED) {MesPrint("Error"); continue;} // all entries are NULL
+		//MesPrint("idx = %d", idx);
+		src = idx/PF.numrbufs; //which mapper
+		//MesPrint("src = %d", src);
 		buf = rbuf[src];
 		int a = buf->active;
-		int next = a+1 >= buf->numbufs ? 0 : a+1 ;
-		//MLOCK(ErrorMessageLock);
-		MesPrint("[%d] PF_ForwardTermsToMaster: waiting for messages from mappers", PF.me);
-		//MUNLOCK(ErrorMessageLock);
-		//size = buf->stop[a] - buf->buff[a];
-    	//MPI_Irecv(buf, count, PF_WORD, src, tag, PF_COMM, &r);
-		//MPI_Waitany()
-		tag = PF_WaitRbuf(buf,a,&size);
-		buf->full[a] += size;
-		if ( tag == PF_ENDSHUFFLE_MSGTAG ) *buf->full[a]++ = 0;
-		//MesPrint("PF_ForwardTermsToMaster: waited");
-        if (tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) {
+		//MesPrint("a = %d", a);
+		//MesPrint(" buf->request[%d] = %p, d->reqs[%d] = %p", a, (void*)buf->request[a], idx, (void*)d->reqs[idx]);
+		buf->request[a] = d->reqs[idx]; //this one is finished. supposed to be NULL now
 
+		int next = a+1 >= buf->numbufs ? 0 : a+1 ;
+
+		 /* Validate tag */
+        tag = st.MPI_TAG;
+		//tag = PF_WaitRbuf(buf,a,&size);
+		size = 0;
+		int ret = MPI_Get_count(&st,buf->type[a],&size);
+		buf->full[a] += size;
+		//MesPrint("%d",buf->buff[a][2]);
+		//MesPrint("[%d] PF_ForwardTermsToMaster: received from %d tag %d buffer %d size %d fill %d ret = %d", PF.me, src, tag, a, size, buf->full[a] - buf->buff[a], ret);
+		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+		//MesPrint(" Not exiting");
+		//if ( tag == PF_ENDSHUFFLE_MSGTAG ) *buf->full[a]++ = 0;
+		//MesPrint("PF_ForwardTermsToMaster: waited");
+		//MesPrint("Increasing buf->full[%d] to %d", a, buf->full[a] - buf->buff[a]);
+        if (tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) {
+			//MesPrint(" Not exiting2");
 			//make sbuf point to the rbuf
 			PF.sbuf = buf;
 			
             // Forward to master
             int forward_tag = (tag == PF_SHUFFLE_MSGTAG) ? PF_BUFFER_MSGTAG : PF_ENDBUFFER_MSGTAG;
-			//MLOCK(ErrorMessageLock);
-			MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
-			//MUNLOCK(ErrorMessageLock);
 			size = (LONG)(buf->full[a] - buf->buff[a]);
 			buf->fill[a] = buf->stop[a]; //mark buffer as empty
-			PF_ISendSbuf(MASTER, forward_tag);
 			//MesPrint("PF_ForwardTermsToMaster: sent to master");
             if (tag == PF_ENDSHUFFLE_MSGTAG && mapper_done[src] == 0) { //last message from this mapper
+				if (size != 1){
+					MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+					PF_ISendSbuf(MASTER, forward_tag);
+				}
 				MesPrint("[%d] PF_ForwardTermsToMaster: done with mapper %d", PF.me, src);
                 mapper_done[src] = 1;
                 done_mappers++;
-				for( int i=1; i<num_mappers; i++ ) {
-					if ( i != src )
-					{
-						buf = rbuf[i];
-						tag = PF_WaitRbuf(buf,a,&size);
-						if( tag != PF_ENDSHUFFLE_MSGTAG )
-						{
-							MesPrint("[%d] !!!Unexpected MPI message src=%d tag=%d.", PF.me, i, tag);
-							return (-1); // Exit with error
-						}
-					}
-				}
             }
 			else { //post next receive
+				MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+				PF_ISendSbuf(MASTER, forward_tag);
 				int rsize;
 				while ( buf->request[next] != MPI_REQUEST_NULL ) { // busy wait until the next buffer is free
 					r = MPI_Waitsome(buf->numbufs,buf->request,&rsize,buf->index,buf->retstat);
@@ -2181,7 +2222,11 @@ int PF_ForwardTermsToMaster()
 				//MLOCK(ErrorMessageLock);
 				MesPrint("[%d] PF_ForwardTermsToMaster: Post non blocking receive from %d to buffer %d size %d fill %d",PF.me, src,  next, size,buf->fill[next] );
 				//MUNLOCK(ErrorMessageLock);
-				PF_IRecvRbuf(buf,next,src);
+				err = PF_IRecvRbuf(buf,next,src);
+				if (err) return err;
+				int k = src * PF.numrbufs + next;
+				d->reqs[k] = buf->request[next];
+				MesPrint("PF_Processor: posted Irecv from %d into rbuf[%d]->buff[%d] = %p reqs[%d]=%p", src, src, next, (void*)buf->buff[next], k, (void*)d->reqs[k]);
 			}
 			//update active buffer
 			buf->active = next;

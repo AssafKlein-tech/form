@@ -289,7 +289,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 	if (tag == PF_BUFFER_MSGTAG)
 	{
 		PF_BUFFER *s = PF.sbuf;
-		int a = s->active;
+		//int a = s->active;
 		//int size = s->fill[a] - s->buff[a];
 		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
     	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
@@ -377,7 +377,7 @@ int PF_ISendSbuf(int to, int tag)
 		PF_Send(MASTER, PF_BUFFER_MSGTAG);
 		first =  1;
 	}
-	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d to %d ", PF.me, size, to, tag,comm);
+	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d", PF.me, size, to, tag);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);

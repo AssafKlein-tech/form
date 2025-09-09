@@ -250,6 +250,7 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 extern int    PF_ForwardTermsToMaster(void);
 extern int    PF_ForwardTermsToMaster(void);
 extern void   PF_SetupFlatRequestsView(void);
+extern void   PF_FreeReceiveRequests(PF_BUFFER *rbuf, int index);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);
