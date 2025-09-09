@@ -214,6 +214,7 @@ extern int    PF_Bcast(void *buffer, int count);
 extern int    PF_RawSend(int,void *,LONG,int);
 extern LONG   PF_RawRecv(int *,void *,LONG,int *);
 
+extern int 	  PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size);
 extern int    PF_PreparePack(void);
 extern int    PF_Pack(const void *buffer, size_t count, MPI_Datatype type);
 extern int    PF_Unpack(void *buffer, size_t count, MPI_Datatype type);
@@ -248,9 +249,7 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 
 /* parallel.c */
 extern int    PF_ForwardTermsToMaster(void);
-extern int    PF_ForwardTermsToMaster(void);
 extern void   PF_SetupFlatRequestsView(void);
-extern void   PF_FreeReceiveRequests(PF_BUFFER *rbuf, int index);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);

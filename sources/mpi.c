@@ -67,6 +67,7 @@
 static int PF_packsize = 0;
 static int first = 0;
 static MPI_Status PF_status;
+static int PF_totalReq = 0;
 LONG PF_maxDollarChunkSize = 0;      /*:[04oct2005 mt]*/
 
 static int PF_ShortPackInit(void);
@@ -288,7 +289,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 	int dest = PF_GetDestReducer();
 	if (tag == PF_BUFFER_MSGTAG)
 	{
-		PF_BUFFER *s = PF.sbuf;
+		//PF_BUFFER *s = PF.sbuf;
 		//int a = s->active;
 		//int size = s->fill[a] - s->buff[a];
 		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
@@ -523,6 +524,34 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 
 /*
   	#] PF_WaitRbuf : 
+  	#[ PF_WaitAnyRbuf :
+*/
+/**
+ * Waits any buffer to finish a pending nonblocking in PF.dispatch. 
+ * It returns the received tag and in <tt>*size</tt> the number of field
+ * received.
+
+
+ */
+int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
+{
+	int ret,idx, rsize;
+	PF_Dispatch* d = &PF.dispatch;
+	MPI_Status st;
+	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
+	if (err != MPI_SUCCESS || idx == MPI_UNDEFINED) { return err; }
+
+	*src = idx/PF.numrbufs; //which mapper
+	PF_BUFFER *buf = rbuf[*src];
+	buf->request[buf->active] = d->reqs[idx]; // needs to null
+	ret = MPI_Get_count(&st,buf->type[buf->active],&rsize);
+	if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+	*size = (LONG)rsize;
+	return(st.MPI_TAG);
+}
+
+/*
+  	#] PF_WaitAnyRbuf : 
   	#[ PF_Bcast :
 */
 
@@ -1995,5 +2024,20 @@ int PF_LongMultiBroadcast(void)
 
 /*
  		#] PF_LongMultiBroadcast : 
-  	#] Long pack stuff : 
+		#[ PF_SetupFlatRequestsView :
+*/
+void PF_SetupFlatRequestsView()
+{
+	PF_Dispatch* d = &PF.dispatch;
+	PF_totalReq = PF.nummappers * PF.numrbufs;
+	d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
+    if (!d->reqs ) {
+		MesPrint("PF_SetupFlatRequestsView: malloc error");
+		exit(-1);
+	}
+	for (int i=0; i<PF_totalReq; i++) d->reqs[i] = MPI_REQUEST_NULL;
+    return ;
+}
+/*
+		#] PF_SetupFlatRequestsView :
 */
