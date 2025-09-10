@@ -175,7 +175,7 @@ typedef struct {
 typedef struct ParallelVars {
 	FILEHANDLE  slavebuf;       /* (slave) allocated if there are RHS expressions */
 	/* special buffers for nonblocking, unbuffered send/receives */
-	PF_BUFFER  *sbuf;           /* set of cyclic send buffers for master _and_ slave */
+	PF_BUFFER **sbufs;           /* set of cyclic send buffers for master _and_ slave */
 	PF_BUFFER **rbufs;          /* array of sets of cyclic receive buffers for master */
 	int         me;             /* Internal number of task: master is 0 */
 	int         numtasks;       /* total number of tasks */
@@ -190,7 +190,7 @@ typedef struct ParallelVars {
 	int         log;            /* flag for logging mode */
 	//MPI_Comm    mapComm;			/*communicator for mappers*/
 	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
-	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
+	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
 	PADPOSITION(3,0,10,2,0);
 } PARALLELVARS;

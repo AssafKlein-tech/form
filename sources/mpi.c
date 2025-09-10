@@ -287,17 +287,10 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
     if (AC.sMRflag == NO_MAPREDUCE)
         return PF_ISendSbuf(MASTER, tag);
 	int dest = PF_GetDestReducer();
-	if (tag == PF_BUFFER_MSGTAG)
-	{
-		//PF_BUFFER *s = PF.sbuf;
-		//int a = s->active;
-		//int size = s->fill[a] - s->buff[a];
-		//MesPrint("PF_WISendSbuf: %d sending %d words ", PF.me, size);
-    	return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
-	}
+	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	else if (tag == PF_ENDBUFFER_MSGTAG) {
 		int ret;
-		PF_BUFFER *sbuf = PF.sbuf;
+		PF_BUFFER *sbuf = PF.sbufs[0];
 		ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 		if (ret != 0) return (ret);
 		for (int i = 0; i < PF.numreducers; i++ ) {
@@ -338,7 +331,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 int PF_ISendSbuf(int to, int tag)
 {
 	//MesPrint("PF_ISendSbuf: from=%d to=%d, tag=%d",PF.me, to, tag);
-	PF_BUFFER *s = PF.sbuf;
+	PF_BUFFER *s = PF.sbufs[0];
 	int a = s->active;
 	int size = s->fill[a] - s->buff[a];
 	int r = 0;
@@ -364,8 +357,8 @@ int PF_ISendSbuf(int to, int tag)
 
 	switch ( tag ) { /* things to do before sending */
 		case PF_TERM_MSGTAG:
-			if ( PF.sbuf->request[to] != MPI_REQUEST_NULL)
-				r = MPI_Wait(&PF.sbuf->request[to],&PF.sbuf->retstat[to]);
+			if ( &s->request[to] != MPI_REQUEST_NULL)
+				r = MPI_Wait(&s->request[to],&s->retstat[to]);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:
@@ -404,7 +397,6 @@ int PF_ISendSbuf(int to, int tag)
 		case PF_ENDBUFFER_MSGTAG:
 			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
-			//MesPrint("PF_ISendSbuf: finished waiting for all sends to finish %d", r);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:

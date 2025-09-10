@@ -1664,7 +1664,7 @@ nocompress:
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-				PF_BUFFER *sbuf = PF.sbuf;
+				PF_BUFFER *sbuf = PF.sbufs[0];
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);
 				p = fi->PObuffer = fi->POfill = fi->POfull =
@@ -1795,7 +1795,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-		PF_BUFFER *sbuf = PF.sbuf;
+		PF_BUFFER *sbuf = PF.sbufs[0];
 		if ( fi->POfill >= fi->POstop ){
 		  sbuf->fill[sbuf->active] = fi->POstop;
 		  PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);

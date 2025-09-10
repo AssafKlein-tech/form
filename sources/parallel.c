@@ -883,7 +883,13 @@ int PF_EndSort(void)
 {
 	GETIDENTITY
 	FILEHANDLE *fout = AR.outfile;
-	PF_BUFFER *sbuf=PF.sbuf;
+	if( PF.sbufs == NULL )
+	{
+		if ((PF.sbufs = (PF_BUFFER**)Malloc1(1*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
+		MesPrint("PF_EndSort called on process %d", PF.me);
+		PF.sbufs[0] = NULL;
+	}
+	PF_BUFFER *sbuf=PF.sbufs[0];
 	SORTING *S = AT.SS;
 	WORD *outterm,*pp;
 	LONG size, noutterms;
@@ -907,7 +913,7 @@ int PF_EndSort(void)
 		if ( sbuf == NULL ) {
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
 			sbuf->active = 0;
-			PF.sbuf = sbuf;
+			PF.sbufs[0] = sbuf;
 		}
 		sbuf->buff[0] = fout->PObuffer;
 		sbuf->stop[0] = fout->PObuffer+size;
@@ -1506,7 +1512,7 @@ static int PF_WaitAllSlaves(void)
 				next = PF_Wait4Slave(next);
 				if ( next == -1 ) return(next); /*Cannot be!*/
 				if ( has_sent[0] == 0 ) {  /*Send the last chunk to the slave*/
-					PF.sbuf->active = 0;
+					PF.sbufs[0]->active = 0;
 					has_sent[0] = 1;
 				}
 				else {
@@ -1514,12 +1520,12 @@ static int PF_WaitAllSlaves(void)
 						Last chunk was sent, so just send to slave ENDSORT
 						AN.ninterms must be sent because the slave expects it:
 */
-					PACK_LONG(PF.sbuf->fill[next], AN.ninterms);
+					PACK_LONG(PF.sbufs[0]->fill[next], AN.ninterms);
 /*
 						This will tell to the slave that there are no more terms:
 */
-					*(PF.sbuf->fill[next])++ = 0;
-					PF.sbuf->active = next;
+					*(PF.sbufs[0]->fill[next])++ = 0;
+					PF.sbufs[0]->active = next;
 				}
 /*
 					Send ENDSORT
@@ -1566,7 +1572,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	GETIDENTITY
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
-	PF_BUFFER *sb = PF.sbuf;
 	WORD j, *s, next;
 	LONG size, cpu;
 	POSITION position;
@@ -1650,6 +1655,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			No allocation for extra buffers necessary, just make sb->buf... point
 			to the right places in the sortbuffers.
 */
+		if (PF.sbufs == NULL)
+		{
+			if ((PF.sbufs = (PF_BUFFER**)Malloc1(sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ){MesPrint("Error in processor"); return(-1);}
+			MesPrint("PF_Processor: Master starts distributing terms to slaves");
+			PF.sbufs[0] = 0;
+		}
+		PF_BUFFER *sb = PF.sbufs[0] ;
 		NewSort(BHEAD0);   /* we need AT.SS to be set for this!!! */
 		if ( sb == 0 || sb->buff[0] != AT.SS->lBuffer ) {
 			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.nummappers));
@@ -1665,7 +1677,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				sb->stop[j-1] = sb->buff[j] = sb->buff[j-1] + size;
 			}
 			sb->stop[PF.nummappers-1] = sb->buff[PF.nummappers-1] + size;
-			PF.sbuf = sb;
+			PF.sbufs[0] = sb;
 		}
 		for ( j = 0; j < PF.nummappers; j++ ) {
 			sb->full[j] = sb->fill[j] = sb->buff[j];
@@ -1993,9 +2005,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		NewSort(BHEAD0);
 		size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		//MLOCK(ErrorMessageLock);
-		//MesPrint("PF_Processor: size of receive buffer for each slave = %d words", size);
-		//MUNLOCK(ErrorMessageLock);
 		if ( rbuf == NULL ) {
 			if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
 			if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
@@ -2040,8 +2049,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			//MesPrint("PF_Processor: posted Irecv from %d into rbuf[%d]->buff[%d] = %p reqs[%d]=%p", i, i, rbuf[i]->active, (void*)rbuf[i]->buff[j], k, (void*)d->reqs[k]);
 		}
 		rbuf[0]->active = 0;
-		//PF_term[0] = rbuf[0]->buff[0];
-		//PF_term[0][0] = 0;  /* PF_term[0] is used for a zero term. */
 		PF.rbufs = rbuf;
 /*
  		#] the receive buffers : 
@@ -2107,6 +2114,10 @@ int PF_ForwardTermsToMaster()
     //int numrbufs = PF.numrbufs;
     int done_mappers = 0;
     int *mapper_done = Malloc1(num_mappers * sizeof(int),"PF_ForwardTermsToMaster");
+	if( PF.sbufs == NULL )
+	{
+		if ((PF.sbufs = (PF_BUFFER**)Malloc1(sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in  forwarding"); return(-1);}
+	}
 	for(  int i=1; i<num_mappers; i++ ) mapper_done[i] = 0;
     PF_BUFFER **rbuf = PF.rbufs;
 	PF_BUFFER *buf;
@@ -2125,7 +2136,7 @@ int PF_ForwardTermsToMaster()
         if (tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) {
 
 			//make sbuf point to the rbuf
-			PF.sbuf = buf;
+			PF.sbufs[0] = buf;
 			
             // Forward to master
             int forward_tag = (tag == PF_SHUFFLE_MSGTAG) ? PF_BUFFER_MSGTAG : PF_ENDBUFFER_MSGTAG;
