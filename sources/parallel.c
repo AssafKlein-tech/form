@@ -642,6 +642,27 @@ newterms:
 
 /*
  		#] PF_PutIn : 
+ 		#[ PF_PutIn2 : 
+*/
+// returns 0 if not done, 1 if "src" mapper is done, -1 on error
+int PF_PutIn2(int *src, long *size, int *tag)
+{
+	//if it's the first call, or the last one is empty
+	*tag = PF_WaitAnyRbuf(PF.rbufs,src,size);
+	/*
+	if(*src == MPI_ANY_SOURCE) {
+		*tag = PF_WaitAnyRbuf(rbuf,&src,&size);
+	}
+	PF_BUFFER *rbuf = PF.rbufs[src];
+	int a = rbuf->active;
+	int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
+	WORD *term = rbuf->fill[a];
+
+	*tag = PF_WaitAnyRbuf(rbuf,&src,&size);
+*/
+}
+/*
+ 		#] PF_PutIn2 : 
  		#[ PF_GetLoser :
 */
 
@@ -2066,7 +2087,7 @@ int PF_ReducerInit()
 	int numtasks = PF.nummappers; 
 	int numrbufs = PF.numrbufs; //for each mapper
 	int size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
-	size -= (AM.MaxTer/sizeof(WORD) + 2);
+	//size -= (AM.MaxTer/sizeof(WORD) + 2);
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
 		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
@@ -2087,13 +2108,9 @@ int PF_ReducerInit()
 	// create a receivers requests flat view
 	PF_SetupFlatRequestsView();
 	PF_Dispatch* d = &PF.dispatch;
-	for ( j = 0; j < PF.numrbufs; j++ ) {
-		rbuf[0]->request[j] = MPI_REQUEST_NULL;
-	}
-
 	for ( i = 1; i < numtasks; i++ ) {
 		for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
-			rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
+			rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j] + AM.MaxTer/sizeof(WORD) + 2;
 			rbuf[i]->request[j] = MPI_REQUEST_NULL;
 		}
 		size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
@@ -2104,6 +2121,26 @@ int PF_ReducerInit()
 	}
 	rbuf[0]->active = 0;
 	PF.rbufs = rbuf;
+	UBYTE *p, *stop;
+	if ( PF_term == NULL ) {
+		size =  2*numtasks*sizeof(WORD*) + sizeof(WORD)*
+			( numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
+
+		PF_term = (WORD **)Malloc1(size,"PF_term");
+		stop = ((UBYTE*)PF_term) + size;
+		p = ((UBYTE*)PF_term) + numtasks*sizeof(WORD*);
+
+		PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * numtasks;
+		PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * numtasks;
+		for ( i = 0; i < numtasks; i++ ) {
+			PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
+			PF_newclen[i] = 0;
+		}
+		PF_WorkSpace = (WORD *)p;    p += AM.MaxTer+sizeof(WORD);
+		PF_ScratchSpace = (UWORD*)p; p += 2*(AM.MaxTal+2)*sizeof(UWORD);
+
+		if ( p != stop ) { MesPrint("error in PF_InitTree"); return(-1); }
+	}
 	return 0;
 }
 /*
@@ -2127,13 +2164,13 @@ int PF_ForwardTermsToMaster()
     LONG size = 0;
     int tag, r,err,src = MPI_UNDEFINED;
     while (done_mappers < (PF.nummappers -1)) {
+		int done = PF_PutIn2(&src, &size,&tag);
 		//MesPrint("[%d] PF_ForwardTermsToMaster: waiting for messages from mappers. total %d d->reqs %d , idx %d , st %d ", PF.me, total, d->reqs, idx, st);
-		tag = PF_WaitAnyRbuf(rbuf,&src,&size);
 		buf = rbuf[src];
 		int a = buf->active;
 		int next = a+1 >= buf->numbufs ? 0 : a+1 ;
 		buf->full[a] += size;
-		//MesPrint("[%d] PF_ForwardTermsToMaster: received from %d tag %d buffer %d size %d fill %d ret = %d", PF.me, src, tag, a, size, buf->full[a] - buf->buff[a], ret);
+		//MesPrint("[%d] PF_ForwardTermsToMaster: received from %d tag %d buffer %d size %d fill %d ", PF.me, src, tag, a, size, buf->full[a] - buf->buff[a]);
 		
         if (tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) {
 
@@ -2142,13 +2179,14 @@ int PF_ForwardTermsToMaster()
 			
             // Forward to master
             int forward_tag = (tag == PF_SHUFFLE_MSGTAG) ? PF_BUFFER_MSGTAG : PF_ENDBUFFER_MSGTAG;
-			size = (LONG)(buf->full[a] - buf->buff[a]);
-			buf->fill[a] = buf->stop[a]; //mark buffer as empty
-			//MesPrint("PF_ForwardTermsToMaster: sent to master");
+			size = (LONG)(buf->full[a] - buf->fill[a]);
+			buf->fill[a] = buf->full[a]; //mark buffer as empty
             if (tag == PF_ENDSHUFFLE_MSGTAG && mapper_done[src] == 0) { //last message from this mapper
 				if (size != 1){
-					MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+					MesPrint("[%d] PF_ForwardTermsToMaster: send last chunk to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+					buf->buff[a] +=  AM.MaxTer/sizeof(WORD) + 2;
 					PF_ISendSbuf(MASTER, forward_tag);
+					buf->buff[a] -=  AM.MaxTer/sizeof(WORD) + 2;
 				}
 				//MesPrint("[%d] PF_ForwardTermsToMaster: done with mapper %d", PF.me, src);
                 mapper_done[src] = 1;
@@ -2156,15 +2194,17 @@ int PF_ForwardTermsToMaster()
             }
 			else { //post next receive
 				MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+				buf->buff[a] +=  AM.MaxTer/sizeof(WORD) + 2;
 				PF_ISendSbuf(MASTER, forward_tag);
+				buf->buff[a] -=  AM.MaxTer/sizeof(WORD) + 2;
 				int rsize;
 				while ( buf->request[next] != MPI_REQUEST_NULL ) { // busy wait until the next buffer is free
 					r = MPI_Waitsome(buf->numbufs,buf->request,&rsize,buf->index,buf->retstat);
 					if ( r != MPI_SUCCESS ) return(r);
 				}
-				buf->full[next] = buf->fill[next] = buf->buff[next];
-				//size = (LONG)(buf->stop[next] - buf->full[next]);
-				//MesPrint("[%d] PF_ForwardTermsToMaster: Post non blocking receive from %d to buffer %d size %d fill %d",PF.me, src,  next, size,buf->fill[next] );
+				buf->full[next] = buf->fill[next] = buf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
+				size = (LONG)(buf->stop[next] - buf->full[next]);
+				MesPrint("[%d] PF_ForwardTermsToMaster: Post non blocking receive from %d to buffer %d size %d fill %d",PF.me, src,  next, size,buf->fill[next] );
 				err = PF_IRecvRbuf(buf,next,src);
 				if (err) return err;
 				int k = src * PF.numrbufs + next;
