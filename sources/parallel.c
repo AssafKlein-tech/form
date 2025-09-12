@@ -1993,7 +1993,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 /*
 		#[ the receive buffers :
 		NewSort(BHEAD0);
-		
+*/
 		int err = PF_ReducerInit();
 		if ( err ) {
 			MesPrint("PF_ReducerInit error");
