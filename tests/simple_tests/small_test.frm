@@ -1,11 +1,14 @@
-#: SmallSize 1K
-#: LargeSize 10K
+#: SmallSize 200
+#: LargeSize 1K
 format 255;
 off mapreduce;
 off parallel;
+off stats;
+on fewerstatistics 0;
+on finalstats;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^9;
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^11;
 
 
 .Sort

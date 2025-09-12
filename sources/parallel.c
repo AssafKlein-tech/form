@@ -1992,64 +1992,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	else { // role==ROLE_REDUCER
 /*
 		#[ the receive buffers :
-*/
-		GETIDENTITY
-		int i, j;
-		int err;
-		PF_BUFFER **rbuf = PF.rbufs;
-		int numtasks = PF.nummappers; 
-		int numrbufs = PF.numrbufs; //for each mapper
-/*
-		this is the size we have in the combined sortbufs for one slave
-*/
 		NewSort(BHEAD0);
-		size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
-		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if ( rbuf == NULL ) {
-			if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
-			if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
-			for ( i = 1; i < numtasks; i++ ) {
-				if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
-				//MesPrint("PF_Processor: rbufs[%d] = %p", i, (void*)rbuf[i]);
-			}
-			rbuf[0]->buff[0] = AT.SS->lBuffer;
-			rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
-			rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
-			rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
-			for ( i = 2; i < numtasks; i++ ) {
-				rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
-				rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
-			}
-			rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
+		
+		int err = PF_ReducerInit();
+		if ( err ) {
+			MesPrint("PF_ReducerInit error");
+			return err;
 		}
-		// create a receivers requests flat view
-		PF_SetupFlatRequestsView();
-		PF_Dispatch* d = &PF.dispatch;
-		for ( j = 0; j < PF.numrbufs; j++ ) {
-			rbuf[0]->request[j] = MPI_REQUEST_NULL;
-			//MesPrint("PF_Processor: rbuf[0]->request[%d] = %p", j, (void*)rbuf[0]->request[j]);
-		}
-
-		for ( i = 1; i < numtasks; i++ ) {
-			for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
-				rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
-				rbuf[i]->request[j] = MPI_REQUEST_NULL;
-			}
-			//PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
-			//*PF_term[i] = 0;
-			//MesPrint("PF_Processor: rbuf[%d] = %p, PF_term[%d] = %p", i, (void*)rbuf[i], i, (void*)PF_term[i]);
-			size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
-			//MLOCK(ErrorMessageLock);
-			//MesPrint("[%d] PF_Processor: Post non blocking receive from %d buffer %d size %d", PF.me, i,rbuf[i]->active, size);
-			//MUNLOCK(ErrorMessageLock);
-			err = PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
-			if (err) return err;
-			int k = i * numrbufs;
-			d->reqs[k] = rbuf[i]->request[rbuf[i]->active];
-			//MesPrint("PF_Processor: posted Irecv from %d into rbuf[%d]->buff[%d] = %p reqs[%d]=%p", i, i, rbuf[i]->active, (void*)rbuf[i]->buff[j], k, (void*)d->reqs[k]);
-		}
-		rbuf[0]->active = 0;
-		PF.rbufs = rbuf;
 /*
  		#] the receive buffers : 
 		#[ Reducer Loop & EndSort :
@@ -2062,7 +2011,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			MesPrint("PF_forwardTermsToMaster error");
 			return ret;
 		}
-		//MesPrint("[%d] PF_Processor: finished forwarding terms to master", PF.me);
 		/*#[ Collect (stats,prepro...) :*/
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
@@ -2106,6 +2054,60 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 
 /*
  		#] PF_Processor : 
+		#[ PF_ReducerInit :
+*/
+
+int PF_ReducerInit()
+{
+	GETIDENTITY
+	int i, j;
+	int err;
+	PF_BUFFER **rbuf = PF.rbufs;
+	int numtasks = PF.nummappers; 
+	int numrbufs = PF.numrbufs; //for each mapper
+	int size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(numtasks - 1);
+	size -= (AM.MaxTer/sizeof(WORD) + 2);
+	if ( rbuf == NULL ) {
+		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
+		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
+		for ( i = 1; i < numtasks; i++ ) {
+			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
+			//MesPrint("PF_Processor: rbufs[%d] = %p", i, (void*)rbuf[i]);
+		}
+		rbuf[0]->buff[0] = AT.SS->lBuffer;
+		rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
+		rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
+		rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
+		for ( i = 2; i < numtasks; i++ ) {
+			rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
+			rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
+		}
+		rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
+	}
+	// create a receivers requests flat view
+	PF_SetupFlatRequestsView();
+	PF_Dispatch* d = &PF.dispatch;
+	for ( j = 0; j < PF.numrbufs; j++ ) {
+		rbuf[0]->request[j] = MPI_REQUEST_NULL;
+	}
+
+	for ( i = 1; i < numtasks; i++ ) {
+		for ( j = 0; j < rbuf[i]->numbufs; j++ ) {
+			rbuf[i]->full[j] = rbuf[i]->fill[j] = rbuf[i]->buff[j];
+			rbuf[i]->request[j] = MPI_REQUEST_NULL;
+		}
+		size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
+		err = PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
+		if (err) return err;
+		int k = i * numrbufs;
+		d->reqs[k] = rbuf[i]->request[rbuf[i]->active];
+	}
+	rbuf[0]->active = 0;
+	PF.rbufs = rbuf;
+	return 0;
+}
+/*
+	    #] PF_ReducerInit :
   	 	#[ PF_ForwardTermsToMaster : 
 */ 
 int PF_ForwardTermsToMaster()
@@ -2145,7 +2147,7 @@ int PF_ForwardTermsToMaster()
 			//MesPrint("PF_ForwardTermsToMaster: sent to master");
             if (tag == PF_ENDSHUFFLE_MSGTAG && mapper_done[src] == 0) { //last message from this mapper
 				if (size != 1){
-					//MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+					MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
 					PF_ISendSbuf(MASTER, forward_tag);
 				}
 				//MesPrint("[%d] PF_ForwardTermsToMaster: done with mapper %d", PF.me, src);
@@ -2153,7 +2155,7 @@ int PF_ForwardTermsToMaster()
                 done_mappers++;
             }
 			else { //post next receive
-				//MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
+				MesPrint("[%d] PF_ForwardTermsToMaster: send to master tag %d buffer size %d with tag %d buffer %d", PF.me, tag, size, forward_tag, a);
 				PF_ISendSbuf(MASTER, forward_tag);
 				int rsize;
 				while ( buf->request[next] != MPI_REQUEST_NULL ) { // busy wait until the next buffer is free
