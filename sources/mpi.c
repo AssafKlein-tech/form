@@ -284,7 +284,7 @@ inline int PF_GetDestReducer()
  */
 int PF_WISendSbuf(int tag, FILEHANDLE *fi)
 {
-    if (AC.sMRflag == NO_MAPREDUCE)
+    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
         return PF_ISendSbuf(MASTER, tag);
 	int dest = PF_GetDestReducer();
 	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
@@ -522,8 +522,10 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
  * Waits any buffer to finish a pending nonblocking in PF.dispatch. 
  * It returns the received tag and in <tt>*size</tt> the number of field
  * received.
-
-
+ * @param[in]  rbuf  array of receive buffers.
+ * @param[out] src   the source process number. The output value is the process number of actual source.
+ * @param[out] size  the actual size of received data.
+ * @return           the received message tag. A negative value indicates an error.
  */
 int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 {
@@ -531,7 +533,8 @@ int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 	PF_Dispatch* d = &PF.dispatch;
 	MPI_Status st;
 	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
-	if (err != MPI_SUCCESS || idx == MPI_UNDEFINED) { return err; }
+	if (err != MPI_SUCCESS) { return err; }
+	if(idx == MPI_UNDEFINED) { return PF_ENDSHUFFLEALL_MSGTAG; } // all requests are NULL
 
 	*src = idx/PF.numrbufs; //which mapper
 	PF_BUFFER *buf = rbuf[*src];

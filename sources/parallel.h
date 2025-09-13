@@ -57,7 +57,8 @@
 #define PF_OPT_COLLECT_MSGTAG   72  /* slave -> master: optimization */
 #define PF_MISC_MSGTAG         100
 #define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
-#define PF_ENDSHUFFLE_MSGTAG   111  /* msame as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
+#define PF_ENDSHUFFLE_MSGTAG   111  /* same as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
+#define PF_ENDSHUFFLEALL_MSGTAG   112  /* Indicates the end of all shuffling operations*/
 
 /*
  * A macro for checking the version of gcc.
@@ -250,6 +251,7 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 /* parallel.c */
 extern int    PF_ForwardTermsToMaster(void);
 extern void   PF_SetupFlatRequestsView(void);
+extern int 	  PF_ReducerInit(void);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);
