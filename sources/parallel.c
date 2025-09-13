@@ -2094,8 +2094,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	else { // role==ROLE_REDUCER
 /*
 		#[ the receive buffers :
-		NewSort(BHEAD0);
-*/
+		*/
+		//NewSort(BHEAD0);
 		PF.parallel = 1;
 		int err = PF_ReducerInit();
 		if ( err ) {
@@ -2183,12 +2183,12 @@ int PF_ReducerInit()
 	//size -= (AM.MaxTer/sizeof(WORD) + 2);
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
-		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
+		if ( (rbuf[0] = PF_AllocBuf(1,1,0) ) == NULL ) return(-1);
 		for ( i = 1; i < numtasks; i++ ) {
-			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
-			//MesPrint("PF_Processor: rbufs[%d] = %p", i, (void*)rbuf[i]);
+			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0))) return(-1);
 		}
-		rbuf[0]->buff[0] = AT.SS->lBuffer;
+		MesPrint("[%d] PF_ReducerInit: Reducer has %d rbufs of size %d words for each of the %d mappers", PF.me, numrbufs, size, numtasks-1);
+		/*rbuf[0]->buff[0] = AT.SS->lBuffer;
 		rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
 		rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
 		rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
@@ -2196,7 +2196,7 @@ int PF_ReducerInit()
 			rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
 			rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
 		}
-		rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
+		rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;*/
 	}
 	// create a receivers requests flat view
 	PF_SetupFlatRequestsView();
@@ -2212,7 +2212,6 @@ int PF_ReducerInit()
 		int k = i * numrbufs;
 		d->reqs[k] = rbuf[i]->request[rbuf[i]->active];
 	}
-	rbuf[0]->active = 0;
 	PF.rbufs = rbuf;
 	UBYTE *p, *stop;
 	if ( PF_term == NULL ) {
@@ -2283,6 +2282,7 @@ int PF_ForwardTermsToMaster()
     while (*(term = PF_PutIn2(&src)) != PF_term[0][0]) {
 		PF_term[src] = term;
 		noutterms++;
+		StoreTerm(BHEAD term);
 		if ( PutOut(BHEAD term,&position,fout,1) < 0 ) {
 			MesPrint("PF_ForwardTernsToMaster: Putout Error"); return -1;
 		}
