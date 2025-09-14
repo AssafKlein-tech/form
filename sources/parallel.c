@@ -571,17 +571,22 @@ newterms:
 		/*
 			copy beginning of term to the next buffer so that it ends at m1
 		*/
-		m2 = rbuf->full[a] - 1;
-		while ( m2 >= term ) *m1-- = *m2--;
-		rbuf->fill[next] = term = m1 + 1;
 		if ( *term < 0 || term == rbuf->full[a] ) {
 /*
 			copy term and lastterm to the new buffer, so that they end at m1
 */
 			//MesPrint("PF_PutIn: copy lastterm also");
+			m2 = rbuf->full[a] - 1;
+			while ( m2 >= term ) *m1-- = *m2--;
+			rbuf->fill[next] = term = m1 + 1;
 			m2 = lastterm + *lastterm - 1;
 			while ( m2 >= lastterm ) *m1-- = *m2--;
 			lastterm = m1 + 1;
+		}
+		else{
+			m2 = rbuf->full[a] - 1;
+			while ( m2 >= term ) *m1-- = *m2--;
+			rbuf->fill[next] = term = m1 + 1;
 		}
 		if ( rbuf->numbufs == 1 ) {
 			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
@@ -642,7 +647,7 @@ static WORD* PF_PutIn2(int *src)
 	int tag, err;
 	WORD im, r;
 	WORD *m1, *m2;
-	LONG size;
+	LONG size = 0;
 	PF_BUFFER *rbuf;
 	PF_Dispatch* d = &PF.dispatch;
 	if ( *src < 0 ) {MesPrint("PF_PutIn2: negetive src %d", *src); return(PF_term[0]);}
@@ -652,15 +657,15 @@ static WORD* PF_PutIn2(int *src)
 newsrc:
 		tag = PF_WaitAnyRbuf(PF.rbufs,src,&size);
 		MesPrint("[%d] PF_PutIn2: Got receive from %d with tag %d in size %d", PF.me, *src, tag, size);
-		rbuf = PF.rbufs[*src];
-		int a = rbuf->active;
-		int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
-		rbuf->full[a] += size;
 		if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 		{
 			*src = 0;
 			return(PF_term[0]);
 		}
+		rbuf = PF.rbufs[*src];
+		int a = rbuf->active;
+		int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
+		rbuf->full[a] += size;
 		if ( tag == PF_SHUFFLE_MSGTAG && rbuf->numbufs > 1 ) {
 /*
 			post a nonblock. recv. for the next buffer
@@ -1041,7 +1046,7 @@ int PF_EndSort(void)
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
-	MesPrint("PF_EndSort: Master starts collecting terms from slaves");
+	MesPrint("[%d] PF_EndSort: Master starts collecting terms from slaves", PF.me);
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -1058,7 +1063,7 @@ int PF_EndSort(void)
 
 	noutterms = 0;
 
-	MesPrint("PF_EndSort: PF_GetLoser");
+	MesPrint("[%d] PF_EndSort: PF_GetLoser", PF.me);
 	while ( PF_loser >= 0 ) {
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
 		//MesPrint("PF_EndSort: PF_GetLoser found loser %d", PF_loser);
@@ -1525,13 +1530,13 @@ static int PF_WaitAllSlaves(void)
 	int i, readySlaves, tag, next = PF_ANY_SOURCE;
 	UBYTE *has_sent = 0;
 
-	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.nummappers + 1),"PF_WaitAllSlaves");
-	for ( i = 0; i < PF.nummappers; i++ ) has_sent[i] = 0;
+	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
+	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0;
 
-	for ( readySlaves = 1; readySlaves < PF.nummappers; ) {
+	for ( readySlaves = 1; readySlaves < PF.numtasks; ) {
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
-			do{ /*Note, here readySlaves<PF.nummappers, so this loop can't be infinite*/
-				if ( ++next >= PF.nummappers) next = 1;
+			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
+				if ( ++next >= PF.numtasks ) next = 1;
 			} while ( has_sent[next] == 1 );
 		}
 /*
@@ -1554,7 +1559,7 @@ static int PF_WaitAllSlaves(void)
 				else {  /*error?*/
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
-				if ( AC.sMRflag != NO_MAPREDUCE ) PF_Wait4Slave(next);
+				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers) PF_Wait4Slave(next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -1649,7 +1654,7 @@ static int PF_WaitAllSlaves(void)
 /*
 		0 on success (exit from the main loop by loop condition), or -1 if fails
 */
-	return(PF.nummappers-readySlaves);
+	return(PF.numtasks - readySlaves);
 }
 
 /*
@@ -2095,7 +2100,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 /*
 		#[ the receive buffers :
 		*/
-		//NewSort(BHEAD0);
+		NewSort(BHEAD0);
 		PF.parallel = 1;
 		int err = PF_ReducerInit();
 		if ( err ) {
@@ -2109,19 +2114,11 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		MLOCK(ErrorMessageLock);
 		MesPrint("[%d] PF_Processor: starts forwarding terms to master", PF.me);
 		MUNLOCK(ErrorMessageLock);
-		FILEHANDLE *fout = AR.outfile;
-		WORD *oldbuff = fout->PObuffer;
-		WORD *oldstop = fout->POstop;
-		LONG  oldsize = fout->POsize;
 		int ret = PF_ForwardTermsToMaster();
 		if ( ret < 0 ) {
 			MesPrint("PF_forwardTermsToMaster error");
 			return ret;
 		}
-		fout->PObuffer = oldbuff;
-		fout->POstop   = oldstop;
-		fout->POsize   = oldsize;
-		fout->POfill = fout->POfull = fout->PObuffer;
 /*
 		#[ Reducer Loop & EndSort :
 		#[ Collect (stats,prepro...) :
@@ -2235,31 +2232,6 @@ int PF_ReducerInit()
 	}
 	PF_term[0] = rbuf[0]->buff[0];
 	PF_term[0][0] = 0;
-	FILEHANDLE *fout = AR.outfile;
-	if( PF.sbufs == NULL )
-	{
-		if ((PF.sbufs = (PF_BUFFER**)Malloc1(sizeof(PF_BUFFER*), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in  forwarding"); return(-1);}
-	}
-	SORTING *S = AT.SS;
-	PF_BUFFER *sbuf=PF.sbufs[0];
-	size = (S->sTop2 - S->lBuffer - 1)/(PF.nummappers - 1);
-	size -= (AM.MaxTer/sizeof(WORD) + 2);
-	if ( fout->POsize < (LONG)(size*sizeof(WORD)) ) size = fout->POsize/sizeof(WORD);
-	if ( sbuf == NULL ) {
-		if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
-		sbuf->active = 0;
-		PF.sbufs[0] = sbuf;
-	}
-	sbuf->buff[0] = fout->PObuffer;
-	sbuf->stop[0] = fout->PObuffer+size;
-	if ( sbuf->stop[0] > fout->POstop ) return -1;
-	for ( i = 0; i < PF.numsbufs; i++ )
-		sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
-
-	fout->PObuffer = sbuf->buff[sbuf->active];
-	fout->POstop = sbuf->stop[sbuf->active];
-	fout->POsize = size*sizeof(WORD);
-	fout->POfill = fout->POfull = fout->PObuffer;
 	return 0;
 }
 /*
@@ -2271,7 +2243,6 @@ int PF_ForwardTermsToMaster()
     int src = 0;
 	WORD *term ;
 	POSITION oldposition, position;
-	FILEHANDLE *fout = AR.outfile;
 	int oldgzipCompress;
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
@@ -2283,20 +2254,17 @@ int PF_ForwardTermsToMaster()
 		PF_term[src] = term;
 		noutterms++;
 		StoreTerm(BHEAD term);
-		if ( PutOut(BHEAD term,&position,fout,1) < 0 ) {
-			MesPrint("PF_ForwardTernsToMaster: Putout Error"); return -1;
-		}
 	}
-	DIFPOS(PF_exprsize, position, oldposition);
-	if ( FlushOut(&position,fout,1) ) {
-		AR.gzipCompress = oldgzipCompress;
-		return(-1);
-	}
-	MesPrint("[%d] PF_ForwardTermsToMaster: forwarded %ld terms to master", PF.me, noutterms);
-	SORTING *S = AT.SS;
-	S->TermsLeft = PF_goutterms = noutterms;
-	DIFPOS(PF_exprsize, position, oldposition);
-	AR.gzipCompress = oldgzipCompress;
+	FILEHANDLE *fout = AR.outfile;
+	WORD *oldbuff = fout->PObuffer;
+	WORD *oldstop = fout->POstop;
+	LONG  oldsize = fout->POsize;
+	if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+	fout->PObuffer = oldbuff;
+	fout->POstop   = oldstop;
+	fout->POsize   = oldsize;
+	fout->POfill = fout->POfull = fout->PObuffer;
+	MesPrint("[%d] PF_ForwardTermsToMaster: forwarded %ld terms to master", PF.me, noutterms);	
     return (0);
 }
 /*
