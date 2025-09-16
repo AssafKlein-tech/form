@@ -804,6 +804,11 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
 				*AR.CompressPointer = 0;
+#ifdef WITHMPI
+				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
+					for (int i=1;i<PF.numreducers;i++)	*AR.CompressPointers[i] = 0;
+				}
+#endif
 				SeekScratch(AR.outfile,&position);
 			}
 			else {
@@ -1057,6 +1062,11 @@ TooLarge:
 			ss = S->sPointer;
 			if ( *ss ) {
 				*AR.CompressPointer = 0;
+#ifdef WITHMPI
+				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
+					for (int i=1;i<PF.numreducers;i++)	*AR.CompressPointers[i] = 0;
+				}
+#endif
 #ifdef WITHZLIB
 				if ( S == AT.S0 && AR.NoCompress == 0 && AR.gzipCompress > 0 )
 					S->fpcompressed[S->fPatchN] = 1;
@@ -1551,6 +1561,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				dst = term_hash % PF.numreducers + PF.nummappers;
 				num_to_red1 += (dst) == (1 + PF.nummappers);
 			}
+			//r = rr = AR.CompressPointers[dst];
 #endif
 			if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
 				if ( dobracketindex ) {

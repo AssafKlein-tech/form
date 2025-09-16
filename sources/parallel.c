@@ -990,13 +990,6 @@ int PF_EndSort(void)
 {
 	GETIDENTITY
 	FILEHANDLE *fout = AR.outfile;
-	if( PF.sbufs == NULL )
-	{
-		if ((PF.sbufs = (PF_BUFFER**)Malloc1(1*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-		MesPrint("PF_EndSort called on process %d", PF.me);
-		PF.sbufs[0] = NULL;
-	}
-	PF_BUFFER *sbuf=PF.sbufs[0];
 	SORTING *S = AT.SS;
 	WORD *outterm,*pp;
 	LONG size, noutterms;
@@ -1014,13 +1007,27 @@ int PF_EndSort(void)
 		sortiosize on the master and the POsize of our file.
 		First save the original PObuffer and POstop of the outfile
 */
+		if( PF.sbufs == NULL )
+		{
+			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
+			MesPrint("PF_EndSort called on process %d", PF.me);
+			PF.sbufs[0] = NULL;
+		}
 		size = (S->sTop2 - S->lBuffer - 1)/(PF.nummappers - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if ( fout->POsize < (LONG)(size*sizeof(WORD)) ) size = fout->POsize/sizeof(WORD);
+		PF_BUFFER *sbuf=PF.sbufs[0];
 		if ( sbuf == NULL ) {
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
 			sbuf->active = 0;
 			PF.sbufs[0] = sbuf;
+		}
+		if( AC.sMRflag != NO_MAPREDUCE && PF.sbufs[1] == NULL)
+		{
+			for (int k = 1; k < PF.numreducers; k++){
+				if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
+				PF.sbufs[k]->active = 0;
+			}
 		}
 		sbuf->buff[0] = fout->PObuffer;
 		sbuf->stop[0] = fout->PObuffer+size;
@@ -1050,6 +1057,8 @@ int PF_EndSort(void)
 		}
 		return(0);
 	}
+	
+	PF_BUFFER *sbuf=PF.sbufs[0];
 /*
 		this waits for all slaves to be ready to send terms back
 */
@@ -2198,15 +2207,6 @@ int PF_ReducerInit()
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0))) return(-1);
 		}
 		MesPrint("[%d] PF_ReducerInit: Reducer has %d rbufs of size %d words for each of the %d mappers", PF.me, numrbufs, size, numtasks-1);
-		/*rbuf[0]->buff[0] = AT.SS->lBuffer;
-		rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
-		rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
-		rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
-		for ( i = 2; i < numtasks; i++ ) {
-			rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
-			rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
-		}
-		rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;*/
 	}
 	// create a receivers requests flat view
 	PF_SetupFlatRequestsView();
