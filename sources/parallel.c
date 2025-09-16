@@ -1035,6 +1035,19 @@ int PF_EndSort(void)
 /*
  		#] the slaves have to initialize their sendbuffer : 
 */
+		if( AC.sMRflag != NO_MAPREDUCE)
+		{
+			if(AR.CompressBuffers == NULL)
+			{
+				AR.CompressBuffers = (WORD**)Malloc1(PF.numreducers*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressPointers = (WORD**)Malloc1(PF.numreducers*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
+				for(i=1;i<PF.numreducers;i++) {
+					AR.CompressBuffers[i] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
+					AR.CompressPointers[i] = AR.CompressBuffers[i];
+				}
+			}
+		}
 		return(0);
 	}
 /*

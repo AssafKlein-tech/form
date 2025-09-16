@@ -2037,8 +2037,14 @@ struct R_const {
     FILEHANDLE *hidefile;          /* (R) Points to Fscr[2] */
 
     WORD    *CompressBuffer;       /* (M) */
+#ifdef WITHMPI
+    WORD    **CompressBuffers;
+#endif
     WORD    *ComprTop;             /* (M) */
     WORD    *CompressPointer;      /* (R) */
+#ifdef WITHMPI
+    WORD    **CompressPointers;
+#endif
     COMPAREDUMMY CompareRoutine;
     ULONG   *wranfia;
     char    *moebiustable;
@@ -2094,15 +2100,31 @@ struct R_const {
     WORD    moebiustablesize;
 #if ( BITSINWORD == 32 )
 #ifdef WITHPTHREADS
-	PADPOSITION(8,7,8,5029,0);
+#ifdef WITHMPI
+	PADPOSITION(10,7,8,5029,0);
+#else
+    PADPOSITION(8,7,8,5028,0);
+#endif
+#else
+#ifdef WITHMPI
+    PADPOSITION(10,7,7,5029,0);
 #else
 	PADPOSITION(8,7,7,5029,0);
 #endif
+#endif
 #else
 #ifdef WITHPTHREADS
+#ifdef WITHMPI
+    PADPOSITION(10,7,8,27,0);
+#else
 	PADPOSITION(8,7,8,27,0);
+#endif
+#else
+#ifdef WITHMPI
+    PADPOSITION(10,7,7,27,0);
 #else
 	PADPOSITION(8,7,7,27,0);
+#endif
 #endif
 #endif
 };
