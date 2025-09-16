@@ -1624,7 +1624,11 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 	/*					Sabotage getting into the coefficient next time */
 				r[-(ABS(r[-1]))] = 0;
+#ifdef WITHMPI
+				if( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE && r >= AR.CompressBuffers[0] + AM.CompressSize) {
+#else
 				if ( r >= AR.ComprTop ) {
+#endif
 					MLOCK(ErrorMessageLock);
 					MesPrint("CompressSize of %10l is insufficient",AM.CompressSize);
 					MUNLOCK(ErrorMessageLock);
