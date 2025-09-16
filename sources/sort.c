@@ -1533,22 +1533,25 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			}
 		}
 		else{
-//#ifdef WTIH_MPI
-			WORD *start = term;
-			WORD *end = start + *start;
-			end -= ABS(end[-1]);
-			UWORD term_hash = 0;
-			start++;
-			while( start < end ) {
-				UWORD w = (UWORD)(*start++);     
-				term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
-				term_hash ^= w;
-				//MesPrint("WORD %d",w);
+#ifdef WITHMPI
+			int dst;
+			if (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE ) {
+				WORD *start = term;
+				WORD *end = start + *start;
+				end -= ABS(end[-1]);
+				UWORD term_hash = 0;
+				start++;
+				while( start < end ) {
+					UWORD w = (UWORD)(*start++);     
+					term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
+					term_hash ^= w;
+					//MesPrint("WORD %d",w);
+				}
+				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
+				dst = term_hash % PF.numreducers + PF.nummappers;
+				num_to_red1 += (dst) == (1 + PF.nummappers);
 			}
-			//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
-			int dst = term_hash % 4;
-			num_to_red1 += (dst) == 0;
-//#endif
+#endif
 			if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
 				if ( dobracketindex ) {
 					PutBracketInIndex(BHEAD term,position);
