@@ -79,7 +79,7 @@ LONG numcompares;
 	#[ SortUtilities :
 		#[ WriteStats :				VOID WriteStats(lspace,par,checkLogType)
 */
- 
+static int num_to_red1 = 0;
 char *toterms[] = { "   ", " >>", "-->" };
 
 /**
@@ -1532,115 +1532,135 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				return(-1);
 			}
 		}
-		else if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
-			if ( dobracketindex ) {
-				PutBracketInIndex(BHEAD term,position);
+		else{
+//#ifdef WTIH_MPI
+			WORD *start = term;
+			WORD *end = start + *start;
+			end -= ABS(end[-1]);
+			UWORD term_hash = 0;
+			start++;
+			while( start < end ) {
+				UWORD w = (UWORD)(*start++);     
+				term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
+				term_hash ^= w;
+				//MesPrint("WORD %d",w);
 			}
-			j = *r++ - 1;
-			p = term + 1;
-			i--;
-			if ( AR.PolyFun ) {
-				WORD *polystop, *sa;
-				sa = p + i;
-				sa -= ABS(sa[-1]);
-				polystop = p;
-				while ( polystop < sa && *polystop != AR.PolyFun ) {
-					polystop += polystop[1];
+			//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
+			int dst = term_hash % 4;
+			num_to_red1 += (dst) == 0;
+//#endif
+			if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
+				if ( dobracketindex ) {
+					PutBracketInIndex(BHEAD term,position);
 				}
-				if ( polystop < sa ) {
-					if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
-					while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
-						i--; j--; k--; p++; r++;
+				j = *r++ - 1; //first WORD in the compress pointer and decreace by one 
+				p = term + 1; //points to first WORD of the term
+				i--;
+				if ( AR.PolyFun ) {
+					WORD *polystop, *sa;
+					sa = p + i;
+					sa -= ABS(sa[-1]);
+					polystop = p;
+					while ( polystop < sa && *polystop != AR.PolyFun ) {
+						polystop += polystop[1];
+					}
+					if ( polystop < sa ) {
+						if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
+						while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
+							i--; j--; k--; p++; r++;
+						}
+					}
+					else {
+						while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
 					}
 				}
-				else {
-					while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
-				}
-			}
-#ifdef WITHFLOAT
-			else if ( AC.DefaultPrecision ) {
-				WORD *floatstop, *sa;
-				sa = p + i;
-				sa -= ABS(sa[-1]);
-				floatstop = p;
-				while ( floatstop < sa && *floatstop != FLOATFUN ) {
-					floatstop += floatstop[1];
-				}
-				if ( floatstop < sa ) {
-					while ( i > 0 && j > 0 && *p == *r && p < floatstop ) {
-						i--; j--; k--; p++; r++;
+	#ifdef WITHFLOAT
+				else if ( AC.DefaultPrecision ) {
+					WORD *floatstop, *sa;
+					sa = p + i;
+					sa -= ABS(sa[-1]);
+					floatstop = p;
+					while ( floatstop < sa && *floatstop != FLOATFUN ) {
+						floatstop += floatstop[1];
+					}
+					if ( floatstop < sa ) {
+						while ( i > 0 && j > 0 && *p == *r && p < floatstop ) {
+							i--; j--; k--; p++; r++;
+						}
+					}
+					else {
+						while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
 					}
 				}
+	#endif
 				else {
-					while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
+					WORD *sa;
+					sa = p + i;
+					sa -= ABS(sa[-1]); //points to the last WORD of the term
+					// while the term and the compress buffer are equal and there are still WORDS to compare that are not thecoefficient
+					while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; } 
+				}
+				if ( k > -2 ) {
+	nocompress:
+					//copy the term into the compress buffer
+					j = i = *term;
+					k = 0;
+					p = term;
+					r = rr;
+					NCOPY(r,p,j);
+				}
+				else {
+					//update rr (compress buffer size) and copy the new rest of the term into the compress buffer (for next term)
+					*rr = *term;
+					term = p;
+					j = i;
+					NCOPY(r,p,j);
+					j = i;
+					i += 2;
+					first = 2;
+				}
+	/*					Sabotage getting into the coefficient next time */
+				r[-(ABS(r[-1]))] = 0;
+				if ( r >= AR.ComprTop ) {
+					MLOCK(ErrorMessageLock);
+					MesPrint("CompressSize of %10l is insufficient",AM.CompressSize);
+					MUNLOCK(ErrorMessageLock);
+					Crash();
+					return(-1);
 				}
 			}
-#endif
-			else {
-				WORD *sa;
-				sa = p + i;
-				sa -= ABS(sa[-1]);
-				while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
-			}
-			if ( k > -2 ) {
-nocompress:
-				j = i = *term;
-				k = 0;
-				p = term;
-				r = rr;
-				NCOPY(r,p,j);
-			}
-			else {
-				*rr = *term;
-				term = p;
-				j = i;
-				NCOPY(r,p,j);
-				j = i;
-				i += 2;
-				first = 2;
-			}
-/*					Sabotage getting into the coefficient next time */
-			r[-(ABS(r[-1]))] = 0;
-			if ( r >= AR.ComprTop ) {
-				MLOCK(ErrorMessageLock);
-				MesPrint("CompressSize of %10l is insufficient",AM.CompressSize);
-				MUNLOCK(ErrorMessageLock);
-				Crash();
-				return(-1);
-			}
-		}
-		else if ( !AR.NoCompress && ( ncomp < 0 ) && AR.sLevel <= 0 ) {
-				/* No compress but put in compress buffer anyway */
-			if ( dobracketindex ) {
-				PutBracketInIndex(BHEAD term,position);
-			}
-			j = *r++ - 1;
-			p = term + 1;
-			i--;
-			if ( AR.PolyFun ) {
-				WORD *polystop, *sa;
-				sa = p + i;
-				sa -= ABS(sa[-1]);
-				polystop = p;
-				while ( polystop < sa && *polystop != AR.PolyFun ) {
-					polystop += polystop[1];
+			else if ( !AR.NoCompress && ( ncomp < 0 ) && AR.sLevel <= 0 ) {
+					/* No compress but put in compress buffer anyway */
+				if ( dobracketindex ) {
+					PutBracketInIndex(BHEAD term,position);
 				}
-				if ( polystop < sa ) {
-					if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
-					while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
-						i--; j--; k--; p++; r++;
+				j = *r++ - 1;
+				p = term + 1;
+				i--;
+				if ( AR.PolyFun ) {
+					WORD *polystop, *sa;
+					sa = p + i;
+					sa -= ABS(sa[-1]);
+					polystop = p;
+					while ( polystop < sa && *polystop != AR.PolyFun ) {
+						polystop += polystop[1];
+					}
+					if ( polystop < sa ) {
+						if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
+						while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
+							i--; j--; k--; p++; r++;
+						}
+					}
+					else {
+						while ( i > 0 && j > 0 && *p == *r ) { i--; j--; k--; p++; r++; }
 					}
 				}
 				else {
 					while ( i > 0 && j > 0 && *p == *r ) { i--; j--; k--; p++; r++; }
 				}
+				goto nocompress;
 			}
 			else {
-				while ( i > 0 && j > 0 && *p == *r ) { i--; j--; k--; p++; r++; }
-			}
-			goto nocompress;
-		}
-		else {
 			if ( AR.PolyFunType == 2 ) {
 				WORD *t, *tstop;
 				tstop = term + *term;
@@ -1656,6 +1676,7 @@ nocompress:
 			if ( dobracketindex ) {
 				PutBracketInIndex(BHEAD term,position);
 			}
+		}
 		}
 		ret = i;
 		ADDPOS(*position,i*sizeof(WORD));
@@ -1747,12 +1768,13 @@ nocompress:
 				}
 			  }
 			} 
-			if ( first ) {
+			if ( first ) { // if compressed the first two WORDS are the negetive size of the copy and the size lesft for the term
 				if ( first == 2 ) *p++ = k;
 				else *p++ = j;
 				first--;
 			}
 			else *p++ = *term++;
+			//MesPrint(" %d",*(p-1));
 /*
 			if ( AP.DebugFlag ) {
 				TalToLine((UWORD)(p[-1])); TokenToLine((UBYTE *)"  ");
@@ -1786,6 +1808,8 @@ nocompress:
 WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 {
 	GETIDENTITY
+	MesPrint("Num to red1: %d", num_to_red1);
+	num_to_red1 = 0;
 	LONG size, RetCode;
 	int dobracketindex = 0;
 #ifndef WITHZLIB
