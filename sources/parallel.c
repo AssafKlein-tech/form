@@ -684,7 +684,6 @@ newsrc:
 			return(NULL);
 		}
 	}
-	//MesPrint("PF_PutIn2: src is %d", *src);
 	rbuf = PF.rbufs[*src];
 	int a = rbuf->active;
 	int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
@@ -692,7 +691,7 @@ newsrc:
 	WORD *term = rbuf->fill[a];
 
 	//Last term from current src
-	if ( *term == 0 && term != rbuf->full[a] ) { MesPrint("PF_PutIn2: Last term from src"); goto newsrc; }
+	if ( *term == 0 && term != rbuf->full[a] ) { MesPrint("[%d] PF_PutIn2: Last term from src", PF.me); goto newsrc; }
 /*
 		exception is for rare cases when the terms fitted exactly into buffer
 */
@@ -996,6 +995,13 @@ int PF_EndSort(void)
 	POSITION position, oldposition;
 	WORD i,cc;
 	int oldgzipCompress;
+	if( PF.sbufs == NULL )
+	{
+		if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
+		MesPrint("PF_EndSort called on process %d", PF.me);
+		PF.sbufs[0] = NULL;
+	}
+	PF_BUFFER *sbuf=PF.sbufs[0];
 
 	if ( AT.SS != AT.S0 || !PF.parallel ) return 0;
 
@@ -1007,26 +1013,19 @@ int PF_EndSort(void)
 		sortiosize on the master and the POsize of our file.
 		First save the original PObuffer and POstop of the outfile
 */
-		if( PF.sbufs == NULL )
-		{
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-			MesPrint("PF_EndSort called on process %d", PF.me);
-			PF.sbufs[0] = NULL;
-		}
 		size = (S->sTop2 - S->lBuffer - 1)/(PF.nummappers - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if ( fout->POsize < (LONG)(size*sizeof(WORD)) ) size = fout->POsize/sizeof(WORD);
-		PF_BUFFER *sbuf=PF.sbufs[0];
 		if ( sbuf == NULL ) {
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
 			sbuf->active = 0;
 			PF.sbufs[0] = sbuf;
 		}
-		if( AC.sMRflag != NO_MAPREDUCE && PF.sbufs[1] == NULL)
+		if( AC.sMRflag != NO_MAPREDUCE && PF.sbufs[PF.nummappers] == NULL) // if the first detibed buffer is not allocated
 		{
-			for (int k = 1; k < PF.numreducers; k++){
+			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
+				//MesPrint("[%d] PF_EndSort: Send buffer %d size %d", PF.me, k, size);
 				if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
-				PF.sbufs[k]->active = 0;
 			}
 		}
 		sbuf->buff[0] = fout->PObuffer;
@@ -1046,19 +1045,18 @@ int PF_EndSort(void)
 		{
 			if(AR.CompressBuffers == NULL)
 			{
-				AR.CompressBuffers = (WORD**)Malloc1(PF.numreducers*sizeof(WORD*), "CompressBuffers in EndSort");
-				AR.CompressPointers = (WORD**)Malloc1(PF.numreducers*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
 				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
-				for(i=1;i<PF.numreducers;i++) {
-					AR.CompressBuffers[i] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
-					AR.CompressPointers[i] = AR.CompressBuffers[i];
+				for(i=0;i<PF.numreducers;i++) {
+					AR.CompressBuffers[i+ PF.nummappers] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
+					AR.CompressPointers[i+ PF.nummappers] = AR.CompressBuffers[i+ PF.nummappers];
+					//MesPrint("[%d] PF_EndSort: Compress buffer and pointer %d starts at %d", PF.me, i+ PF.nummappers, AR.CompressBuffers[i+ PF.nummappers]);
 				}
 			}
 		}
 		return(0);
 	}
-	
-	PF_BUFFER *sbuf=PF.sbufs[0];
 /*
 		this waits for all slaves to be ready to send terms back
 */
@@ -1582,6 +1580,7 @@ static int PF_WaitAllSlaves(void)
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
 				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers) PF_Wait4Slave(next);
+				//MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -1901,7 +1900,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		if ( AR.outtohide ) AR.outfile = AR.hidefile;
 		PF.parallel = 1;
-		MesPrint("PF_Processor: Master enters end sort");
+		MesPrint("[0] PF_Processor: Master enters end sort");
 		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
 		PF.parallel = 0;
 		if ( AR.outtohide ) {
@@ -1927,7 +1926,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#] Clean up & EndSort: 
 			#[ Collect (stats,prepro,...):
 */
-		MesPrint("Master waits for all slaves to finish");
+		MesPrint("[0] PF_Processor: Master waits for all slaves to finish");
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
@@ -2069,11 +2068,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+			MesPrint("[%d] PF_Processor: finished endsort", PF.me);
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
 			fout->POsize   = oldsize;
 			fout->POfill = fout->POfull = fout->PObuffer;
 		}
+		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		AR.BracketOn = oldBracketOn;
 		AT.BrackBuf = oldBrackBuf;
 		AT.bracketindexflag = oldbracketindexflag;
@@ -2262,10 +2263,8 @@ int PF_ForwardTermsToMaster()
 	oldposition = position;
 	oldgzipCompress = AR.gzipCompress;
 	AR.gzipCompress = 0;
-	LONG noutterms = 0;
     while (*(term = PF_PutIn2(&src)) != PF_term[0][0]) {
 		PF_term[src] = term;
-		noutterms++;
 		StoreTerm(BHEAD term);
 	}
 	FILEHANDLE *fout = AR.outfile;
@@ -2277,7 +2276,6 @@ int PF_ForwardTermsToMaster()
 	fout->POstop   = oldstop;
 	fout->POsize   = oldsize;
 	fout->POfill = fout->POfull = fout->PObuffer;
-	MesPrint("[%d] PF_ForwardTermsToMaster: forwarded %ld terms to master", PF.me, noutterms);	
     return (0);
 }
 /*

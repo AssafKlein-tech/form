@@ -79,7 +79,6 @@ LONG numcompares;
 	#[ SortUtilities :
 		#[ WriteStats :				VOID WriteStats(lspace,par,checkLogType)
 */
-static int num_to_red1 = 0;
 char *toterms[] = { "   ", " >>", "-->" };
 
 /**
@@ -806,7 +805,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
 				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for (int i=1;i<PF.numreducers;i++)	*AR.CompressPointers[i] = 0;
+					for (int i=PF.nummappers; i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset compress buffers
 				}
 #endif
 				SeekScratch(AR.outfile,&position);
@@ -1064,7 +1063,7 @@ TooLarge:
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
 				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for (int i=1;i<PF.numreducers;i++)	*AR.CompressPointers[i] = 0;
+					for (int i=PF.nummappers; i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset the compress buffers
 				}
 #endif
 #ifdef WITHZLIB
@@ -1544,8 +1543,8 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		}
 		else{
 #ifdef WITHMPI
-			int dst;
-			if (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE ) {
+			int dst = 0;
+			if (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE ) {
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);
@@ -1559,9 +1558,8 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
-				num_to_red1 += (dst) == (1 + PF.nummappers);
+				r = rr = AR.CompressPointers[dst];
 			}
-			//r = rr = AR.CompressPointers[dst];
 #endif
 			if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
 				if ( dobracketindex ) {
@@ -1636,7 +1634,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	/*					Sabotage getting into the coefficient next time */
 				r[-(ABS(r[-1]))] = 0;
 #ifdef WITHMPI
-				if( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE && r >= AR.CompressBuffers[0] + AM.CompressSize) {
+				if( PF.me < PF.nummappers && PF.me != MASTER&& AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE && r >= AR.CompressBuffers[dst] + AM.CompressSize) { //fixme: what if its MPI but master or reducer
 #else
 				if ( r >= AR.ComprTop ) {
 #endif
@@ -1698,16 +1696,24 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		}
 		ret = i;
 		ADDPOS(*position,i*sizeof(WORD));
+#ifdef WITHMPI
+		PF_BUFFER *sbuf = PF.sbufs[dst];
+		if ( PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE ) {
+			fi->POfill = pp = sbuf->fill[sbuf->active];
+			fi->POstop = sbuf->stop[sbuf->active];
+			fi->PObuffer = sbuf->buff[sbuf->active];
+			fi->POfull =sbuf->full[sbuf->active];
+		}
+#endif
 		p = fi->POfill;
 		do {
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-				PF_BUFFER *sbuf = PF.sbufs[0];
+				PF_BUFFER *sbuf = PF.sbufs[dst]; //can be removed
 				sbuf->fill[sbuf->active] = fi->POstop;
-				PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);
-				p = fi->PObuffer = fi->POfill = fi->POfull =
-				  sbuf->buff[sbuf->active];
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
+				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
 			  }
 			  else
@@ -1792,13 +1798,12 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				first--;
 			}
 			else *p++ = *term++;
-			//MesPrint(" %d",*(p-1));
-/*
-			if ( AP.DebugFlag ) {
-				TalToLine((UWORD)(p[-1])); TokenToLine((UBYTE *)"  ");
-			}
-*/
 		} while ( --i > 0 );
+#ifdef WITHMPI
+		if ( PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE ) 
+			sbuf->fill[sbuf->active] = sbuf->full[sbuf->active] = p;
+		//maybe I can remove it after updateing the sbuf in the first mpi section
+#endif		
 		fi->POfull = fi->POfill = p;
 	}
 /*
@@ -1826,8 +1831,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 {
 	GETIDENTITY
-	MesPrint("Num to red1: %d", num_to_red1);
-	num_to_red1 = 0;
 	LONG size, RetCode;
 	int dobracketindex = 0;
 #ifndef WITHZLIB
@@ -1837,18 +1840,33 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
 	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-		PF_BUFFER *sbuf = PF.sbufs[0];
-		if ( fi->POfill >= fi->POstop ){
-		  sbuf->fill[sbuf->active] = fi->POstop;
-		  PF_WISendSbuf(PF_BUFFER_MSGTAG, fi);
-		  fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
-		  fi->POstop = sbuf->stop[sbuf->active];
+		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
+			for (int i = PF.nummappers; i < PF.numtasks; i++){
+				PF_BUFFER *sbuf = PF.sbufs[i];
+				MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, i, sbuf->fill[sbuf->active] - sbuf->buff[sbuf->active] );
+				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] ){
+					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
+					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+				}
+				*(sbuf->fill[sbuf->active])++ = 0;
+				PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, i);
+				sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+			}
 		}
-		*(fi->POfill)++ = 0;
-		sbuf->fill[sbuf->active] = fi->POfill;
-		PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, fi);
-		fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
-		fi->POstop = sbuf->stop[sbuf->active];
+		else{
+			PF_BUFFER *sbuf = PF.sbufs[0];
+			if ( fi->POfill >= fi->POstop ){
+				sbuf->fill[sbuf->active] = fi->POstop;
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, MASTER);
+				fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
+				fi->POstop = sbuf->stop[sbuf->active];
+			}
+			*(fi->POfill)++ = 0;
+			sbuf->fill[sbuf->active] = fi->POfill;
+			PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, MASTER);
+			fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
+			fi->POstop = sbuf->stop[sbuf->active];
+		}
 		return(0);
 	}
 #endif /* WITHMPI [16mar1998 ar] */

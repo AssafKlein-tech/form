@@ -278,38 +278,17 @@ inline int PF_GetDestReducer()
  * it sends to the reducer determined by PF_GetReducer().
  *
  * @param tag The message tag to be used for the send operation.
- * @param fi  Pointer to the FILEHANDLE structure containing the file information.
+ * @param dest  Destination process (Reducer/Master)
  * @return Returns the result of the PF_ISendSbuf function call, which is typically
  *         0 on success, or a non-zero error code on failure.
  */
-int PF_WISendSbuf(int tag, FILEHANDLE *fi)
+int PF_WISendSbuf(int tag, int dest)
 {
     if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
         return PF_ISendSbuf(MASTER, tag);
-	int dest = PF_GetDestReducer();
+	//int dest = PF_GetDestReducer();
 	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
-	else if (tag == PF_ENDBUFFER_MSGTAG) {
-		int ret;
-		PF_BUFFER *sbuf = PF.sbufs[0];
-		ret = PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
-		if (ret != 0) return (ret);
-		for (int i = 0; i < PF.numreducers; i++ ) {
-			if ( i % PF.numreducers + PF.nummappers != dest ){
-				// reset the buffer and send empty buffers to other reducers
-				fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
-				fi->POstop = sbuf->stop[sbuf->active];
-				*(fi->POfill)++ = 0;
-				sbuf->fill[sbuf->active] = fi->POfill;
-				ret = PF_ISendSbuf((i % PF.numreducers + PF.nummappers), PF_ENDSHUFFLE_MSGTAG);
-				if (ret != 0) return (ret);
-			}
-		}
-		ret = MPI_Waitall(sbuf->numbufs,sbuf->request,sbuf->status); // Wait for all sends to finish
-		//MesPrint("PF_WISendSbuf: all sends finished with error %d %d", ret, sbuf->status[0].MPI_ERROR);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		first = 0; //reset fisrt flag to indicate it finished the round
-		return(0);
-	}
+	else if ( tag == PF_ENDBUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 	return (-1);
 }
 
@@ -330,8 +309,7 @@ int PF_WISendSbuf(int tag, FILEHANDLE *fi)
  */
 int PF_ISendSbuf(int to, int tag)
 {
-	//MesPrint("PF_ISendSbuf: from=%d to=%d, tag=%d",PF.me, to, tag);
-	PF_BUFFER *s = PF.sbufs[0];
+	PF_BUFFER *s = (PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE) ? PF.sbufs[to] : PF.sbufs[0];
 	int a = s->active;
 	int size = s->fill[a] - s->buff[a];
 	int r = 0;
@@ -364,13 +342,6 @@ int PF_ISendSbuf(int to, int tag)
 		default:
 			break;
 	}
-
-	if ((tag == PF_SHUFFLE_MSGTAG || tag == PF_ENDSHUFFLE_MSGTAG) && first == 0) // Mapper updates master it is starting shuffling
-	{
-		//MesPrint("[%d] PF_ISendSbuf: Sends first shuffle msg", PF.me);
-		PF_Send(MASTER, PF_BUFFER_MSGTAG);
-		first =  1;
-	}
 	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d", PF.me, size, to, tag);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
@@ -386,14 +357,14 @@ int PF_ISendSbuf(int to, int tag)
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		case PF_SHUFFLE_MSGTAG:
-		case PF_ENDSHUFFLE_MSGTAG:
 		case PF_BUFFER_MSGTAG:
-			if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
-			while ( s->request[s->active] != MPI_REQUEST_NULL ) { // busy wait until the active buffer is free
-				r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
-				if ( r != MPI_SUCCESS ) return(r);
-			}
-			break;
+		if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
+		while ( s->request[s->active] != MPI_REQUEST_NULL ) { // busy wait until the active buffer is free
+			r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
+			if ( r != MPI_SUCCESS ) return(r);
+		}
+		break;
+		case PF_ENDSHUFFLE_MSGTAG:
 		case PF_ENDBUFFER_MSGTAG:
 			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
