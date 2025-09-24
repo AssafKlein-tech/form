@@ -342,7 +342,7 @@ int PF_ISendSbuf(int to, int tag)
 		default:
 			break;
 	}
-	//MesPrint("PF_ISendSbuf: %d sending %d words to %d with tag %d", PF.me, size, to, tag);
+	//MesPrint("[%d] PF_ISendSbuf: sending %d words to %d with tag %d", PF.me, size, to, tag);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);

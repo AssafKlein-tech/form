@@ -81,6 +81,13 @@ LONG numcompares;
 */
 char *toterms[] = { "   ", " >>", "-->" };
 
+#ifdef WITHMPI
+static inline BOOL PF_LowMRsort( FILEHANDLE *fi) {
+	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
+}
+#endif
+
+
 /**
  *		Writes the statistics.
  *
@@ -1436,6 +1443,9 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	WORD i, *p, ret, *r, *rr, j, k, first;
 	int dobracketindex = 0;
 	LONG RetCode;
+#ifdef WITHMPI
+	int dst = 0;
+#endif
 
 	if ( AT.SS != AT.S0 ) {
 /*
@@ -1543,8 +1553,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		}
 		else{
 #ifdef WITHMPI
-			int dst = 0;
-			if (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE ) {
+			if (PF_LowMRsort(fi) ) {
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);
@@ -1633,11 +1642,12 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 	/*					Sabotage getting into the coefficient next time */
 				r[-(ABS(r[-1]))] = 0;
+				WORD* top = AR.ComprTop;
 #ifdef WITHMPI
-				if( PF.me < PF.nummappers && PF.me != MASTER&& AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0  && AC.sMRflag != NO_MAPREDUCE && r >= AR.CompressBuffers[dst] + AM.CompressSize) { //fixme: what if its MPI but master or reducer
-#else
-				if ( r >= AR.ComprTop ) {
+			if( PF_LowMRsort(fi))	
+				top =  AR.CompressBuffers[dst] + AM.CompressSize;
 #endif
+				if ( r >= top ) {
 					MLOCK(ErrorMessageLock);
 					MesPrint("CompressSize of %10l is insufficient",AM.CompressSize);
 					MUNLOCK(ErrorMessageLock);
@@ -1698,11 +1708,11 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		ADDPOS(*position,i*sizeof(WORD));
 #ifdef WITHMPI
 		PF_BUFFER *sbuf = PF.sbufs[dst];
-		if ( PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE ) {
-			fi->POfill = pp = sbuf->fill[sbuf->active];
+		if ( PF_LowMRsort(fi) ) {
+			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
-			fi->PObuffer = sbuf->buff[sbuf->active];
-			fi->POfull =sbuf->full[sbuf->active];
+			//fi->PObuffer = sbuf->buff[sbuf->active];
+			//fi->POfull = sbuf->full[sbuf->active];
 		}
 #endif
 		p = fi->POfill;
@@ -1710,8 +1720,10 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-				PF_BUFFER *sbuf = PF.sbufs[dst]; //can be removed
+				//PF_BUFFER *sbuf = PF.sbufs[dst]; //can be removed
+				MesPrint("[%d] PutOut: Sending terms to dest %d size  %d ", PF.me, dst, sbuf->stop[sbuf->active] - sbuf->buff[sbuf->active] );
 				sbuf->fill[sbuf->active] = fi->POstop;
+				//fi->PObuffer = sbuf->buff[sbuf->active];
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
@@ -1800,7 +1812,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			else *p++ = *term++;
 		} while ( --i > 0 );
 #ifdef WITHMPI
-		if ( PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE ) 
+		if ( PF_LowMRsort(fi) ) 
 			sbuf->fill[sbuf->active] = sbuf->full[sbuf->active] = p;
 		//maybe I can remove it after updateing the sbuf in the first mpi section
 #endif		
@@ -1854,7 +1866,8 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 			}
 		}
 		else{
-			PF_BUFFER *sbuf = PF.sbufs[0];
+			PF_BUFFER *sbuf = PF.sbufs[MASTER];
+			MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, MASTER, fi->POfill - fi->PObuffer);
 			if ( fi->POfill >= fi->POstop ){
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, MASTER);
