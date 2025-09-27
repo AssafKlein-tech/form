@@ -1,5 +1,7 @@
 *.o
 *.exe
+*.str
+*.txt
 
 *.gcno
 *.gcda
