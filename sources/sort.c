@@ -812,7 +812,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
 				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for (int i=PF.nummappers; i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset compress buffers
+					for(int i=PF.nummappers;i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset compress buffers
 				}
 #endif
 				SeekScratch(AR.outfile,&position);
@@ -1070,7 +1070,7 @@ TooLarge:
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
 				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for (int i=PF.nummappers; i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset the compress buffers
+					for(int i=PF.nummappers;i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset the compress buffers
 				}
 #endif
 #ifdef WITHZLIB
@@ -1711,8 +1711,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		if ( PF_LowMRsort(fi) ) {
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
-			//fi->PObuffer = sbuf->buff[sbuf->active];
-			//fi->POfull = sbuf->full[sbuf->active];
 		}
 #endif
 		p = fi->POfill;
@@ -1720,10 +1718,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
 			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
-				//PF_BUFFER *sbuf = PF.sbufs[dst]; //can be removed
-				MesPrint("[%d] PutOut: Sending terms to dest %d size  %d ", PF.me, dst, sbuf->stop[sbuf->active] - sbuf->buff[sbuf->active] );
 				sbuf->fill[sbuf->active] = fi->POstop;
-				//fi->PObuffer = sbuf->buff[sbuf->active];
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];

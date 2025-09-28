@@ -335,7 +335,7 @@ int PF_ISendSbuf(int to, int tag)
 
 	switch ( tag ) { /* things to do before sending */
 		case PF_TERM_MSGTAG:
-			if ( &s->request[to] != MPI_REQUEST_NULL)
+			if ( s->request[to] != MPI_REQUEST_NULL)
 				r = MPI_Wait(&s->request[to],&s->retstat[to]);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
@@ -501,12 +501,14 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 {
 	int ret,idx, rsize;
+	//MesPrint("[%d] PF_WaitAnyRbuf: access dispatch", PF.me);
 	PF_Dispatch* d = &PF.dispatch;
 	MPI_Status st;
 	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
-	if (err != MPI_SUCCESS) { return err; }
-	if(idx == MPI_UNDEFINED) { return PF_ENDSHUFFLEALL_MSGTAG; } // all requests are NULL
-
+	MesPrint("[%d] PF_WaitAnyRbuf: After waitany", PF.me);
+	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
+	if(idx == MPI_UNDEFINED) {MesPrint("[%d] PF_WaitAnyRbuf: MPI_UNDEFINED", PF.me); return PF_ENDSHUFFLEALL_MSGTAG; } // all requests are NULL
+	MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
 	*src = idx/PF.numrbufs; //which mapper
 	PF_BUFFER *buf = rbuf[*src];
 	buf->request[buf->active] = d->reqs[idx]; // needs to null
@@ -1996,7 +1998,12 @@ void PF_SetupFlatRequestsView()
 {
 	PF_Dispatch* d = &PF.dispatch;
 	PF_totalReq = PF.nummappers * PF.numrbufs;
-	d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
+	if (!d->reqs)
+	{
+		MesPrint("[%d] PF_SetupFlatRequestsView: allocating flat view", PF.me);
+		d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
+
+	}
     if (!d->reqs ) {
 		MesPrint("PF_SetupFlatRequestsView: malloc error");
 		exit(-1);
