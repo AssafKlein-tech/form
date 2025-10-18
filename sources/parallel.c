@@ -449,7 +449,7 @@ static int PF_InitTree(void)
 		PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 		*PF_term[i] = 0;
 		workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? i : i % PF.numreducers + PF.nummappers;
-		MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
+		//MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
 		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,workerIdx);
 	}
 	rbuf[0]->active = 0;
@@ -994,7 +994,7 @@ int PF_EndSort(void)
 	WORD *outterm,*pp;
 	LONG size, noutterms;
 	POSITION position, oldposition;
-	WORD i,cc;
+	WORD cc;
 	int oldgzipCompress;
 
 	if ( AT.SS != AT.S0 || !PF.parallel ){
@@ -1015,7 +1015,8 @@ int PF_EndSort(void)
 		sortiosize on the master and the POsize of our file.
 		First save the original PObuffer and POstop of the outfile
 */
-
+		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
+			return 0; //mappers won;t enter
 		if( PF.sbufs == NULL )
 		{
 			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
@@ -1036,48 +1037,14 @@ int PF_EndSort(void)
 		sbuf->buff[0] = fout->PObuffer;
 		sbuf->stop[0] = fout->PObuffer+size;
 		if ( sbuf->stop[0] > fout->POstop ) return -1;
-		for ( i = 0; i < PF.numsbufs; i++ )
-			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 		sbuf->active = 0;
 
 		fout->PObuffer = sbuf->buff[sbuf->active];
 		fout->POstop = sbuf->stop[sbuf->active];
 		fout->POsize = size*sizeof(WORD);
 		fout->POfill = fout->POfull = fout->PObuffer;
-		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
-		{
-			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
-				if(PF.sbufs[k] == NULL){
-					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
-					//MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size);
-				}
-				else{
-					for ( i = 0; i < PF.numsbufs; i++ )
-						PF.sbufs[k]->fill[i] = PF.sbufs[k]->full[i] = PF.sbufs[k]->buff[i];
-					PF.sbufs[k]->active = 0;
-				}
-			}
-		}
-/*
- 		#] the slaves have to initialize their sendbuffer : 
-*/
-		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ){
-			if(AR.CompressBuffers == NULL)
-			{
-				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
-				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
-				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
-				//MesPrint("[%d] PF_EndSort: Compress buffer and pointer %d starts at %d", PF.me, AR.CompressBuffers, AR.CompressBuffers[0]);
-				for(i=0;i<PF.numtasks;i++) AR.CompressBuffers[i] = NULL;
-			}
-			for(i=PF.nummappers;i<PF.numtasks;i++) {
-				if (AR.CompressBuffers[i] == NULL ){
-					AR.CompressBuffers[i] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
-				}
-				AR.CompressPointers[i] = AR.CompressBuffers[i];
-				AR.CompressBuffers[i][0] = 0;
-			}
-		}
+		AR.CompressPointer = AR.CompressBuffer;
+		*AR.CompressPointer = 0;
 		return(0);
 	}
 /*
@@ -2038,6 +2005,70 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			FILEHANDLE *fi = AC.RhsExprInModuleFlag && PF.rhsInParallel ? &PF.slavebuf : AR.infile;
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
+		SORTING *S = AT.SS;
+		FILEHANDLE *fout = AR.outfile;
+		if( PF.sbufs == NULL )
+		{
+			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
+			//MesPrint("[%d] PF_EndSort: allocated sbufs", PF.me);
+			for(int i = 0 ; i < PF.numtasks; i++)
+				PF.sbufs[i] = NULL;
+		}
+		PF_BUFFER *sbuf=PF.sbufs[0];
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*4 - 1);
+		size -= (AM.MaxTer/sizeof(WORD) + 2);
+		if( size <= 0) size = AM.MaxTer/sizeof(WORD) + 2;
+		if ( sbuf == NULL ) {
+			//MesPrint("[%d] PF_EndSort: allocated sbuf 0 size %d", PF.me, size);
+			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
+			sbuf->active = 0;
+			PF.sbufs[0] = sbuf;
+		}
+		sbuf->buff[0] = fout->PObuffer;
+		sbuf->stop[0] = fout->PObuffer+size;
+		if ( sbuf->stop[0] > fout->POstop ) return -1;
+		for ( i = 0; i < PF.numsbufs; i++ )
+			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
+		sbuf->active = 0;
+
+		fout->PObuffer = sbuf->buff[sbuf->active];
+		fout->POstop = sbuf->stop[sbuf->active];
+		fout->POsize = size*sizeof(WORD);
+		fout->POfill = fout->POfull = fout->PObuffer;
+		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
+		{
+			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
+				if(PF.sbufs[k] == NULL){
+					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
+					//MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size);
+				}
+				else{
+					for ( i = 0; i < PF.numsbufs; i++ )
+						PF.sbufs[k]->fill[i] = PF.sbufs[k]->full[i] = PF.sbufs[k]->buff[i];
+					PF.sbufs[k]->active = 0;
+				}
+			}
+		}
+/*
+ 		#] the slaves have to initialize their sendbuffer : 
+*/
+		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ){
+			if(AR.CompressBuffers == NULL)
+			{
+				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
+				//MesPrint("[%d] PF_EndSort: Compress buffer and pointer %d starts at %d", PF.me, AR.CompressBuffers, AR.CompressBuffers[0]);
+				for(i=0;i<PF.numtasks;i++) AR.CompressBuffers[i] = NULL;
+			}
+			for(i=PF.nummappers;i<PF.numtasks;i++) {
+				if (AR.CompressBuffers[i] == NULL ){
+					AR.CompressBuffers[i] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
+				}
+				AR.CompressPointers[i] = AR.CompressBuffers[i];
+				AR.CompressBuffers[i][0] = 0;
+			}
+		}
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
 		while ( PF_GetTerm(term) ) {
@@ -2090,9 +2121,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
-			//MesPrint("[%d] PF_Processor: starting endsort", PF.me);
+			MesPrint("[%d] PF_Processor: starting endsort", PF.me);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
-			//MesPrint("[%d] PF_Processor: finished endsort", PF.me);
+			MesPrint("[%d] PF_Processor: finished endsort", PF.me);
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
 			fout->POsize   = oldsize;
@@ -2231,7 +2262,6 @@ int PF_ReducerInit()
 		for ( i = 1; i < numtasks; i++ ) {
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0))) return(-1);
 		}
-		MesPrint("[%d] PF_ReducerInit: Reducer has %d rbufs of size %d words for each of the %d mappers", PF.me, numrbufs, size, numtasks-1);
 	}
 	UBYTE *p, *stop;
 	if ( PF_term == NULL ) {
@@ -2285,6 +2315,7 @@ int PF_ForwardTermsToMaster()
 	WORD *term ;
 	POSITION oldposition, position;
 	int oldgzipCompress;
+	AR.CompressPointer = AR.CompressBuffer;
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
 	oldposition = position;

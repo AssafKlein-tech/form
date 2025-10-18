@@ -862,10 +862,11 @@ WORD DoExecute(WORD par, WORD skip)
 		return (-1);
 	}
 	// if it's the last module we cannot have distributed output
-	if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE;
+	//if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE; //fixme later
 	if ((AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) && AC.mMRflag == MAPREDUCE) {AC.sMRflag =  MAPREDUCE_FIRST;}
 	else if ( AC.sMRflag == MAPREDUCE_FIRST && AC.mMRflag == MAPREDUCE){AC.sMRflag = MAPREDUCE;}
-	else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
+	//else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
+	else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;} //fixme
 	else if  (AC.sMRflag == MAPREDUCE_LAST && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;}
 #endif
 	if ( AP.preError == 0 && ( Processor() || WriteAll() ) ) RetCode = -1;

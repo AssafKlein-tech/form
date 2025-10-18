@@ -83,7 +83,7 @@ char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
 static inline BOOL PF_LowMRsort( FILEHANDLE *fi) {
-	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
+	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile || fi == &(AT.SS->file)) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
 #endif
 
@@ -810,11 +810,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( S == AT.S0 ) {
 				fout = AR.outfile;
 				*AR.CompressPointer = 0;
-#ifdef WITHMPI
-				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for(int i=PF.nummappers;i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset compress buffers
-				}
-#endif
 				SeekScratch(AR.outfile,&position);
 			}
 			else {
@@ -832,6 +827,9 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 			if ( tover > 0 ) {
 				ss = S->sPointer;
+#ifdef WITHMPI
+				MesPrint("[%d] EndSort: smallbuffer PutOut", PF.me);
+#endif
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
@@ -846,6 +844,9 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #ifdef WITHPTHREADS
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
+#endif
+#ifdef WITHMPI
+			MesPrint("[%d] EndSort: Smallbuffer FlushOut", PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1; goto RetRetval;
@@ -896,6 +897,9 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			MUNLOCK(ErrorMessageLock);
 #endif
 
+#ifdef WITHMPI
+			MesPrint("[%d] EndSort: lPatch merge (lbuffer is too full)", PF.me);
+#endif
 			if ( MergePatches(1) ) {
 				MLOCK(ErrorMessageLock);
 				MesCall("EndSort");
@@ -931,7 +935,12 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			}
 			*to++ = 0;
 			S->lFill = to;
+#ifdef WITHMPI
+			MesPrint("[%d] EndSort: put large buffer into output file",PF.me);
+			if ((PF_LowMRsort(AR.outfile)) || S->file.handle < 0 ){
+#else
 			if ( S->file.handle < 0 ) {
+#endif
 				if ( MergePatches(2) ) {
 					MLOCK(ErrorMessageLock);
 					MesCall("EndSort");
@@ -1069,9 +1078,7 @@ TooLarge:
 			if ( *ss ) {
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
-				if ( PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE){
-					for(int i=PF.nummappers;i<PF.numtasks;i++)	*AR.CompressPointers[i] = 0; //reset the compress buffers
-				}
+			MesPrint("[%d] EndSort: putting small buffer in the file", PF.me);
 #endif
 #ifdef WITHZLIB
 				if ( S == AT.S0 && AR.NoCompress == 0 && AR.gzipCompress > 0 )
@@ -1085,6 +1092,9 @@ TooLarge:
 						retval = -1; goto RetRetval;
 					}
 				}
+#ifdef WITHMPI
+			MesPrint("[%d] EndSort: finish writing small in file using FlashOut", PF.me);
+#endif
 				if ( FlushOut(&position,&(S->file),1) ) {
 					retval = -1; goto RetRetval;
 				}
@@ -1108,6 +1118,9 @@ TooLarge:
 		}
 #endif
 		UpdateMaxSize();
+#ifdef WITHMPI
+		MesPrint("[%d] EndSort: putting file in output", PF.me);
+#endif
 		if ( MergePatches(0) ) {
 			MLOCK(ErrorMessageLock);
 			MesCall("EndSort");
@@ -1717,7 +1730,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		do {
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
-			  if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
+			  if ( PF_LowMRsort(AR.outfile) || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -1846,7 +1859,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
-	if ( PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) {
+	if ( PF_LowMRsort(AR.outfile) || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
@@ -3974,6 +3987,7 @@ ConMer:
 
 		if ( fout->handle < 0 ) if ( Sflush(fout) ) goto PatCall;
 		if ( par ) {		/* Memory to file */
+			MesPrint("MergePatches rare direct copy");
 #ifdef WITHZLIB
 /*
 			We fix here the problem that the thing needs to go through PutOut
@@ -4009,8 +4023,17 @@ ConMer:
 			}
 			else
 #endif
+#ifdef WITHMPI
+			MesPrint("[%d] MergePathes: before single patch flush out", PF.me);
+			if (!( PF.me != MASTER && PF.me < PF.nummappers && AR.sLevel <= 0 &&  fout == &(AT.SS->file) && PF.parallel && PF.exprtodo < 0 ))
+			{
+
+#endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
+#ifdef WITHMPI
+			}
+#endif
 #else
 /* old code */
 			length = (LONG)(*S->pStop)-(LONG)(*S->Patches)+sizeof(WORD);
@@ -4047,7 +4070,7 @@ ConMer:
 				while ( *m1 && ( (WORD *)(((UBYTE *)(m1)) + AM.MaxTer ) < S->sTop2 ) )
 */
 				{
-					if ( *m1 < 0 ) { /* Need to uncompress */
+					if ( *m1 < 0 ) { /* Need to decompress */
 						i = -(*m1++); m2 += i; im = *m1+i+1;
 						while ( i > 0 ) { *m1-- = *m2--; i--; }
 						*m1 = im;
@@ -4083,6 +4106,9 @@ ConMer:
 				PutToMaster(BHEAD 0);
 			}
 			else
+#endif
+#ifdef WITHMPI
+			MesPrint("[%d] MergePatches: non to sort file flushout",PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
@@ -4423,15 +4449,35 @@ EndOfMerge:
 		}
 		else
 #endif
-	if ( FlushOut(&position,fout,1) ) goto ReturnError;
-	ADDPOS(S->SizeInFile[par],1);
+#ifdef WITHMPI
+		if (!(PF_LowMRsort(fout) && fout == &(AT.SS->file)))
+		{
+			MesPrint("[%d] MergePatches: doing end of merge flush out",PF.me);
+#endif
+			if ( FlushOut(&position,fout,1) ) goto ReturnError;
+			ADDPOS(S->SizeInFile[par],1);
+#ifdef WITHMPI
+		}else {
+			PUTZERO(S->SizeInFile[par]);
+			MesPrint("[%d] MergePatches: skipped end of merge flush out. S->fPatchN = %d size in file = %d",PF.me, S->fPatchN, S->SizeInFile[par]);
+			S->lPatch = 0;
+		}
+#endif
 EndOfAll:
 	if ( par == 1 ) {	/* Set the fpatch pointers */
 #ifdef WITHZLIB
 		SeekFile(fout->handle,&position,SEEK_CUR);
 #endif
+#ifdef WITHMPI
+	if (!(PF_LowMRsort(fout) && fout == &(AT.SS->file)))
+	{
+#endif
 		(S->fPatchN)++;
 		S->fPatches[S->fPatchN] = position;
+#ifdef WITHMPI
+		MesPrint("[%d] MergePatches: update fpatch. S->fPatchN= %d , S->fPatches[S->fPatchN] = %d",PF.me,S->fPatchN, position);
+	}
+#endif
 	}
 	if ( par == 0 && fout != AR.outfile ) {
 /*

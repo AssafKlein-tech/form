@@ -342,7 +342,7 @@ int PF_ISendSbuf(int to, int tag)
 		default:
 			break;
 	}
-	//MesPrint("[%d] PF_ISendSbuf: sending %d words to %d with tag %d", PF.me, size, to, tag);
+	MesPrint("[%d] PF_ISendSbuf: sending %d words to %d with tag %d", PF.me, size, to, tag);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);
@@ -505,10 +505,10 @@ int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 	PF_Dispatch* d = &PF.dispatch;
 	MPI_Status st;
 	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
-	MesPrint("[%d] PF_WaitAnyRbuf: After waitany", PF.me);
+	//MesPrint("[%d] PF_WaitAnyRbuf: After waitany", PF.me);
 	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
-	if(idx == MPI_UNDEFINED) {MesPrint("[%d] PF_WaitAnyRbuf: MPI_UNDEFINED", PF.me); return PF_ENDSHUFFLEALL_MSGTAG; } // all requests are NULL
-	MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
+	if(idx == MPI_UNDEFINED)  return PF_ENDSHUFFLEALL_MSGTAG;  // all requests are NULL
+	//MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
 	*src = idx/PF.numrbufs; //which mapper
 	PF_BUFFER *buf = rbuf[*src];
 	buf->request[buf->active] = d->reqs[idx]; // needs to null
