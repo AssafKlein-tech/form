@@ -104,18 +104,18 @@ static POSITION PF_exprsize;   /* (master) The size of the expression at PF_EndS
  #include <sched.h>
 #endif
 
-#ifdef PF_WITHLOG
+//#ifdef PF_WITHLOG
  #define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
   NumToStr(lbuf,AC.CModule); \
-  fprintf(stderr,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
-  if(TERM){ fprintf(stderr,"[%d] ",(int)(*TERM));\
+  fprintf(stdout,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
+  if(TERM){ fprintf(stdout,"[%d] ",(int)(*TERM));\
     if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
-      fprintf(stderr,"%d ",TERM[iii]); }\
-  fprintf(stderr,"\n");\
-  fflush(stderr); } }
-#else
- #define PRINTFBUF(TEXT,TERM,SIZE) {}
-#endif
+      fprintf(stdout,"%d ",TERM[iii]); }\
+  fprintf(stdout,"\n");\
+  fflush(stdout); } }
+//#else
+// #define PRINTFBUF(TEXT,TERM,SIZE) {}
+//#endif
 
 /**
  * Swaps the variables \a x and \a y. If sizeof(x) != sizeof(y) then a compilation error
@@ -417,7 +417,7 @@ static int PF_InitTree(void)
 /*
 		this is the size we have in the combined sortbufs for one slave
 */
-	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*4 - 1);
+	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*32 - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	//size = size / 512;
 	MLOCK(errorMessageLock);
@@ -634,6 +634,10 @@ newterms:
 		rbuf->fill[a] = term = m1;
 		if ( term + *term > rbuf->full[a] ) goto newterms;
 	}
+	char modified_input[1024];
+	snprintf(modified_input, sizeof(modified_input),
+    "PF_PutIn: received from %d:", workerIdx);
+	PRINTFBUF(modified_input,term, *term);
 	rbuf->fill[a] += *term;
 	return(term);
 }
@@ -655,6 +659,7 @@ static WORD* PF_PutIn2(int *src)
 	//No specifiec source, so wait for any source
 	if ( *src == 0 ) {
 newsrc:
+		MesPrint("[%d] PF_PutIn2: WaitAnyRbuf", PF.me);
 		tag = PF_WaitAnyRbuf(PF.rbufs,src,&size);
 		if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 		{
@@ -692,6 +697,7 @@ newsrc:
 
 	//Last term from current src
 	if ( *term == 0 && term != rbuf->full[a] ) {
+		MesPrint("[%d] PF_PutIn2: received end term from %d", PF.me, *src);
 		rbuf->full[a] = rbuf->fill[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 		goto newsrc;
 	}
@@ -700,6 +706,7 @@ newsrc:
 */
 	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
 newterms2:
+		MesPrint("[%d] PF_PutIn2: Need new terms, copies %d bytes or %d bytes", PF.me ,term - rbuf->buff[a], *term);	
 		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
 		if ( *term < 0 || term == rbuf->full[a] ) {
 /*
@@ -743,6 +750,10 @@ newterms2:
 		rbuf->fill[a] = term = m1;
 		if ( term + *term > rbuf->full[a] )  goto newterms2;
 	}
+	char modified_input[1024];
+	snprintf(modified_input, sizeof(modified_input),
+    "PF_PutIn2: received from %d:", *src);
+	PRINTFBUF(modified_input,term, *term);
 	//returns the term
 	rbuf->fill[a] += *term;
 	return(term);
@@ -1025,9 +1036,9 @@ int PF_EndSort(void)
 				PF.sbufs[i] = NULL;
 		}
 		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*4 - 1);
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*32 - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if( size <= 0) size = AM.MaxTer/sizeof(WORD) + 2;
+		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 		if ( sbuf == NULL ) {
 			//MesPrint("[%d] PF_EndSort: allocated sbuf 0 size %d", PF.me, size);
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
@@ -1331,7 +1342,7 @@ strip:
 	i = *fi->POfill;
 	while ( i-- ) *tp++ = *fi->POfill++;
 RegRet:
-	PRINTFBUF("PF_GetTerm returns",term,*term);
+	//PRINTFBUF("PF_GetTerm returns",term,*term);
 	return(*term);
 }
 
@@ -1687,6 +1698,7 @@ enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
 int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 {
 	GETIDENTITY
+	PF.log = 0;
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
 	WORD j, *s, next;
@@ -1831,7 +1843,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					LowerSortLevel(); return(-1);
 				}
 			}
-			PRINTFBUF("PF_Processor gets",term,*term);
+			//PRINTFBUF("PF_Processor gets",term,*term);
 			if ( termsinbucket >= maxinterms || sb->fill[0] + *term >= sb->stop[0] ) {
 				next = PF_Wait4Slave(PF_ANY_SOURCE);
 
@@ -2015,9 +2027,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				PF.sbufs[i] = NULL;
 		}
 		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*4 - 1);
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*32 - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if( size <= 0) size = AM.MaxTer/sizeof(WORD) + 2;
+		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 		if ( sbuf == NULL ) {
 			//MesPrint("[%d] PF_EndSort: allocated sbuf 0 size %d", PF.me, size);
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
@@ -2254,7 +2266,7 @@ int PF_ReducerInit()
 	PF_BUFFER **rbuf = PF.rbufs;
 	int numtasks = PF.nummappers; 
 	int numrbufs = PF.numrbufs; //for each mapper
-	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*4 - 1);
+	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*32 - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);

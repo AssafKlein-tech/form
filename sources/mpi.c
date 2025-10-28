@@ -287,6 +287,9 @@ int PF_WISendSbuf(int tag, int dest)
     if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
         return PF_ISendSbuf(MASTER, tag);
 	//int dest = PF_GetDestReducer();
+	//reset the compress buffer for the next buffer
+	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
+	* AR.CompressPointers[dest] = 0;
 	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	else if ( tag == PF_ENDBUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 	return (-1);

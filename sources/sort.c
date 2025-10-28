@@ -85,6 +85,15 @@ char *toterms[] = { "   ", " >>", "-->" };
 static inline BOOL PF_LowMRsort( FILEHANDLE *fi) {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile || fi == &(AT.SS->file)) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
+
+#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
+  NumToStr(lbuf,AC.CModule); \
+  fprintf(stdout,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
+  if(TERM){ fprintf(stdout,"[%d] ",(int)(*TERM));\
+    if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
+      fprintf(stdout,"%d ",TERM[iii]); }\
+  fprintf(stdout,"\n");\
+  fflush(stdout); } }
 #endif
 
 
@@ -873,10 +882,18 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	lSpace = sSpace + (S->lFill - S->lBuffer) - (LONG)S->lPatch*(AM.MaxTer/sizeof(WORD));
 /*         Note wrt MaxTer and lPatch: each patch starts with space for decompression */
 /*         Not needed if only large buffer, but needed when using files (?) */
+#ifdef WITHMPI
+	MesPrint("[%d] EndSort: lSpace = %d, sSpace = %d, lFill-lBuffer = %d, lPatch = %d, "
+			,PF.me,lSpace,sSpace,(S->lFill - S->lBuffer),S->lPatch);
+#endif
 	SETBASEPOSITION(pp,lSpace);
 	MULPOS(pp,sizeof(WORD));
 	if ( S->file.handle >= 0 ) {
 		ADD2POS(pp,S->fPatches[S->fPatchN]);
+#ifdef WITHMPI
+	MesPrint("[%d] EndSort: pp = %d, S->fPatches[S->fPatchN] = %d, S->fPatchN = %d, "
+			,PF.me,pp, S->fPatches[S->fPatchN], S->fPatchN);
+#endif
 	}
 	if ( S == AT.S0 ) {
 		if ( S->lPatch > 0 || S->file.handle >= 0 ) {
@@ -898,7 +915,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: lPatch merge (lbuffer is too full)", PF.me);
+			MesPrint("[%d] EndSort: before MergePatches call  lPatch merge (lbuffer is too full). S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 #endif
 			if ( MergePatches(1) ) {
 				MLOCK(ErrorMessageLock);
@@ -911,6 +928,9 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			MULPOS(pp,sizeof(WORD));
 #ifndef WITHPTHREADS
 			if ( S == AT.S0 )
+#endif
+#ifdef WITHMPI
+			if (!(PF_LowMRsort(AR.outfile)))
 #endif
 			{
 				POSITION pppp;
@@ -936,7 +956,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			*to++ = 0;
 			S->lFill = to;
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: put large buffer into output file",PF.me);
+			MesPrint("[%d] EndSort: put large buffer into output file, S->file.handle=%d",PF.me, S->file.handle);
 			if ((PF_LowMRsort(AR.outfile)) || S->file.handle < 0 ){
 #else
 			if ( S->file.handle < 0 ) {
@@ -1093,7 +1113,7 @@ TooLarge:
 					}
 				}
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: finish writing small in file using FlashOut", PF.me);
+				MesPrint("[%d] EndSort: writing terms with small buffer content", PF.me);
 #endif
 				if ( FlushOut(&position,&(S->file),1) ) {
 					retval = -1; goto RetRetval;
@@ -1119,7 +1139,8 @@ TooLarge:
 #endif
 		UpdateMaxSize();
 #ifdef WITHMPI
-		MesPrint("[%d] EndSort: putting file in output", PF.me);
+	if ( !(PF_LowMRsort(AR.outfile)) ){
+			MesPrint("[%d] EndSort: putting file in output", PF.me);
 #endif
 		if ( MergePatches(0) ) {
 			MLOCK(ErrorMessageLock);
@@ -1135,6 +1156,9 @@ TooLarge:
 		MULPOS(pp,sizeof(WORD));
 		WriteStats(&pp,STATSPOSTSORT,NOCHECKLOGTYPE);
 		UpdateMaxSize();
+#ifdef WITHMPI
+		}
+#endif
 	}
 RetRetval:
 
@@ -1580,6 +1604,9 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
+				char modified_input[1024];
+				snprintf(modified_input, sizeof(modified_input), "Putout: send to %d:", dst);
+				PRINTFBUF(modified_input,term, *term);
 				r = rr = AR.CompressPointers[dst];
 			}
 #endif
@@ -1735,6 +1762,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
+				//reset compresspointer
 			  }
 			  else
 #endif /* WITHMPI [16mar1998 ar] */
@@ -1812,7 +1840,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 			  }
 			} 
-			if ( first ) { // if compressed the first two WORDS are the negetive size of the copy and the size lesft for the term
+			if ( first ) { // if compressed the first two WORDS are the negetive size of the copy and the size left for the term
 				if ( first == 2 ) *p++ = k;
 				else *p++ = j;
 				first--;
@@ -3987,7 +4015,7 @@ ConMer:
 
 		if ( fout->handle < 0 ) if ( Sflush(fout) ) goto PatCall;
 		if ( par ) {		/* Memory to file */
-			MesPrint("MergePatches rare direct copy");
+			MesPrint("MergePatches: rare direct copy");
 #ifdef WITHZLIB
 /*
 			We fix here the problem that the thing needs to go through PutOut
@@ -4025,9 +4053,8 @@ ConMer:
 #endif
 #ifdef WITHMPI
 			MesPrint("[%d] MergePathes: before single patch flush out", PF.me);
-			if (!( PF.me != MASTER && PF.me < PF.nummappers && AR.sLevel <= 0 &&  fout == &(AT.SS->file) && PF.parallel && PF.exprtodo < 0 ))
+			if (!(PF_LowMRsort(AR.outfile)))
 			{
-
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
@@ -4058,6 +4085,7 @@ ConMer:
 			SetupAllInputGZIP(S);
 			m1 = m2 = copybuf;
 			position2 = S->iPatches[0];
+			MesPrint("MergePatches: rare file to file copy of one patch");
 			while ( ( length = FillInputGZIP(fin,&position2,
 					(UBYTE *)copybuf,
 					(S->SmallEsize*sizeof(WORD)-FRONTSIZE),0) ) > 0 ) {
@@ -4663,6 +4691,9 @@ WORD StoreTerm(PHEAD WORD *term)
 /*
 			The large buffer is too full. Merge and write it
 */
+#ifdef WITHMPI
+			MesPrint("[%d] StoreTerm: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+#endif
 			if ( MergePatches(1) ) goto StoreCall;
 /*
 			pp = S->SizeInFile[1];

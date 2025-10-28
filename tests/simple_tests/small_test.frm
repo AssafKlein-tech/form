@@ -1,12 +1,14 @@
 #: SmallSize 1K
 #: SmallExtension 3K
 #: LargeSize 10K
+#: largepatches 8
+#: maxtermsize  2000
 format 255;
 off mapreduce;
 on parallel;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^12;
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^10;
 
 .Sort
 #Printtimes
@@ -17,4 +19,5 @@ id a =  - 20/7*n + 19/51*m + 13/4*b + 195/14*f + 13/2*j;
 id c =  -33/4*p + 171/516*l + 9/5*j + 23/4*k;
 .Sort
 #Printtimes
+
 .end

@@ -13,13 +13,13 @@ for idx in $(seq 1 $NUM_TESTS); do
     echo "Running test $idx..."
     
     # Create the output file with proper permissions first
-    touch "test_results/test12_l_9_f_${idx}.txt"
-    chmod 644 "test_results/test12_l_9_f_${idx}.txt"
+    touch "test_results/test10_${idx}.txt"
+    chmod 644 "test_results/test10_${idx}.txt"
 
     # Run the MPI program and save output
     mpirun -hostfile ./hostfile -np 9 \
         parform ./tests/simple_tests/small_test.frm\
-         > ./test_results/test12_l_9_f_${idx}.txt
+         &> ./test_results/test10_${idx}.txt
     
     # Check if the run was successful
     if [ $? -eq 0 ]; then
