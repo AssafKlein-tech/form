@@ -289,7 +289,7 @@ int PF_WISendSbuf(int tag, int dest)
 	//int dest = PF_GetDestReducer();
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
-	* AR.CompressPointers[dest] = 0;
+	AR.CompressBuffers[dest][0] = 0;
 	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
 	else if ( tag == PF_ENDBUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 	return (-1);
@@ -345,7 +345,7 @@ int PF_ISendSbuf(int to, int tag)
 		default:
 			break;
 	}
-	MesPrint("[%d] PF_ISendSbuf: sending %d words to %d with tag %d", PF.me, size, to, tag);
+	//MesPrint("[%d] PF_ISendSbuf: sending %d words to %d with tag %d", PF.me, size, to, tag);
 	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
 
 	if ( r != MPI_SUCCESS ) return(r);

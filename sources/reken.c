@@ -58,6 +58,16 @@
 	one normalized fraction a.
 
 */
+#ifdef WITHMPI
+#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
+  NumToStr(lbuf,AC.CModule); \
+  fprintf(stdout,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
+  if(TERM){ fprintf(stdout,"[%d] ",(int)(*TERM));\
+    if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
+      fprintf(stdout,"%d ",TERM[iii]); }\
+  fprintf(stdout,"\n");\
+  fflush(stdout); } }
+#endif
 
 VOID Pack(UWORD *a, WORD *na, UWORD *b, WORD nb)
 {
@@ -429,6 +439,10 @@ WORD MulRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 		     MulLong(xd,dnumr,xe,enumr,c,nc) ||
 		     MulLong(xf,dden,xg,eden,xd,&dnumr) ) {
 			MLOCK(ErrorMessageLock);
+#ifdef WITHMPI
+			PRINTFBUF("MulRat a",a,na);
+			PRINTFBUF("MulRat b",b,nb);
+#endif
 			MesCall("MulRat");
 			MUNLOCK(ErrorMessageLock);
 			NumberFree(xd,"MulRat"); NumberFree(xe,"MulRat"); NumberFree(xf,"MulRat"); NumberFree(xg,"MulRat");

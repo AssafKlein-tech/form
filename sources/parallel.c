@@ -706,7 +706,7 @@ newsrc:
 */
 	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
 newterms2:
-		MesPrint("[%d] PF_PutIn2: Need new terms, copies %d bytes or %d bytes", PF.me ,term - rbuf->buff[a], *term);	
+		//MesPrint("[%d] PF_PutIn2: Need new terms, copies %d bytes or %d bytes", PF.me ,term - rbuf->buff[a], *term);	
 		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
 		if ( *term < 0 || term == rbuf->full[a] ) {
 /*
@@ -741,6 +741,7 @@ newterms2:
 /*
 			We need to decompress the term
 */
+		//MesPrint("[%d] PF_PutIn2: Decompress %d bytes from %d, the buffer has %d more butes", PF.me, -1*(*term), *src, rbuf->full[a] - term);
 		im = *term;
 		r = term[1] - im + 1;
 		m1 = term + 2;
@@ -1027,7 +1028,7 @@ int PF_EndSort(void)
 		First save the original PObuffer and POstop of the outfile
 */
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
-			return 0; //mappers won;t enter
+			return 0; //mappers won't enter
 		if( PF.sbufs == NULL )
 		{
 			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
@@ -1048,6 +1049,8 @@ int PF_EndSort(void)
 		sbuf->buff[0] = fout->PObuffer;
 		sbuf->stop[0] = fout->PObuffer+size;
 		if ( sbuf->stop[0] > fout->POstop ) return -1;
+		for (int i = 0; i < PF.numsbufs; i++ )
+			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 		sbuf->active = 0;
 
 		fout->PObuffer = sbuf->buff[sbuf->active];
@@ -2067,10 +2070,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ){
 			if(AR.CompressBuffers == NULL)
 			{
-				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
-				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in EndSort");
+				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in PF_Processor");
+				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in PF_Processor");
 				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
-				//MesPrint("[%d] PF_EndSort: Compress buffer and pointer %d starts at %d", PF.me, AR.CompressBuffers, AR.CompressBuffers[0]);
 				for(i=0;i<PF.numtasks;i++) AR.CompressBuffers[i] = NULL;
 			}
 			for(i=PF.nummappers;i<PF.numtasks;i++) {
