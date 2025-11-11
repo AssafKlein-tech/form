@@ -417,7 +417,7 @@ static int PF_InitTree(void)
 /*
 		this is the size we have in the combined sortbufs for one slave
 */
-	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*32 - 1);
+	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	//size = size / 512;
 	MLOCK(errorMessageLock);
@@ -659,7 +659,7 @@ static WORD* PF_PutIn2(int *src)
 	//No specifiec source, so wait for any source
 	if ( *src == 0 ) {
 newsrc:
-		MesPrint("[%d] PF_PutIn2: WaitAnyRbuf", PF.me);
+		//MesPrint("[%d] PF_PutIn2: WaitAnyRbuf", PF.me);
 		tag = PF_WaitAnyRbuf(PF.rbufs,src,&size);
 		if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 		{
@@ -697,7 +697,7 @@ newsrc:
 
 	//Last term from current src
 	if ( *term == 0 && term != rbuf->full[a] ) {
-		MesPrint("[%d] PF_PutIn2: received end term from %d", PF.me, *src);
+		//MesPrint("[%d] PF_PutIn2: received end term from %d", PF.me, *src);
 		rbuf->full[a] = rbuf->fill[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 		goto newsrc;
 	}
@@ -1037,7 +1037,7 @@ int PF_EndSort(void)
 				PF.sbufs[i] = NULL;
 		}
 		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*32 - 1);
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 		if ( sbuf == NULL ) {
@@ -2030,7 +2030,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				PF.sbufs[i] = NULL;
 		}
 		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks*32 - 1);
+		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 		if ( sbuf == NULL ) {
@@ -2268,7 +2268,7 @@ int PF_ReducerInit()
 	PF_BUFFER **rbuf = PF.rbufs;
 	int numtasks = PF.nummappers; 
 	int numrbufs = PF.numrbufs; //for each mapper
-	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks*32 - 1);
+	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);

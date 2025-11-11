@@ -767,7 +767,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	sSpace = 0;
 	tover = over = S->sTerms;
 #ifdef WITHMPI
-	MesPrint("[%d] EndSort: Number of terms in small buffer: %d and number of large patches %d",PF.me,over, S->lPatch);
+	//MesPrint("[%d] EndSort: Number of terms in small buffer: %d and number of large patches %d",PF.me,over, S->lPatch);
 #endif
 	ss = S->sPointer;
 	if ( over >= 0 ) {
@@ -776,7 +776,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			sSpace = ComPress(ss,&spare);
 			S->TermsLeft -= over - spare;
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: Small buffer compressed S->sTerms %d, S->TermsLeft %d, saved %d",PF.me, S->sTerms,S->TermsLeft,over - spare);
+			//MesPrint("[%d] EndSort: Small buffer compressed S->sTerms %d, S->TermsLeft %d, saved %d",PF.me, S->sTerms,S->TermsLeft,over - spare);
 #endif
 			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); }
 		}
@@ -843,7 +843,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			if ( tover > 0 ) {
 				ss = S->sPointer;
 #ifdef WITHMPI
-				MesPrint("[%d] EndSort: smallbuffer PutOut", PF.me);
+				//MesPrint("[%d] EndSort: smallbuffer PutOut", PF.me);
 #endif
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
@@ -861,7 +861,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			else
 #endif
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: Smallbuffer FlushOut", PF.me);
+			//MesPrint("[%d] EndSort: Smallbuffer FlushOut", PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1; goto RetRetval;
@@ -893,8 +893,8 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	if ( S->file.handle >= 0 ) {
 		ADD2POS(pp,S->fPatches[S->fPatchN]);
 #ifdef WITHMPI
-	MesPrint("[%d] EndSort: lSpace = %d, sSpace = %d, lFill-lBuffer = %d, lPatch = %d, pp = %d, S->fPatches[S->fPatchN] = %d, S->fPatchN = %d, "
-			,PF.me,lSpace,sSpace,(S->lFill - S->lBuffer),S->lPatch, pp, S->fPatches[S->fPatchN], S->fPatchN);
+	//MesPrint("[%d] EndSort: lSpace = %d, sSpace = %d, lFill-lBuffer = %d, lPatch = %d, pp = %d, S->fPatches[S->fPatchN] = %d, S->fPatchN = %d, "
+//			,PF.me,lSpace,sSpace,(S->lFill - S->lBuffer),S->lPatch, pp, S->fPatches[S->fPatchN], S->fPatchN);
 #endif
 	}
 	if ( S == AT.S0 ) {
@@ -917,7 +917,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: large buffer is full: S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d ",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+			//MesPrint("[%d] EndSort: large buffer is full: S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d ",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 #endif
 			if ( MergePatches(1) ) {
 				MLOCK(ErrorMessageLock);
@@ -972,9 +972,9 @@ merge2:
 			*to++ = 0;
 			S->lFill = to;
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: put large buffer into output file, S->file.handle=%d",PF.me, S->file.handle);
+			//MesPrint("[%d] EndSort: put large buffer into output file, S->file.handle=%d",PF.me, S->file.handle);
 			if ((PF_LowMRsort(AR.outfile)) || S->file.handle < 0 ){
-				MesPrint("[%d] EndSort: calling MergePatches(2)",PF.me);
+				//MesPrint("[%d] EndSort: calling MergePatches(2)",PF.me);
 #else
 			if ( S->file.handle < 0 ) {
 #endif
@@ -1061,12 +1061,12 @@ TooLarge:
 					}
 				}
 #ifdef WITHMPI
-				MesPrint("[%d] EndSort: Large buffer merged and written to output", PF.me);
+				//MesPrint("[%d] EndSort: Large buffer merged and written to output", PF.me);
 #endif
 				goto RetRetval;
 			}
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: Mapper writing to old file. PF_LowMRsort is false because: AR.sLevel=%d PF.parallel=%d, PF.exprtodo=%d AC.sMRflag=%d",PF.me,AR.sLevel,PF.parallel,PF.exprtodo,AC.sMRflag);
+			//MesPrint("[%d] EndSort: Mapper writing to old file. PF_LowMRsort is false because: AR.sLevel=%d PF.parallel=%d, PF.exprtodo=%d AC.sMRflag=%d",PF.me,AR.sLevel,PF.parallel,PF.exprtodo,AC.sMRflag);
 #endif
 			if ( MergePatches(1) ) { /* --> SortFile */
 				MLOCK(ErrorMessageLock);
@@ -1121,7 +1121,7 @@ TooLarge:
 			if ( *ss ) {
 				*AR.CompressPointer = 0;
 #ifdef WITHMPI
-			MesPrint("[%d] EndSort: putting small buffer in the file", PF.me);
+			//MesPrint("[%d] EndSort: putting small buffer in the file", PF.me);
 #endif
 #ifdef WITHZLIB
 				if ( S == AT.S0 && AR.NoCompress == 0 && AR.gzipCompress > 0 )
@@ -1160,7 +1160,7 @@ TooLarge:
 		UpdateMaxSize();
 #ifdef WITHMPI
 	if ( !(PF_LowMRsort(AR.outfile)) ){
-			MesPrint("[%d] EndSort: putting file in output", PF.me);
+			//MesPrint("[%d] EndSort: putting file in output", PF.me);
 #endif
 		if ( MergePatches(0) ) {
 			MLOCK(ErrorMessageLock);
@@ -1911,7 +1911,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
-				MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, i, sbuf->fill[sbuf->active] - sbuf->buff[sbuf->active] );
+				//MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, i, sbuf->fill[sbuf->active] - sbuf->buff[sbuf->active] );
 				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] ){
 					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -1923,7 +1923,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		}
 		else{
 			PF_BUFFER *sbuf = PF.sbufs[MASTER];
-			MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, MASTER, fi->POfill - fi->PObuffer);
+			//MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, MASTER, fi->POfill - fi->PObuffer);
 			if ( fi->POfill >= fi->POstop ){
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, MASTER);
@@ -4035,7 +4035,7 @@ ConMer:
 
 		if ( fout->handle < 0 ) if ( Sflush(fout) ) goto PatCall;
 		if ( par ) {		/* Memory to file */
-			MesPrint("MergePatches: rare direct copy");
+			//MesPrint("MergePatches: rare direct copy");
 #ifdef WITHZLIB
 /*
 			We fix here the problem that the thing needs to go through PutOut
@@ -4105,7 +4105,7 @@ ConMer:
 			SetupAllInputGZIP(S);
 			m1 = m2 = copybuf;
 			position2 = S->iPatches[0];
-			MesPrint("MergePatches: rare file to file copy of one patch");
+			//MesPrint("MergePatches: rare file to file copy of one patch");
 			while ( ( length = FillInputGZIP(fin,&position2,
 					(UBYTE *)copybuf,
 					(S->SmallEsize*sizeof(WORD)-FRONTSIZE),0) ) > 0 ) {
@@ -4156,7 +4156,7 @@ ConMer:
 			else
 #endif
 #ifdef WITHMPI
-			MesPrint("[%d] MergePatches: non to sort file flushout",PF.me);
+			//MesPrint("[%d] MergePatches: non to sort file flushout",PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
@@ -4212,7 +4212,7 @@ ConMer:
 			poin2[i] = poin[i] + *(poin[i]);
 		}
 #ifdef WITHMPI
-		MesPrint("[%d] MergePatches: sorting tree of patches",PF.me);
+		//MesPrint("[%d] MergePatches: sorting tree of patches",PF.me);
 #endif
 
 /*
@@ -4504,14 +4504,14 @@ EndOfMerge:
 #ifdef WITHMPI
 		if (!(PF_LowMRsort(fout) && fout == &(AT.SS->file)))
 		{
-			MesPrint("[%d] MergePatches: doing end of merge flush out",PF.me);
+			//MesPrint("[%d] MergePatches: doing end of merge flush out",PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
 		}else {
 			PUTZERO(S->SizeInFile[par]);
-			MesPrint("[%d] MergePatches: skipped end of merge flush out. S->fPatchN = %d size in file = %d",PF.me, S->fPatchN, S->SizeInFile[par]);
+			//MesPrint("[%d] MergePatches: skipped end of merge flush out. S->fPatchN = %d size in file = %d",PF.me, S->fPatchN, S->SizeInFile[par]);
 			S->lPatch = 0;
 		}
 #endif
@@ -4527,7 +4527,7 @@ EndOfAll:
 		(S->fPatchN)++;
 		S->fPatches[S->fPatchN] = position;
 #ifdef WITHMPI
-		MesPrint("[%d] MergePatches: update fpatch. S->fPatchN= %d , S->fPatches[S->fPatchN] = %d",PF.me,S->fPatchN, position);
+		//MesPrint("[%d] MergePatches: update fpatch. S->fPatchN= %d , S->fPatches[S->fPatchN] = %d",PF.me,S->fPatchN, position);
 	}
 #endif
 	}
@@ -4716,7 +4716,7 @@ WORD StoreTerm(PHEAD WORD *term)
 			The large buffer is too full. Merge and write it
 */
 #ifdef WITHMPI
-			MesPrint("[%d] StoreTerm: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+			//MesPrint("[%d] StoreTerm: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 #endif
 			if ( MergePatches(1) ) goto StoreCall;
 /*
