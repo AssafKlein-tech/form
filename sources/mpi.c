@@ -248,25 +248,6 @@ int PF_Probe(int *src)
 
 /*
   	#] PF_Probe : 
-	#[ PF_GetDestReducer :
-*/
-
-/**
- * @brief Calculates the reducer process ID for the current process.
- *
- * This function determines which reducer process should handle the output
- * from the current process in a parallel computation setup.
- *
- * @return The ID of the reducer process assigned to the current process.
- *         The returned value is always in the range [PF.nummappers, PF.numtasks - 1].
- */
-inline int PF_GetDestReducer()
-{
-    return  (PF.me % PF.numreducers + PF.nummappers);
-}
-
-/*
-	#] PF_GetDestReducer :
 	#[ PF_WISendSbuf :
 */
 
@@ -286,7 +267,6 @@ int PF_WISendSbuf(int tag, int dest)
 {
     if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
         return PF_ISendSbuf(MASTER, tag);
-	//int dest = PF_GetDestReducer();
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
 	AR.CompressBuffers[dest][0] = 0;
@@ -512,10 +492,16 @@ int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
 	if(idx == MPI_UNDEFINED)  return PF_ENDSHUFFLEALL_MSGTAG;  // all requests are NULL
 	//MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
+	/* map flat index -> (source, buffer index) */
+	int bn = idx % PF.numrbufs;
 	*src = idx/PF.numrbufs; //which mapper
 	PF_BUFFER *buf = rbuf[*src];
-	buf->request[buf->active] = d->reqs[idx]; // needs to null
-	ret = MPI_Get_count(&st,buf->type[buf->active],&rsize);
+	if ( buf->active != bn ) {
+		return(-1); //should not happen
+	}
+	buf->status[bn] = st;
+	buf->request[bn] = MPI_REQUEST_NULL;
+	ret = MPI_Get_count(&st, buf->type[bn], &rsize);
 	if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 	*size = (LONG)rsize;
 	return(st.MPI_TAG);

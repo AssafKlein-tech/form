@@ -391,16 +391,16 @@ static int PF_InitTree(void)
  		   we need one for each slave
 */
 	if ( PF_term == NULL ) {
-		size =  2*numtasks*sizeof(WORD*) + sizeof(WORD)*
-			( numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
+		size =  2*PF.numtasks*sizeof(WORD*) + sizeof(WORD)*
+			( PF.numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
 
 		PF_term = (WORD **)Malloc1(size,"PF_term");
 		stop = ((UBYTE*)PF_term) + size;
-		p = ((UBYTE*)PF_term) + numtasks*sizeof(WORD*);
+		p = ((UBYTE*)PF_term) + PF.numtasks*sizeof(WORD*);
 
-		PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * numtasks;
-		PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * numtasks;
-		for ( i = 0; i < numtasks; i++ ) {
+		PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * PF.numtasks;
+		PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * PF.numtasks;
+		for ( i = 0; i < PF.numtasks; i++ ) {
 			PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
 			PF_newclen[i] = 0;
 		}
@@ -421,13 +421,13 @@ static int PF_InitTree(void)
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	//size = size / 512;
 	MLOCK(errorMessageLock);
-	MesPrint("[0] PF_InitTree: Master size of receive buffer for each slave = %d words", size);
+	MesPrint("[0] PF_InitTree: Master size of receive buffer for each slave = %d words for %d tasks", size);
 	MUNLOCK(errorMessageLock);
 
 	if ( rbuf == NULL ) {
-		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
+		if ( ( rbuf = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
 		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
-		for ( i = 1; i < numtasks; i++ ) {
+		for ( i = 1; i < PF.numtasks; i++ ) {
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
 		}
 	}
@@ -435,11 +435,11 @@ static int PF_InitTree(void)
 	rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
 	rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
 	rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
-	for ( i = 2; i < numtasks; i++ ) {
+	for ( i = 2; i < PF.numtasks ; i++ ) {
 		rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
 		rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
 	}
-	rbuf[numtasks-1]->stop[0] = rbuf[numtasks-1]->buff[0] + size;
+	rbuf[PF.numtasks -1]->stop[0] = rbuf[PF.numtasks -1]->buff[0] + size;
 
 	for ( i = 1; i < numtasks; i++ ) {
 		rbuf[i]->active = 0;
@@ -449,7 +449,7 @@ static int PF_InitTree(void)
 		PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 		*PF_term[i] = 0;
 		workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? i : i % PF.numreducers + PF.nummappers;
-		//MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
+		MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
 		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,workerIdx);
 	}
 	rbuf[0]->active = 0;
@@ -470,8 +470,10 @@ static int PF_InitTree(void)
 	}
 
 	if ( PF_root == NULL )
-	if ( ( PF_root = (NODE*)Malloc1(sizeof(NODE)*numnodes,"nodes in mergetree") ) == NULL )
-		return(-1);
+	{
+		if ( ( PF_root = (NODE*)Malloc1(sizeof(NODE)*numnodes,"nodes in mergetree") ) == NULL )
+			return(-1);
+	}
 /*
 		then initialize all the nodes
 */
@@ -1011,8 +1013,7 @@ int PF_EndSort(void)
 
 	if ( AT.SS != AT.S0 || !PF.parallel ){
 		if( PF.sbufs == NULL ){
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-			MesPrint("[%d] PF_EndSort: allocated buffer for the master", PF.me);
+			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "PF_EnSort: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
 			for(int i = 0 ; i < PF.numtasks; i++)
 				PF.sbufs[i] = NULL;
 		} 
@@ -1031,7 +1032,7 @@ int PF_EndSort(void)
 			return 0; //mappers won't enter
 		if( PF.sbufs == NULL )
 		{
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
+			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
 			//MesPrint("[%d] PF_EndSort: allocated sbufs", PF.me);
 			for(int i = 0 ; i < PF.numtasks; i++)
 				PF.sbufs[i] = NULL;
@@ -1122,6 +1123,8 @@ int PF_EndSort(void)
 		AR.gzipCompress = oldgzipCompress;
 		return(-1);
 	}
+	M_free(PF_root, "PF_root");
+	PF_root = NULL;
 	S->TermsLeft = PF_goutterms = noutterms;
 	DIFPOS(PF_exprsize, position, oldposition);
 	AR.gzipCompress = oldgzipCompress;
@@ -1553,10 +1556,11 @@ static int PF_WaitAllSlaves(void)
 	int i, readySlaves, tag, next = PF_ANY_SOURCE;
 	UBYTE *has_sent = 0;
 
+	//allocate an arraay for all the slaves (mappers and reducers) - numtaks + 1- for each slave and for
 	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
-	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0;
+	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; // reset array
 
-	for ( readySlaves = 1; readySlaves < PF.numtasks; ) {
+	for ( readySlaves = 1; readySlaves < PF.numtasks; ) { //loop until all slaves are ready
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
 			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
 				if ( ++next >= PF.numtasks ) next = 1;
@@ -1565,7 +1569,7 @@ static int PF_WaitAllSlaves(void)
 /*
 			Here PF_ProbeWithCatchingErrorMessages() is BLOCKING function if next = PF_ANY_SOURCE:
 */
-		tag = PF_ProbeWithCatchingErrorMessages(&next);
+		tag = PF_ProbeWithCatchingErrorMessages(&next); //only probing
 /*
 			Here next != PF_ANY_SOURCE
 */
@@ -1582,7 +1586,8 @@ static int PF_WaitAllSlaves(void)
 				else {  /*error?*/
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
-				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers) PF_Wait4Slave(next);
+				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers) 			
+					PF_Wait4Slave(next);
 				//MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
@@ -1635,7 +1640,8 @@ static int PF_WaitAllSlaves(void)
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}/*if ( has_sent[next] == 0 )*/
 				break;
-			case PF_READY_MSGTAG:
+			// all mappers sent ready for the next term chunk. We need to tell them to stop.
+			case PF_READY_MSGTAG: 
 /*
 					idle slave
 					May be only PF_READY_MSGTAG:
@@ -1800,7 +1806,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
 			if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
 				size = AR.infile->POsize/sizeof(WORD) - 1;
-			if ( sb == 0 ) {
+			if ( sb == 0 ) { // allocate a buffer for each slave - use lbuffer space
 				if ( ( sb = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
 					return(-1);
 			}
@@ -1812,7 +1818,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			sb->stop[PF.numtasks-1] = sb->buff[PF.numtasks-1] + size;
 			PF.sbufs[0] = sb;
 		}
-		for ( j = 0; j < PF.nummappers; j++ ) {
+		for ( j = 0; j < PF.numtasks; j++ ) {
 			sb->full[j] = sb->fill[j] = sb->buff[j];
 		}
 /*
@@ -1931,7 +1937,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#] Clean up & EndSort: 
 			#[ Collect (stats,prepro,...):
 */
-		MesPrint("[0] PF_Processor: Master waits for all slaves to finish");
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
