@@ -9,7 +9,7 @@ off mapreduce;
 on memdebugflag;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^5;
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^6;
 
 .Sort
 #Printtimes

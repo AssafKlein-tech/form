@@ -82,8 +82,8 @@ LONG numcompares;
 char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
-static inline BOOL PF_LowMRsort( FILEHANDLE *fi) {
-	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile || fi == &(AT.SS->file)) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
+static inline BOOL PF_LowMRsort() {
+	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
 #endif
 
@@ -728,6 +728,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	retval = -1; 
 	goto RetRetval; 
   }
+  BOOL lowmr_sort = PF_LowMRsort();
 	/* PF_EndSort returned 0: for S != AM.S0 and slaves still do the regular sort */
 #endif /* WITHMPI */
 	oldoutfile = AR.outfile;
@@ -898,7 +899,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				retval = -1; goto RetRetval;
 			}
 #ifdef WITHMPI
-			if(PF_LowMRsort(AR.outfile)){
+			if(lowmr_sort){
 				SETBASEPOSITION(pp,sSpace);
 				MULPOS(pp,sizeof(WORD));
 				ADD2POS(pp,S->fPatches[S->fPatchN]);
@@ -944,8 +945,7 @@ merge2:
 			*to++ = 0;
 			S->lFill = to;
 #ifdef WITHMPI
-
-			if ((PF_LowMRsort(AR.outfile)) || S->file.handle < 0 ){
+			if (lowmr_sort || S->file.handle < 0 ){
 #else
 			if ( S->file.handle < 0 ) {
 #endif
@@ -1121,7 +1121,7 @@ TooLarge:
 #endif
 		UpdateMaxSize();
 #ifdef WITHMPI
-	if ( !(PF_LowMRsort(AR.outfile)) ){
+	if ( !lowmr_sort ){
 			//MesPrint("[%d] EndSort: putting file in output", PF.me);
 #endif
 		if ( MergePatches(0) ) {
@@ -1462,9 +1462,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	WORD i, *p, ret, *r, *rr, j, k, first;
 	int dobracketindex = 0;
 	LONG RetCode;
-#ifdef WITHMPI
-	int dst = 0;
-#endif
 
 	if ( AT.SS != AT.S0 ) {
 /*
@@ -1555,6 +1552,10 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			MUNLOCK(ErrorMessageLock);
 	}
 
+#ifdef WITHMPI
+	int dst = 0;
+	BOOL lowmr_sort = PF_LowMRsort();
+#endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 	r = rr = AR.CompressPointer;
@@ -1572,7 +1573,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		}
 		else{
 #ifdef WITHMPI
-			if (PF_LowMRsort(fi) ) {
+			if (lowmr_sort ) {
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);
@@ -1663,8 +1664,8 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				r[-(ABS(r[-1]))] = 0;
 				WORD* top = AR.ComprTop;
 #ifdef WITHMPI
-			if( PF_LowMRsort(fi))	
-				top =  AR.CompressBuffers[dst] + AM.CompressSize;
+				if(lowmr_sort)	
+					top =  AR.CompressBuffers[dst] + AM.CompressSize;
 #endif
 				if ( r >= top ) {
 					MLOCK(ErrorMessageLock);
@@ -1727,7 +1728,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		ADDPOS(*position,i*sizeof(WORD));
 #ifdef WITHMPI
 		PF_BUFFER *sbuf = PF.sbufs[dst];
-		if ( PF_LowMRsort(fi) ) {
+		if (lowmr_sort) {
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
 		}
@@ -1736,7 +1737,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		do {
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
-			  if ( PF_LowMRsort(AR.outfile) || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
+			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -1826,7 +1827,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			else *p++ = *term++;
 		} while ( --i > 0 );
 #ifdef WITHMPI
-		if ( PF_LowMRsort(fi) ) 
+		if ( lowmr_sort ) 
 			sbuf->fill[sbuf->active] = sbuf->full[sbuf->active] = p;
 		//maybe I can remove it after updateing the sbuf in the first mpi section
 #endif		
@@ -1865,7 +1866,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
-	if ( PF_LowMRsort(AR.outfile) || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
+	if ( PF_LowMRsort() || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
@@ -4029,7 +4030,7 @@ ConMer:
 #endif
 #ifdef WITHMPI
 			MesPrint("[%d] MergePathes: before single patch flush out", PF.me);
-			if (!(PF_LowMRsort(AR.outfile)) || par == 2)
+			if (!(PF_LowMRsort()) || par == 2)
 			{
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
@@ -4458,7 +4459,7 @@ EndOfMerge:
 		else
 #endif
 #ifdef WITHMPI
-		if (!(PF_LowMRsort(fout) && fout == &(AT.SS->file)))
+		if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
 		{
 			//MesPrint("[%d] MergePatches: doing end of merge flush out",PF.me);
 #endif
@@ -4477,7 +4478,7 @@ EndOfAll:
 		SeekFile(fout->handle,&position,SEEK_CUR);
 #endif
 #ifdef WITHMPI
-	if (!(PF_LowMRsort(fout) && fout == &(AT.SS->file)))
+	if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
 	{
 #endif
 		(S->fPatchN)++;
