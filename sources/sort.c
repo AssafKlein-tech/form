@@ -85,15 +85,6 @@ char *toterms[] = { "   ", " >>", "-->" };
 static inline BOOL PF_LowMRsort( FILEHANDLE *fi) {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile || fi == &(AT.SS->file)) && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
-
-#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
-  NumToStr(lbuf,AC.CModule); \
-  fprintf(stdout,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
-  if(TERM){ fprintf(stdout,"[%d] ",(int)(*TERM));\
-    if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
-      fprintf(stdout,"%d ",TERM[iii]); }\
-  fprintf(stdout,"\n");\
-  fflush(stdout); } }
 #endif
 
 
@@ -766,18 +757,12 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 	sSpace = 0;
 	tover = over = S->sTerms;
-#ifdef WITHMPI
-	//MesPrint("[%d] EndSort: Number of terms in small buffer: %d and number of large patches %d",PF.me,over, S->lPatch);
-#endif
 	ss = S->sPointer;
 	if ( over >= 0 ) {
 		if ( S->lPatch > 0 || S->file.handle >= 0 ) {
 			ss[over] = 0;
 			sSpace = ComPress(ss,&spare);
 			S->TermsLeft -= over - spare;
-#ifdef WITHMPI
-			//MesPrint("[%d] EndSort: Small buffer compressed S->sTerms %d, S->TermsLeft %d, saved %d",PF.me, S->sTerms,S->TermsLeft,over - spare);
-#endif
 			if ( par == 1 ) { AR.outfile = newout = AllocFileHandle(0,(char *)0); }
 		}
 		else if ( S != AT.S0 ) {
@@ -842,9 +827,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #endif
 			if ( tover > 0 ) {
 				ss = S->sPointer;
-#ifdef WITHMPI
-				//MesPrint("[%d] EndSort: smallbuffer PutOut", PF.me);
-#endif
 				while ( ( t = *ss++ ) != 0 ) {
 					if ( *t ) S->TermsLeft++;
 #ifdef WITHPTHREADS
@@ -859,9 +841,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 #ifdef WITHPTHREADS
 			if ( AS.MasterSort && ( fout == AR.outfile ) ) { PutToMaster(BHEAD 0); }
 			else
-#endif
-#ifdef WITHMPI
-			//MesPrint("[%d] EndSort: Smallbuffer FlushOut", PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) {
 				retval = -1; goto RetRetval;
@@ -892,10 +871,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 	MULPOS(pp,sizeof(WORD));
 	if ( S->file.handle >= 0 ) {
 		ADD2POS(pp,S->fPatches[S->fPatchN]);
-#ifdef WITHMPI
-	//MesPrint("[%d] EndSort: lSpace = %d, sSpace = %d, lFill-lBuffer = %d, lPatch = %d, pp = %d, S->fPatches[S->fPatchN] = %d, S->fPatchN = %d, "
-//			,PF.me,lSpace,sSpace,(S->lFill - S->lBuffer),S->lPatch, pp, S->fPatches[S->fPatchN], S->fPatchN);
-#endif
 	}
 	if ( S == AT.S0 ) {
 		if ( S->lPatch > 0 || S->file.handle >= 0 ) {
@@ -916,9 +891,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			MUNLOCK(ErrorMessageLock);
 #endif
 
-#ifdef WITHMPI
-			//MesPrint("[%d] EndSort: large buffer is full: S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d ",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
-#endif
 			if ( MergePatches(1) ) {
 				MLOCK(ErrorMessageLock);
 				MesCall("EndSort");
@@ -972,9 +944,8 @@ merge2:
 			*to++ = 0;
 			S->lFill = to;
 #ifdef WITHMPI
-			//MesPrint("[%d] EndSort: put large buffer into output file, S->file.handle=%d",PF.me, S->file.handle);
+
 			if ((PF_LowMRsort(AR.outfile)) || S->file.handle < 0 ){
-				//MesPrint("[%d] EndSort: calling MergePatches(2)",PF.me);
 #else
 			if ( S->file.handle < 0 ) {
 #endif
@@ -1060,14 +1031,8 @@ TooLarge:
 						}
 					}
 				}
-#ifdef WITHMPI
-				//MesPrint("[%d] EndSort: Large buffer merged and written to output", PF.me);
-#endif
 				goto RetRetval;
 			}
-#ifdef WITHMPI
-			//MesPrint("[%d] EndSort: Mapper writing to old file. PF_LowMRsort is false because: AR.sLevel=%d PF.parallel=%d, PF.exprtodo=%d AC.sMRflag=%d",PF.me,AR.sLevel,PF.parallel,PF.exprtodo,AC.sMRflag);
-#endif
 			if ( MergePatches(1) ) { /* --> SortFile */
 				MLOCK(ErrorMessageLock);
 				MesCall("EndSort");
@@ -1120,9 +1085,6 @@ TooLarge:
 			ss = S->sPointer;
 			if ( *ss ) {
 				*AR.CompressPointer = 0;
-#ifdef WITHMPI
-			//MesPrint("[%d] EndSort: putting small buffer in the file", PF.me);
-#endif
 #ifdef WITHZLIB
 				if ( S == AT.S0 && AR.NoCompress == 0 && AR.gzipCompress > 0 )
 					S->fpcompressed[S->fPatchN] = 1;
@@ -1624,9 +1586,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				}
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
-				char modified_input[1024];
-				snprintf(modified_input, sizeof(modified_input), "Putout: send to %d:", dst);
-				PRINTFBUF(modified_input,term, *term);
 				r = rr = AR.CompressPointers[dst];
 			}
 #endif
@@ -1782,7 +1741,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
-				//reset compresspointer
 			  }
 			  else
 #endif /* WITHMPI [16mar1998 ar] */
@@ -1911,7 +1869,6 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
-				//MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, i, sbuf->fill[sbuf->active] - sbuf->buff[sbuf->active] );
 				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] ){
 					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -1923,7 +1880,6 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		}
 		else{
 			PF_BUFFER *sbuf = PF.sbufs[MASTER];
-			//MesPrint("[%d] Flushout: sending last terms to dest %d size  %d ", PF.me, MASTER, fi->POfill - fi->PObuffer);
 			if ( fi->POfill >= fi->POstop ){
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, MASTER);

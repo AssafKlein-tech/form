@@ -165,14 +165,12 @@ WORD Processor(VOID)
 #endif
 #ifdef WITHMPI
 	if ( PF.me == MASTER )
-#endif
 	{
 		if (AC.sMRflag == NO_MAPREDUCE){MesPrint("\nMAPREDUCE NOT ACTIVE\n");}
 		else if (AC.sMRflag == MAPREDUCE_FIRST){MesPrint("\nMAPREDUCE_FIRST ACTIVE\n");}
 		else if (AC.sMRflag == MAPREDUCE_LAST){MesPrint("\nMAPREDUCE_LAST ACTIVE\n");}
 		else{MesPrint("\nMAPREDUCE ACTIVE\n");}
 	}
-#ifdef WITHMPI
  	if ( AC.RhsExprInModuleFlag && PF.rhsInParallel && (AC.mparallelflag == PARALLELFLAG || AC.partodoflag) ) {
 		if ( PF_BroadcastRHS() ) {
 			retval = -1;

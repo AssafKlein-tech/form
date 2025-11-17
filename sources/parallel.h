@@ -249,6 +249,8 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 #define PF_LongMultiUnpack(buffer, count, type) PF_LongMultiUnpackImpl(buffer, count, sizeof_datatype(type), type)
 
 /* parallel.c */
+extern LONG PF_allocateSbuf(void);
+extern int PF_allocatePFTerm(int numtasks);
 extern int    PF_ForwardTermsToMaster(void);
 extern void   PF_SetupFlatRequestsView(void);
 extern int 	  PF_ReducerInit(void);

@@ -1988,11 +1988,7 @@ void PF_SetupFlatRequestsView()
 	PF_Dispatch* d = &PF.dispatch;
 	PF_totalReq = PF.nummappers * PF.numrbufs;
 	if (!d->reqs)
-	{
-		MesPrint("[%d] PF_SetupFlatRequestsView: allocating flat view", PF.me);
 		d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
-
-	}
     if (!d->reqs ) {
 		MesPrint("PF_SetupFlatRequestsView: malloc error");
 		exit(-1);

@@ -104,18 +104,18 @@ static POSITION PF_exprsize;   /* (master) The size of the expression at PF_EndS
  #include <sched.h>
 #endif
 
-//#ifdef PF_WITHLOG
+#ifdef PF_WITHLOG
  #define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
   NumToStr(lbuf,AC.CModule); \
-  fprintf(stdout,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
-  if(TERM){ fprintf(stdout,"[%d] ",(int)(*TERM));\
+  fprintf(stderr,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
+  if(TERM){ fprintf(stderr,"[%d] ",(int)(*TERM));\
     if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
-      fprintf(stdout,"%d ",TERM[iii]); }\
-  fprintf(stdout,"\n");\
-  fflush(stdout); } }
-//#else
-// #define PRINTFBUF(TEXT,TERM,SIZE) {}
-//#endif
+      fprintf(stderr,"%d ",TERM[iii]); }\
+  fprintf(stderr,"\n");\
+  fflush(stderr); } }
+#else
+ #define PRINTFBUF(TEXT,TERM,SIZE) {}
+#endif
 
 /**
  * Swaps the variables \a x and \a y. If sizeof(x) != sizeof(y) then a compilation error
@@ -381,7 +381,6 @@ static int PF_InitTree(void)
 {
 	GETIDENTITY
 	PF_BUFFER **rbuf = PF.rbufs;
-	UBYTE *p, *stop;
 	int workerIdx,numrbufs,numtasks = (AC.sMRflag == NO_MAPREDUCE) ? PF.nummappers : PF.numreducers+1;
 	int i, j, src, numnodes;
 	int numslaves = numtasks - 1;
@@ -390,25 +389,7 @@ static int PF_InitTree(void)
  		#[ the buffers : for the new coefficients and the terms
  		   we need one for each slave
 */
-	if ( PF_term == NULL ) {
-		size =  2*PF.numtasks*sizeof(WORD*) + sizeof(WORD)*
-			( PF.numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
-
-		PF_term = (WORD **)Malloc1(size,"PF_term");
-		stop = ((UBYTE*)PF_term) + size;
-		p = ((UBYTE*)PF_term) + PF.numtasks*sizeof(WORD*);
-
-		PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * PF.numtasks;
-		PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * PF.numtasks;
-		for ( i = 0; i < PF.numtasks; i++ ) {
-			PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
-			PF_newclen[i] = 0;
-		}
-		PF_WorkSpace = (WORD *)p;    p += AM.MaxTer+sizeof(WORD);
-		PF_ScratchSpace = (UWORD*)p; p += 2*(AM.MaxTal+2)*sizeof(UWORD);
-
-		if ( p != stop ) { MesPrint("error in PF_InitTree"); return(-1); }
-	}
+	if (PF_term == NULL && PF_allocatePFTerm(PF.numtasks)) {MesPrint("Error in InitTree"); return -1;}
 /*
  		#] the buffers : 
  		#[ the receive buffers :
@@ -420,9 +401,6 @@ static int PF_InitTree(void)
 	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	//size = size / 512;
-	MLOCK(errorMessageLock);
-	MesPrint("[0] PF_InitTree: Master size of receive buffer for each slave = %d words for %d tasks", size);
-	MUNLOCK(errorMessageLock);
 
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
@@ -449,7 +427,7 @@ static int PF_InitTree(void)
 		PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 		*PF_term[i] = 0;
 		workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? i : i % PF.numreducers + PF.nummappers;
-		MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
+		//MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
 		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,workerIdx);
 	}
 	rbuf[0]->active = 0;
@@ -636,10 +614,6 @@ newterms:
 		rbuf->fill[a] = term = m1;
 		if ( term + *term > rbuf->full[a] ) goto newterms;
 	}
-	char modified_input[1024];
-	snprintf(modified_input, sizeof(modified_input),
-    "PF_PutIn: received from %d:", workerIdx);
-	PRINTFBUF(modified_input,term, *term);
 	rbuf->fill[a] += *term;
 	return(term);
 }
@@ -648,7 +622,25 @@ newterms:
  		#] PF_PutIn : 
  		#[ PF_PutIn2 : 
 */
-// returns 0 if not done, 1 if "src" mapper is done, -1 on error
+/**
+ * Replaces PutIn() on Reducer process and is used in PF_ForwardTermsToMaster().
+ * It puts in the next term from mappers \a src into the sortbuffer
+ * and is a lot like GetTerm(). The main problems are:
+ * buffering and decompression.
+ *
+ * If \a src == 0, it receives a buffer from a new src.
+ *
+ * If \a src != 0, it gets the next term from the active buffer.
+ * They are stored in the large sortbuffer which is divided into buff[i]
+ * in the PF.rbufs[src], if PF.numrbufs > 1.
+ *
+ * @param  src  the source process.
+ * @return      the next term.
+ *
+ * @remark  PF_term[0][0] == 0 (see InitTree()), so PF_term[0] can be used to be
+ *          the returnvalue for a zero term (== no more terms).
+ * 			returns -1 for an error
+ */
 static WORD* PF_PutIn2(int *src)
 {
 	int tag, err, a, next;
@@ -708,7 +700,6 @@ newsrc:
 */
 	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
 newterms2:
-		//MesPrint("[%d] PF_PutIn2: Need new terms, copies %d bytes or %d bytes", PF.me ,term - rbuf->buff[a], *term);	
 		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
 		if ( *term < 0 || term == rbuf->full[a] ) {
 /*
@@ -743,7 +734,6 @@ newterms2:
 /*
 			We need to decompress the term
 */
-		//MesPrint("[%d] PF_PutIn2: Decompress %d bytes from %d, the buffer has %d more butes", PF.me, -1*(*term), *src, rbuf->full[a] - term);
 		im = *term;
 		r = term[1] - im + 1;
 		m1 = term + 2;
@@ -753,10 +743,6 @@ newterms2:
 		rbuf->fill[a] = term = m1;
 		if ( term + *term > rbuf->full[a] )  goto newterms2;
 	}
-	char modified_input[1024];
-	snprintf(modified_input, sizeof(modified_input),
-    "PF_PutIn2: received from %d:", *src);
-	PRINTFBUF(modified_input,term, *term);
 	//returns the term
 	rbuf->fill[a] += *term;
 	return(term);
@@ -1011,14 +997,7 @@ int PF_EndSort(void)
 	WORD cc;
 	int oldgzipCompress;
 
-	if ( AT.SS != AT.S0 || !PF.parallel ){
-		if( PF.sbufs == NULL ){
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "PF_EnSort: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-			for(int i = 0 ; i < PF.numtasks; i++)
-				PF.sbufs[i] = NULL;
-		} 
-		return 0;
-	}
+	if ( AT.SS != AT.S0 || !PF.parallel ) return 0;
 
 	if ( PF.me != MASTER ) {
 /*
@@ -1030,34 +1009,8 @@ int PF_EndSort(void)
 */
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
 			return 0; //mappers won't enter
-		if( PF.sbufs == NULL )
-		{
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-			//MesPrint("[%d] PF_EndSort: allocated sbufs", PF.me);
-			for(int i = 0 ; i < PF.numtasks; i++)
-				PF.sbufs[i] = NULL;
-		}
-		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks - 1);
-		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
-		if ( sbuf == NULL ) {
-			//MesPrint("[%d] PF_EndSort: allocated sbuf 0 size %d", PF.me, size);
-			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
-			sbuf->active = 0;
-			PF.sbufs[0] = sbuf;
-		}
-		sbuf->buff[0] = fout->PObuffer;
-		sbuf->stop[0] = fout->PObuffer+size;
-		if ( sbuf->stop[0] > fout->POstop ) return -1;
-		for (int i = 0; i < PF.numsbufs; i++ )
-			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
-		sbuf->active = 0;
-
-		fout->PObuffer = sbuf->buff[sbuf->active];
-		fout->POstop = sbuf->stop[sbuf->active];
-		fout->POsize = size*sizeof(WORD);
-		fout->POfill = fout->POfull = fout->PObuffer;
+		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
+		
 		AR.CompressPointer = AR.CompressBuffer;
 		*AR.CompressPointer = 0;
 		return(0);
@@ -1558,8 +1511,8 @@ static int PF_WaitAllSlaves(void)
 
 	//allocate an arraay for all the slaves (mappers and reducers) - numtaks + 1- for each slave and for
 	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
-	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; // reset array
 
+	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; // reset array
 	for ( readySlaves = 1; readySlaves < PF.numtasks; ) { //loop until all slaves are ready
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
 			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
@@ -1707,7 +1660,6 @@ enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
 int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 {
 	GETIDENTITY
-	PF.log = 0;
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
 	WORD j, *s, next;
@@ -1736,7 +1688,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			AC.inputnumbers[j] = -1;
 		}
 	}
-
 	if ( AC.mparallelflag != PARALLELFLAG ){
 		if(AC.sMRflag == NO_MAPREDUCE) {return(0);}
 		MesPrint("ERROR: Calling Map Reduce without parallel");
@@ -1793,34 +1744,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			to the right places in the sortbuffers.
 */
 		NewSort(BHEAD0);   /* we need AT.SS to be set for this!!! */
-		if (PF.sbufs == NULL)
-		{
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(sizeof(PF_BUFFER*), "Master: sbufs") ) == NULL ){MesPrint("Error in processor"); return(-1);}
-			MesPrint("PF_Processor: Master starts distributing terms to slaves");
-			PF.sbufs[0] = 0;
-			for(int i = 0 ; i < PF.numtasks; i++)
-				PF.sbufs[i] = NULL;
-		}
+		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error Master PF_Processor"); return -1;}
+
 		PF_BUFFER *sb = PF.sbufs[0] ;
-		if ( sb == 0 || sb->buff[0] != AT.SS->lBuffer ) {
-			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
-			if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
-				size = AR.infile->POsize/sizeof(WORD) - 1;
-			if ( sb == 0 ) { // allocate a buffer for each slave - use lbuffer space
-				if ( ( sb = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
-					return(-1);
-			}
-			sb->buff[0] = AT.SS->lBuffer;
-			sb->full[0] = sb->fill[0] = sb->buff[0];
-			for ( j = 1; j < PF.numtasks; j++ ) {
-				sb->stop[j-1] = sb->buff[j] = sb->buff[j-1] + size;
-			}
-			sb->stop[PF.numtasks-1] = sb->buff[PF.numtasks-1] + size;
-			PF.sbufs[0] = sb;
-		}
-		for ( j = 0; j < PF.numtasks; j++ ) {
-			sb->full[j] = sb->fill[j] = sb->buff[j];
-		}
 /*
 			#] initialize sendbuffer if necessary: 
 			#[ loop for all terms in infile:
@@ -2025,36 +1951,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			FILEHANDLE *fi = AC.RhsExprInModuleFlag && PF.rhsInParallel ? &PF.slavebuf : AR.infile;
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
-		SORTING *S = AT.SS;
-		FILEHANDLE *fout = AR.outfile;
-		if( PF.sbufs == NULL )
-		{
-			if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Mapper: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return -1;}
-			//MesPrint("[%d] PF_EndSort: allocated sbufs", PF.me);
-			for(int i = 0 ; i < PF.numtasks; i++)
-				PF.sbufs[i] = NULL;
-		}
-		PF_BUFFER *sbuf=PF.sbufs[0];
-		size = (S->sTop2 - S->lBuffer - 1)/(PF.numtasks - 1);
-		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
-		if ( sbuf == NULL ) {
-			//MesPrint("[%d] PF_EndSort: allocated sbuf 0 size %d", PF.me, size);
-			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return -1;
-			sbuf->active = 0;
-			PF.sbufs[0] = sbuf;
-		}
-		sbuf->buff[0] = fout->PObuffer;
-		sbuf->stop[0] = fout->PObuffer+size;
-		if ( sbuf->stop[0] > fout->POstop ) return -1;
-		for ( i = 0; i < PF.numsbufs; i++ )
-			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
-		sbuf->active = 0;
+		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
 
-		fout->PObuffer = sbuf->buff[sbuf->active];
-		fout->POstop = sbuf->stop[sbuf->active];
-		fout->POsize = size*sizeof(WORD);
-		fout->POfill = fout->POfull = fout->PObuffer;
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
 		{
 			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
@@ -2140,9 +2038,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
-			MesPrint("[%d] PF_Processor: starting endsort", PF.me);
+			//MesPrint("[%d] PF_Processor: starting endsort", PF.me);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
-			MesPrint("[%d] PF_Processor: finished endsort", PF.me);
+			//MesPrint("[%d] PF_Processor: finished endsort", PF.me);
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
 			fout->POsize   = oldsize;
@@ -2208,9 +2106,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#] the receive buffers : 
 		#[ Reducer Loop & EndSort :
 */
-		MLOCK(ErrorMessageLock);
-		MesPrint("[%d] PF_Processor: starts forwarding terms to master", PF.me);
-		MUNLOCK(ErrorMessageLock);
 		int ret = PF_ForwardTermsToMaster();
 		if ( ret < 0 ) {
 			MesPrint("PF_forwardTermsToMaster error");
@@ -2264,7 +2159,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#] PF_Processor : 
 		#[ PF_ReducerInit :
 */
-
+/**
+ * Allocates and resets the data structures for the Reduce stage
+ *
+ * @return      0 if OK, -1 otherwise
+ *
+ */
 int PF_ReducerInit()
 {
 	GETIDENTITY
@@ -2282,26 +2182,7 @@ int PF_ReducerInit()
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0))) return(-1);
 		}
 	}
-	UBYTE *p, *stop;
-	if ( PF_term == NULL ) {
-		size =  2*numtasks*sizeof(WORD*) + sizeof(WORD)*
-			( numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
-
-		PF_term = (WORD **)Malloc1(size,"PF_term");
-		stop = ((UBYTE*)PF_term) + size;
-		p = ((UBYTE*)PF_term) + numtasks*sizeof(WORD*);
-
-		PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * numtasks;
-		PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * numtasks;
-		for ( i = 0; i < numtasks; i++ ) {
-			PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
-			PF_newclen[i] = 0;
-		}
-		PF_WorkSpace = (WORD *)p;    p += AM.MaxTer+sizeof(WORD);
-		PF_ScratchSpace = (UWORD*)p; p += 2*(AM.MaxTal+2)*sizeof(UWORD);
-
-		if ( p != stop ) { MesPrint("error in PF_InitTree"); return(-1); }
-	}
+	if (PF_term == NULL && PF_allocatePFTerm(numtasks)) {MesPrint("Error in ReducerInit"); return -1;}
 	// create a receivers requests flat view
 	PF_SetupFlatRequestsView();
 	PF_Dispatch* d = &PF.dispatch;
@@ -2328,6 +2209,13 @@ int PF_ReducerInit()
 	    #] PF_ReducerInit :
   	 	#[ PF_ForwardTermsToMaster : 
 */ 
+/**
+ * Forwards terms from the Mappers to the Masters.
+ * This is the main Reduce stage. It receives terms from the mappers, sort them and sends them to the master
+ *
+ * @return      0 if OK, -1 otherwise
+ *
+ */
 int PF_ForwardTermsToMaster()
 {
     int src = 0;
@@ -2359,6 +2247,109 @@ int PF_ForwardTermsToMaster()
 }
 /*
  	#] PF_ForwardTermsToMaster : 
+	#[ PF_allocateSbuf :
+*/
+/**
+ *	Allocates the Send buffers
+ *
+ *	@return  the size of each buffer, 0 if there is an error
+ */
+LONG PF_allocateSbuf()
+{
+	if( PF.sbufs == NULL )
+	{
+		if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return 0;}
+		PF.sbufs[0] = 0;
+		for(int i = 0 ; i < PF.numtasks; i++)
+			PF.sbufs[i] = NULL;
+	}
+	PF_BUFFER *sbuf=PF.sbufs[0];
+	LONG size;
+	if(PF.me == MASTER){
+		size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
+		if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
+			size = AR.infile->POsize/sizeof(WORD) - 1;
+		if ( sbuf == 0 || sbuf->buff[0] != AT.SS->lBuffer ) {
+			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
+			if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
+				size = AR.infile->POsize/sizeof(WORD) - 1;
+			if ( sbuf == 0 ) { // allocate a buffer for each slave - use lbuffer space
+				if ( ( sbuf = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
+					return(-1);
+			}
+			sbuf->buff[0] = AT.SS->lBuffer;
+			sbuf->full[0] = sbuf->fill[0] = sbuf->buff[0];
+			for (int j = 1; j < PF.numtasks; j++ ) {
+				sbuf->stop[j-1] = sbuf->buff[j] = sbuf->buff[j-1] + size;
+			}
+			sbuf->stop[PF.numtasks-1] = sbuf->buff[PF.numtasks-1] + size;
+			PF.sbufs[0] = sbuf;
+		}
+		for (int j = 0; j < PF.numtasks; j++ ) {
+			sbuf->full[j] = sbuf->fill[j] = sbuf->buff[j];
+		}
+	}
+	else{
+		size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
+		size -= (AM.MaxTer/sizeof(WORD) + 2);
+		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
+		if( sbuf == 0){
+			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return 0;
+			sbuf->active = 0;
+		}
+		for (int i = 0; i < PF.numsbufs; i++ )
+			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
+		FILEHANDLE *fout = AR.outfile;
+		sbuf->buff[0] = fout->PObuffer;
+		sbuf->stop[0] = fout->PObuffer+size;
+		if ( sbuf->stop[0] > fout->POstop ) return -1;
+		sbuf->fill[0] = sbuf->full[0] = sbuf->buff[0];
+		sbuf->active = 0;
+
+		fout->PObuffer = sbuf->buff[sbuf->active];
+		fout->POstop = sbuf->stop[sbuf->active];
+		fout->POsize = size*sizeof(WORD);
+		fout->POfill = fout->POfull = fout->PObuffer;
+	}
+	PF.sbufs[0] = sbuf;
+	return size;
+	//size = (PF.sbufs[0]->stop[0] - PF.sbufs[0]->buff[0])/sizeof(WORD);
+}
+/*
+	#] PF_allocateSbuf :
+	#[ PF_allocatePFTerm :
+*/
+/**
+ *	Allocates the PF_Term structure to store previous term for compression
+ *
+ *	@param numtasks Number of tasks the process can receive from
+ *	@return  Regular return conventions (OK -> 0)
+ */
+int PF_allocatePFTerm(int numtasks)
+{
+	UBYTE *p, *stop;
+	int size =  2*numtasks*sizeof(WORD*) + sizeof(WORD)*
+		( numtasks*(1 + AM.MaxTal) + (AM.MaxTer/sizeof(WORD)+1) + 2*(AM.MaxTal+2));
+
+	PF_term = (WORD **)Malloc1(size,"PF_term");
+	stop = ((UBYTE*)PF_term) + size;
+	p = ((UBYTE*)PF_term) + numtasks*sizeof(WORD*);
+
+	PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * numtasks;
+	PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * numtasks;
+	for (int i = 0; i < numtasks; i++ ) {
+		PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
+		PF_newclen[i] = 0;
+	}
+	PF_WorkSpace = (WORD *)p;    p += AM.MaxTer+sizeof(WORD);
+	PF_ScratchSpace = (UWORD*)p; p += 2*(AM.MaxTal+2)*sizeof(UWORD);
+
+	if ( p != stop ) { MesPrint("error in PF_InitTree"); return(-1); }
+	return 0;
+	
+}
+/*
+	#] PF_allocatePFTerm :
   	#] proces.c : 
   	#[ startup :, prepro & compile
  		#[ PF_Init :
