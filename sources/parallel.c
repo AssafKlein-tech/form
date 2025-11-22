@@ -2226,8 +2226,6 @@ int PF_ForwardTermsToMaster()
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
 	oldposition = position;
-	oldgzipCompress = AR.gzipCompress;
-	AR.gzipCompress = 0;
     while ((term = PF_PutIn2(&src)) != PF_term[0]) {
 		PF_term[src] = term;
 		StoreTerm(BHEAD term);
@@ -2242,7 +2240,6 @@ int PF_ForwardTermsToMaster()
 	fout->POsize   = oldsize;
 	fout->POfill = fout->POfull = fout->PObuffer;
 	position = oldposition;
-	AR.gzipCompress = oldgzipCompress;
     return (0);
 }
 /*

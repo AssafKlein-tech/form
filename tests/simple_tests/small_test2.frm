@@ -1,25 +1,19 @@
 #: SmallSize 1K
 #: SmallExtension 3K
 #: LargeSize 10K
-#: TempDir temp2
+#: largepatches 8
+
 format 255;
-on mapreduce;
 on parallel;
-on fewerstatistics 0;
-on finalstats;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^11;
-
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^14;
 
 .Sort
 #Printtimes
-on parallel;
-on mapreduce;
+off mapreduce;
 id g =  -17/11*h - 5/349*i + 14/3*d;
 id a =  - 20/7*n + 19/51*m + 13/4*b + 195/14*f + 13/2*j; 
 id c =  -33/4*p + 171/516*l + 9/5*j + 23/4*k;
-.sort
-#Printtimes
-on mapreduce;
+
 .end

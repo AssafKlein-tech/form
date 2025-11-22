@@ -3935,7 +3935,7 @@ ConMer:
 		}
 		fout = AR.outfile;
 	}
-	if ( par ) {				/* Mark end of patches */
+	if ( par ) {				/* Mark end of large buffer patches */
 		S->Patches[S->lPatch] = S->lFill;
 		for ( i = 0; i < S->lPatch; i++ ) {
 			S->pStop[i] = S->Patches[i+1]-1;
@@ -4461,7 +4461,6 @@ EndOfMerge:
 #ifdef WITHMPI
 		if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
 		{
-			//MesPrint("[%d] MergePatches: doing end of merge flush out",PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
@@ -4479,14 +4478,9 @@ EndOfAll:
 #endif
 #ifdef WITHMPI
 	if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
-	{
 #endif
 		(S->fPatchN)++;
-		S->fPatches[S->fPatchN] = position;
-#ifdef WITHMPI
-		//MesPrint("[%d] MergePatches: update fpatch. S->fPatchN= %d , S->fPatches[S->fPatchN] = %d",PF.me,S->fPatchN, position);
-	}
-#endif
+	S->fPatches[S->fPatchN] = position;
 	}
 	if ( par == 0 && fout != AR.outfile ) {
 /*
