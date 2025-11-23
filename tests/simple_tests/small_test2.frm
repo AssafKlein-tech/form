@@ -1,13 +1,8 @@
-#: SmallSize 1K
-#: SmallExtension 3K
-#: LargeSize 10K
-#: largepatches 8
-
 format 255;
 on parallel;
 Symbols a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p;
 
-Global F = (-a-b+c+d-e+f+g+19*h-101*o)^14;
+Global F = (-a-b+c+d-e+f+g+19*h-101*o)^15;
 
 .Sort
 #Printtimes
