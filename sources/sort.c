@@ -130,7 +130,58 @@ static inline UWORD hash_uint32(UWORD ux) {
     // fallback: mix the integer value itself
     return mix32(ux);
 }
-#ifdef __AVX2__
+#ifdef __AVX512F__
+#include <immintrin.h>
+static inline __m512i mix32_vec(__m512i h) {
+    __m512i t;
+
+    t = _mm512_srli_epi32(h, 16);
+    h = _mm512_xor_si512(h, t);
+    h = _mm512_mullo_epi32(h, _mm512_set1_epi32(0x85ebca6bU));
+
+    t = _mm512_srli_epi32(h, 13);
+    h = _mm512_xor_si512(h, t);
+    h = _mm512_mullo_epi32(h, _mm512_set1_epi32(0xc2b2ae35U));
+
+    t = _mm512_srli_epi32(h, 16);
+    h = _mm512_xor_si512(h, t);
+
+    return h;
+}
+
+UWORD hash_list_avx512(const WORD *arr, WORD n) {
+    const WORD STRIDE = 16;
+    WORD i = 0;
+
+    __m512i vacc = _mm512_setzero_si512();
+
+    for (; i + STRIDE <= n; i += STRIDE) {
+        __m512i v = _mm512_loadu_si512((const void*)&arr[i]);
+        vacc = _mm512_xor_si512(vacc, mix32_vec(v));
+    }
+
+    // horizontal XOR reduce
+    UWORD buf[16];
+	size_t rem = n - i;
+	if (rem) {
+		__mmask16 k = (1U << rem) - 1;
+
+		__m512i v = _mm512_maskz_loadu_epi32(k, arr + i);
+		__m512i m = mix32_vec(v);
+
+		// keep only the lanes that correspond to real elements
+		m = _mm512_maskz_mov_epi32(k, m);
+
+		vacc = _mm512_xor_si512(vacc, m);
+	}
+    _mm512_storeu_si512((void*)buf, vacc);
+
+    UWORD acc = 0;
+    for (int j = 0; j < 16; ++j) acc ^= buf[j];
+
+    return hash_uint32(acc);
+}
+#elif define __AVX2__
 #include <immintrin.h>
 
 UWORD hash_list32_avx2(const WORD *arr, WORD n) {
@@ -139,16 +190,11 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
     int i = 0;
     for (; i + 8 <= n; i += 8) {
 
-        __m256i idx = _mm256_loadu_si256((const __m256i*)&arr[i]);
+        __m256i v = _mm256_loadu_si256((const __m256i*)&arr[i]);
 
-        // clamp to 0..255
-        __m256i mask = _mm256_cmpgt_epi32(idx, _mm256_set1_epi32(255));
-        __m256i small = _mm256_andnot_si256(mask, idx);
-
-        // gather 8 R[x] values
-        __m256i vals = _mm256_i32gather_epi32((const int*)R, small, 4);
-
-        acc = _mm256_xor_si256(acc, vals);
+        v = _mm256_and_si256(v, _mm256_set1_epi32(255));        // x & 255
+        __m256i t = _mm256_i32gather_epi32((const int*)R, v, 4); // gather R[x]
+        acc = _mm256_xor_si256(acc, t);
     }
 
     // horizontal XOR of the vector
@@ -162,7 +208,7 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
     for (; i < n; i++)
         h ^= hash_uint32(arr[i]);
 
-    return h;
+    return hash_uint32(h);
 }
 #endif
 #endif
@@ -1666,6 +1712,8 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 					term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
 					term_hash ^= w;
 				}
+#elif defined __AVX512F__
+				term_hash = hash_list_avx512(start, end - start);
 #elif defined __AVX2__
 				term_hash = hash_list32_avx2(start, end - start);
 #else
