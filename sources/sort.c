@@ -85,6 +85,87 @@ char *toterms[] = { "   ", " >>", "-->" };
 static inline BOOL PF_LowMRsort() {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
+#ifndef ILP32
+static const UWORD R[256] = {
+ 	0x8f3b5e2a, 0xc1840d77, 0x4abe12f9, 0xbd7e39c3, 0x73da904e, 0x2f9e1b78, 0xe4a1c653, 0x9c0d2fa1,
+    0x1f37b5d4, 0xa6c3942e, 0xd9134a8f, 0x5be27fd6, 0x84a9c130, 0xfe67320d, 0x671d90ce, 0x3ac4e2b1,
+    0x92f01dc8, 0xcc184327, 0x4aef90b1, 0xb3d17e5c, 0x71cb23e8, 0x28fe9bc2, 0xea91d645, 0x98c41af0,
+    0x165d3cb7, 0xa89fe401, 0xde034b62, 0x58d7a1c4, 0x8bd430fe, 0xfc61994a, 0x6b8e27d5, 0x3054f1aa,
+
+    0x8bc36d91, 0xc4d21867, 0x4d8a0cf3, 0xbad564c5, 0x7c392e0f, 0x219fead3, 0xe83c1572, 0x93a96b8d,
+    0x10c8bd20, 0xaf3e9464, 0xd4f20a87, 0x564ce139, 0x821d57b6, 0xf74b903e, 0x6f82ab49, 0x33e09f02,
+    0x90be4f12, 0xcb0a8ce7, 0x43ed31b5, 0xb2dcf079, 0x76120943, 0x2c358aef, 0xed7246bd, 0x9a1cd5f4,
+    0x17409e18, 0xab21c3d8, 0xd75f0294, 0x5a8db71c, 0x8e473fbd, 0xfac1805e, 0x68829a03, 0x37f5d462,
+
+    0x9147a2fb, 0xc77504a9, 0x415bd8c4, 0xbc34e97a, 0x7fe21c90, 0x23898f6b, 0xeed54632, 0x978c13c1,
+    0x143eaf07, 0xb1c2785d, 0xd1ef9036, 0x5943c27e, 0x8789f10b, 0xf2534878, 0x6a14b3c4, 0x381dd985,
+    0x95c34e71, 0xc05a92d9, 0x44f10c33, 0xbbdc683e, 0x7a820b19, 0x21b67ead, 0xe9753420, 0x9ffd8bc8,
+    0x1280fad2, 0xa2b47101, 0xd84c0aae, 0x5d93c42c, 0x8c2ed3f5, 0xf99e3704, 0x6c1438b2, 0x3dd7e61f,
+
+    0x9b0f4cc7, 0xc2e8b311, 0x47823afd, 0xbe613de9, 0x7de21566, 0x26bd0274, 0xef1c5890, 0x96af23b3,
+    0x190d7f42, 0xa3c21404, 0xd3ae61b5, 0x5f3b8ac1, 0x8027d4ae, 0xf5d1c709, 0x699f20d3, 0x327849f8,
+    0x97afc15b, 0xc9f732ea, 0x4c1d7b06, 0xb59ac8f1, 0x7b4e5d26, 0x275bd08e, 0xec317b5c, 0x940af2b3,
+    0x18d46c72, 0xa5661fc5, 0xda187345, 0x5c74a0fb, 0x89c3e11d, 0xf0b9d8aa, 0x63de4731, 0x394a8c90,
+
+    0x9a34dc71, 0xcd07abef, 0x47b81359, 0xb8452cfb, 0x7e928bf4, 0x2023fd87, 0xe7c85936, 0x9340c18a,
+    0x11cf7b41, 0xa7b41ef9, 0xd5f0932c, 0x584d0a93, 0x837b16d7, 0xf4a9176b, 0x6ed41c31, 0x35672a48,
+    0x91dc804f, 0xceba36c1, 0x42ed5f24, 0xbc10319d, 0x7c924eb8, 0x244b8702, 0xeed69351, 0x95b68d03,
+    0x164fa85e, 0xa09b6f11, 0xd94e1788, 0x5e61b93d, 0x8f1237cb, 0xf8772f92, 0x6b9dc1a4, 0x31f24078,
+};
+//murmur3 hash
+static inline UWORD mix32(UWORD h) {
+    h ^= h >> 16;
+    h *= 0x85ebca6bU;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35U;
+    h ^= h >> 16;
+    return h;
+}
+
+// ------------------------- scalar hash_int32 -------------------------
+static inline UWORD hash_uint32(UWORD ux) {
+    if (ux < 256U) 
+        // Use compact R16 but return widened 32-bit value
+        return R[ux];
+    // fallback: mix the integer value itself
+    return mix32(ux);
+}
+#ifdef __AVX2__
+#include <immintrin.h>
+
+UWORD hash_list32_avx2(const WORD *arr, WORD n) {
+    __m256i acc = _mm256_setzero_si256();
+
+    int i = 0;
+    for (; i + 8 <= n; i += 8) {
+
+        __m256i idx = _mm256_loadu_si256((const __m256i*)&arr[i]);
+
+        // clamp to 0..255
+        __m256i mask = _mm256_cmpgt_epi32(idx, _mm256_set1_epi32(255));
+        __m256i small = _mm256_andnot_si256(mask, idx);
+
+        // gather 8 R[x] values
+        __m256i vals = _mm256_i32gather_epi32((const int*)R, small, 4);
+
+        acc = _mm256_xor_si256(acc, vals);
+    }
+
+    // horizontal XOR of the vector
+    UWORD tmp[8];
+    _mm256_storeu_si256((__m256i*)tmp, acc);
+
+    UWORD h = tmp[0] ^ tmp[1] ^ tmp[2] ^ tmp[3] ^
+                 tmp[4] ^ tmp[5] ^ tmp[6] ^ tmp[7];
+
+    // tail elements
+    for (; i < n; i++)
+        h ^= hash_uint32(arr[i]);
+
+    return h;
+}
+#endif
+#endif
 #endif
 
 
@@ -1579,12 +1660,20 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				end -= ABS(end[-1]);
 				UWORD term_hash = 0;
 				start++;
+#ifdef ILP32
 				while( start < end ) {
-					UWORD w = (UWORD)(*start++);     
+					UWORD w = (UWORD)(*start++);    
 					term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
 					term_hash ^= w;
-					//MesPrint("WORD %d",w);
 				}
+#elif defined __AVX2__
+				term_hash = hash_list32_avx2(start, end - start);
+#else
+				while( start < end ) {
+					UWORD w = (UWORD)(*start++);
+        			term_hash ^= hash_uint32(w);
+				}
+#endif
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
 				r = rr = AR.CompressPointers[dst];
