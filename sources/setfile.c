@@ -735,7 +735,6 @@ int AllocSetups(VOID)
 #ifdef WITHMPI
 	sp = GetSetupPar((UBYTE *)"reducerpercent");
 	AM.ReducerPer = sp->value;
-	MesPrint("  MPI reducer percent set to %d",AM.ReducerPer);
 	if (AM.ReducerPer < 0 || AM.ReducerPer >= 50 ) AM.ReducerPer = 50;
 #endif
 #ifndef WITHPTHREADS
