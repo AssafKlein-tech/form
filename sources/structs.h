@@ -1539,6 +1539,7 @@ struct M_const {
     int     gWTimeStatsFlag;
     int     ggWTimeStatsFlag;
     int     jumpratio;
+    int     ReducerPer;            /* (M) Reducers Percentage out of workers */
     WORD    MaxTal;                /* (M) Maximum number of words in a number */
     WORD    IndDum;                /* (M) Basis value for dummy indices */
     WORD    DumInd;                /* (M) */
@@ -1603,15 +1604,15 @@ struct M_const {
     BOOL    IgnoreDeprecation;     /* ignore deprecation warning */
 #ifdef WITHFLOAT
 #ifdef WITHPTHREADS
-	PADPOSITION(17,30,62,84,(sizeof(pthread_rwlock_t)+sizeof(pthread_mutex_t)*2)+2);
+	PADPOSITION(17,30,63,84,(sizeof(pthread_rwlock_t)+sizeof(pthread_mutex_t)*2)+2);
 #else
-	PADPOSITION(17,28,62,84,2);
+	PADPOSITION(17,28,63,84,2);
 #endif
 #else
 #ifdef WITHPTHREADS
-	PADPOSITION(17,30,62,84,(sizeof(pthread_rwlock_t)+sizeof(pthread_mutex_t)*2)+2);
+	PADPOSITION(17,30,63,84,(sizeof(pthread_rwlock_t)+sizeof(pthread_mutex_t)*2)+2);
 #else
-	PADPOSITION(17,28,62,84,2);
+	PADPOSITION(17,28,63,84,2);
 #endif
 #endif
 };

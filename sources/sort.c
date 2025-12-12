@@ -125,13 +125,13 @@ static inline UWORD mix32(UWORD h) {
 // ------------------------- scalar hash_int32 -------------------------
 static inline UWORD hash_uint32(UWORD ux) {
     if (ux < 256U) 
-        // Use compact R16 but return widened 32-bit value
         return R[ux];
     // fallback: mix the integer value itself
     return mix32(ux);
 }
 #ifdef __AVX512F__
 #include <immintrin.h>
+//murmur3 parallel hash
 static inline __m512i mix32_vec(__m512i h) {
     __m512i t;
 

@@ -1665,11 +1665,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	WORD j, *s, next;
 	LONG size, cpu;
 	POSITION position;
-	int k, src, tag;
+	int role, k, src, tag;
 	FILEHANDLE *oldoutfile = AR.outfile;
-	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks/2 + 1) : PF.numtasks;
+
+	PF.numreducers = (PF.numtasks - 1)*AM.ReducerPer / 100;
+	if (PF.numreducers <2 ) PF.numreducers = 2;
+	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks - PF.numreducers): PF.numtasks;
 	PF.numreducers = PF.numtasks - PF.nummappers;
-	int role = (PF.me < PF.nummappers) ? ROLE_MAPPER : ROLE_REDUCER;
+	role = (PF.me < PF.nummappers) ? ROLE_MAPPER : ROLE_REDUCER;
 
 #ifdef MPI2
 	if ( PF_shared_buff == NULL ) {
@@ -2221,7 +2224,6 @@ int PF_ForwardTermsToMaster()
     int src = 0;
 	WORD *term ;
 	POSITION oldposition, position;
-	int oldgzipCompress;
 	AR.CompressPointer = AR.CompressBuffer;
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
