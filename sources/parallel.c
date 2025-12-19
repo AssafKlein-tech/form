@@ -620,135 +620,97 @@ newterms:
 
 /*
  		#] PF_PutIn : 
- 		#[ PF_PutIn2 : 
+		#[ PF_StoreBuffer :
 */
-/**
- * Replaces PutIn() on Reducer process and is used in PF_ForwardTermsToMaster().
- * It puts in the next term from mappers \a src into the sortbuffer
- * and is a lot like GetTerm(). The main problems are:
- * buffering and decompression.
- *
- * If \a src == 0, it receives a buffer from a new src.
- *
- * If \a src != 0, it gets the next term from the active buffer.
- * They are stored in the large sortbuffer which is divided into buff[i]
- * in the PF.rbufs[src], if PF.numrbufs > 1.
- *
- * @param  src  the source process.
- * @return      the next term.
- *
- * @remark  PF_term[0][0] == 0 (see InitTree()), so PF_term[0] can be used to be
- *          the returnvalue for a zero term (== no more terms).
- * 			returns -1 for an error
- */
-static WORD* PF_PutIn2(int *src)
+static int PF_StoreBuffer()
 {
 	int tag, err, a, next;
-	WORD im, r;
-	WORD *m1, *m2;
+	SORTING *S = AT.SS;;
 	LONG size = 0;
+	POSITION pp;
+	LONG lSpace, sSpace;
+	WORD *ss, *sss, *lfill;
 	PF_BUFFER *rbuf;
 	PF_Dispatch* d = &PF.dispatch;
-	if ( *src < 0 ) {MesPrint("PF_PutIn2: negetive src %d", *src); return(PF_term[0]);}
-	//No specifiec source, so wait for any source
-	if ( *src == 0 ) {
+	int src = 0;
 newsrc:
-		//MesPrint("[%d] PF_PutIn2: WaitAnyRbuf", PF.me);
-		tag = PF_WaitAnyRbuf(PF.rbufs,src,&size);
-		if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
-		{
-			*src = 0;
-			return(PF_term[0]);
-		}
-		rbuf = PF.rbufs[*src];
-		a = rbuf->active;
-		next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
-		rbuf->full[a] += size;
-		if ( tag == PF_SHUFFLE_MSGTAG && rbuf->numbufs > 1 ) {
-/*
-			post a nonblock. recv. for the next buffer
-*/
-			rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
-			size = (LONG)(rbuf->stop[next] - rbuf->full[next]);
-			err = PF_IRecvRbuf(rbuf,next,*src);
-			if (err) {MesPrint("[%d] PF_PutIn2: PF_IRecvRbuf error %d from %d", PF.me, err, *src); return(NULL); }
-			int k = *src * PF.numrbufs + next;
-			d->reqs[k] = rbuf->request[next];
-		}
-		else if ( tag != PF_ENDSHUFFLE_MSGTAG)
-		{
-			return(NULL);
-		}
+	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
+	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
+	if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
+	{
+		src = 0;
+		return 0;
 	}
-	rbuf = PF.rbufs[*src];
-	if (!rbuf || !rbuf->buff || !rbuf->full || !rbuf->fill) {
-		return NULL;
-	}
+	rbuf = PF.rbufs[src];
 	a = rbuf->active;
 	next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
-	WORD *lastterm = PF_term[*src];
-	WORD *term = rbuf->fill[a];
+	rbuf->full[a] += size;
+	if ( tag == PF_SHUFFLE_MSGTAG && rbuf->numbufs > 1 ) {
+/*
+		post a nonblock. recv. for the next buffer
+*/
+		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
+		size = (LONG)(rbuf->stop[next] - rbuf->full[next]);
+		//MesPrint("[%d] PF_StoreBuffer: set receive request of size %d from %d", PF.me, size, src);
+		err = PF_IRecvRbuf(rbuf,next,src);
+		if (err) {MesPrint("[%d] PF_StoreBuffer: PF_IRecvRbuf error %d from %d", PF.me, err, src); return(-1); }
+		int k = src * PF.numrbufs + next;
+		d->reqs[k] = rbuf->request[next];
+	}
+	else if ( tag != PF_ENDSHUFFLE_MSGTAG)
+	{
+		return(-1);
+	}
+	rbuf = PF.rbufs[src];
+	if (!rbuf || !rbuf->buff || !rbuf->full || !rbuf->fill) {
+		return -1;
+	}
 
-	//Last term from current src
-	if ( *term == 0 && term != rbuf->full[a] ) {
-		//MesPrint("[%d] PF_PutIn2: received end term from %d", PF.me, *src);
-		rbuf->full[a] = rbuf->fill[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
-		goto newsrc;
+	sSpace = rbuf->full[a] - rbuf->fill[a];
+	//MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace);
+	lSpace = sSpace + (S->lFill - S->lBuffer)
+				 - (AM.MaxTer/sizeof(WORD))*((LONG)S->lPatch);
+	SETBASEPOSITION(pp,lSpace);
+	MULPOS(pp,sizeof(WORD));
+	if ( ( S->lPatch >= S->MaxPatches ) ||
+		( ( (WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer ) ) >= S->lTop ) ) {
+/*
+		The large buffer is too full. Merge and write it
+*/
+		//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+
+		if ( MergePatches(1) ) return (-1);
+
+		SETBASEPOSITION(pp,sSpace);
+		MULPOS(pp,sizeof(WORD));
+		ADD2POS(pp,S->fPatches[S->fPatchN]);
+
+		S->lPatch = 0;
+		S->lFill = S->lBuffer;
 	}
-/*
-		exception is for rare cases when the terms fitted exactly into buffer
-*/
-	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
-newterms2:
-		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
-		if ( *term < 0 || term == rbuf->full[a] ) {
-/*
-			copy term and lastterm to the new buffer, so that they end at m1
-*/
-			m2 = rbuf->full[a] - 1;
-			while ( m2 >= term ) *m1-- = *m2--;
-			rbuf->fill[next] = term = m1 + 1;
-			m2 = lastterm + *lastterm - 1;
-			while ( m2 >= lastterm ) *m1-- = *m2--;
-			lastterm = m1 + 1;
+	S->Patches[S->lPatch++] = S->lFill;
+	lfill = (WORD *)(((UBYTE *)(S->lFill)) + AM.MaxTer);
+
+	ss = rbuf->fill[a];
+	while ( ss != rbuf->full[a] ) {
+		if (*ss == 0) break;
+		S->TermsLeft++;
+		sss =  (*ss < 0) ? ss + ss[1] + 2 : ss + *ss ;
+		while (ss != sss ){
+			*lfill++ = *ss++;
 		}
-		else {
-/*
-			copy beginning of term to the next buffer so that it ends at m1
-*/
-			m2 = rbuf->full[a] - 1;
-			while ( m2 >= term ) *m1-- = *m2--;
-			rbuf->fill[next] = term = m1 + 1;
-		}
-		if ( rbuf->numbufs == 1 ) {
-			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
-			size = (LONG)(rbuf->stop[a] - rbuf->full[a]);
-			PF_IRecvRbuf(rbuf,a,*src);
-			int k = *src * PF.numrbufs + next;
-			d->reqs[k] = rbuf->request[next];
-		}
-		a = rbuf->active = next;
-		goto newsrc;
 	}
-	if ( *term < 0 ) {
-/*
-			We need to decompress the term
-*/
-		im = *term;
-		r = term[1] - im + 1;
-		m1 = term + 2;
-		m2 = lastterm - im + 1;
-		while ( ++im <= 0 ) *--m1 = *--m2;
-		*--m1 = r;
-		rbuf->fill[a] = term = m1;
-		if ( term + *term > rbuf->full[a] )  goto newterms2;
-	}
-	//returns the term
-	rbuf->fill[a] += *term;
-	return(term);
+	*lfill++ = 0;
+	S->lFill = lfill;
+	S->sTerms = 0;
+	S->PoinFill = S->sPointer;
+	*(S->PoinFill) = S->sFill = S->sBuffer;
+	a = rbuf->active = next;
+	goto newsrc;
 }
+
 /*
- 		#] PF_PutIn2 : 
+		#] PF_StoreBuffer :
  		#[ PF_GetLoser :
 */
 
@@ -2221,17 +2183,12 @@ int PF_ReducerInit()
  */
 int PF_ForwardTermsToMaster()
 {
-    int src = 0;
-	WORD *term ;
 	POSITION oldposition, position;
 	AR.CompressPointer = AR.CompressBuffer;
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
 	oldposition = position;
-    while ((term = PF_PutIn2(&src)) != PF_term[0]) {
-		PF_term[src] = term;
-		StoreTerm(BHEAD term);
-	}
+	if(PF_StoreBuffer() == -1) return -1;
 	FILEHANDLE *fout = AR.outfile;
 	WORD *oldbuff = fout->PObuffer;
 	WORD *oldstop = fout->POstop;

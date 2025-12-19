@@ -82,6 +82,7 @@ LONG numcompares;
 char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
+static int patch = 0;
 static inline BOOL PF_LowMRsort() {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
@@ -1868,6 +1869,12 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		if (lowmr_sort) {
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
+			if( fi->POfill + i >= fi->POstop ) {
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
+				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+				fi->POstop = sbuf->stop[sbuf->active];
+				goto nocompress;
+			}
 		}
 #endif
 		p = fi->POfill;
@@ -2007,13 +2014,15 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
-				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] ){
+				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] || patch){
 					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				}
-				*(sbuf->fill[sbuf->active])++ = 0;
-				PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, i);
-				sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+				if (!patch){
+					*(sbuf->fill[sbuf->active])++ = 0;
+					PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, i);
+					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+				}
 			}
 		}
 		else{
@@ -4166,13 +4175,19 @@ ConMer:
 			else
 #endif
 #ifdef WITHMPI
-			MesPrint("[%d] MergePathes: before single patch flush out", PF.me);
 			if (!(PF_LowMRsort()) || par == 2)
 			{
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
+			}
+			else if (PF_LowMRsort()){
+				patch++;
+				if ( FlushOut(&position,fout,1) ) goto ReturnError;
+				PUTZERO(S->SizeInFile[par]);
+				S->lPatch = 0;
+				patch --;
 			}
 #endif
 #else
@@ -4199,7 +4214,7 @@ ConMer:
 			SetupAllInputGZIP(S);
 			m1 = m2 = copybuf;
 			position2 = S->iPatches[0];
-			//MesPrint("MergePatches: rare file to file copy of one patch");
+			MesPrint("MergePatches: rare file to file copy of one patch");
 			while ( ( length = FillInputGZIP(fin,&position2,
 					(UBYTE *)copybuf,
 					(S->SmallEsize*sizeof(WORD)-FRONTSIZE),0) ) > 0 ) {
@@ -4603,9 +4618,11 @@ EndOfMerge:
 			ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
 		}else {
+			patch++;
+			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			PUTZERO(S->SizeInFile[par]);
-			//MesPrint("[%d] MergePatches: skipped end of merge flush out. S->fPatchN = %d size in file = %d",PF.me, S->fPatchN, S->SizeInFile[par]);
 			S->lPatch = 0;
+			patch --;
 		}
 #endif
 EndOfAll:
