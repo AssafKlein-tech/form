@@ -1,8 +1,3 @@
-#: SmallSize 1K
-#: SmallExtension 3K
-#: LargeSize 10K
-#: largepatches 8
-
 format 255;
 on mapreduce;
 on parallel;

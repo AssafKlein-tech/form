@@ -1,4 +1,3 @@
-#: reducerpercent 40
 #: SmallSize 1K
 #: SmallExtension 3K
 #: LargeSize 10K
