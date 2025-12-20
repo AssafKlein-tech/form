@@ -696,6 +696,10 @@ newsrc:
 		if (*ss == 0) break;
 		S->TermsLeft++;
 		sss =  (*ss < 0) ? ss + ss[1] + 2 : ss + *ss ;
+		if ( sss > rbuf->full[a] || sss <= rbuf->fill[a]){
+			MesPrint("[%d] PF_StoreBuffer: Error in term %d sss= %d, ss = %d full = %d", PF.me, *ss, sss, ss, rbuf->full[a]);
+			return(-1);
+		}
 		while (ss != sss ){
 			*lfill++ = *ss++;
 		}

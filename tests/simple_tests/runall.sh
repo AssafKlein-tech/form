@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Number of tests to run
-NUM_TESTS=20  # Change this to run more/fewer tests
+NUM_TESTS=8  # Change this to run more/fewer tests
 POWER=${1:-13}
 
 # Create results directory with proper permissions

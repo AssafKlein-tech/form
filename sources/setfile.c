@@ -735,6 +735,7 @@ int AllocSetups(VOID)
 #ifdef WITHMPI
 	sp = GetSetupPar((UBYTE *)"reducerpercent");
 	AM.ReducerPer = sp->value;
+	if (AM.Prepercentage) AM.ReducerPer = AM.Prepercentage;
 	if (AM.ReducerPer < 0 || AM.ReducerPer >= 50 ) AM.ReducerPer = 50;
 #endif
 #ifndef WITHPTHREADS

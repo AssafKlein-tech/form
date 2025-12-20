@@ -82,6 +82,14 @@ LONG numcompares;
 char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
+#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
+  NumToStr(lbuf,AC.CModule); \
+  fprintf(stderr,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
+  if(TERM){ fprintf(stderr,"[%d] ",(int)(*TERM));\
+    if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
+      fprintf(stderr,"%d ",TERM[iii]); }\
+  fprintf(stderr,"\n");\
+  fflush(stderr); } }
 static int patch = 0;
 static inline BOOL PF_LowMRsort() {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
@@ -1871,9 +1879,11 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			fi->POstop = sbuf->stop[sbuf->active];
 			if( fi->POfill + i >= fi->POstop ) {
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
-				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
+				fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
-				goto nocompress;
+				term = (first == 2) ? (term + k -1) : term;
+				first = 0;
+				i = *term;
 			}
 		}
 #endif
@@ -4178,8 +4188,8 @@ ConMer:
 			if (!(PF_LowMRsort()) || par == 2)
 			{
 #endif
-			if ( FlushOut(&position,fout,1) ) goto ReturnError;
-			ADDPOS(S->SizeInFile[par],1);
+				if ( FlushOut(&position,fout,1) ) goto ReturnError;
+				ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
 			}
 			else if (PF_LowMRsort()){
