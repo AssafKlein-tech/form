@@ -993,7 +993,11 @@ int PF_EndSort(void)
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
-	MesPrint("[%d] PF_EndSort: Master starts collecting terms from slaves", PF.me);
+	LONG cpu = TimeCPU(1);
+	WORD cpart = (WORD)(cpu%1000);
+	cpart /= 10;
+	WORD rpart = cpu / 1000;
+	MesPrint("[%d] PF_EndSort: All slaves started endsort Time: %7l.%2i", PF.me, rpart, cpart);
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -1010,7 +1014,6 @@ int PF_EndSort(void)
 
 	noutterms = 0;
 
-	MesPrint("[%d] PF_EndSort: PF_GetLoser", PF.me);
 	while ( PF_loser >= 0 ) {
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
 		//MesPrint("PF_EndSort: PF_GetLoser found loser %d", PF_loser);
@@ -1810,7 +1813,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		if ( AR.outtohide ) AR.outfile = AR.hidefile;
 		PF.parallel = 1;
-		MesPrint("[0] PF_Processor: Master enters end sort");
+		MesPrint("[0] PF_Processor: Master finished sending terms");
 		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
 		PF.parallel = 0;
 		if ( AR.outtohide ) {
