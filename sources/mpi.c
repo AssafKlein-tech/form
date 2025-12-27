@@ -343,14 +343,18 @@ int PF_ISendSbuf(int to, int tag)
 		case PF_BUFFER_MSGTAG:
 		if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
 		while ( s->request[s->active] != MPI_REQUEST_NULL ) { // busy wait until the active buffer is free
+			TimeElapsed(TIMESTART);
 			r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
+			TimeElapsed(TIMESTOP);
 			if ( r != MPI_SUCCESS ) return(r);
 		}
 		break;
 		case PF_ENDSHUFFLE_MSGTAG:
 		case PF_ENDBUFFER_MSGTAG:
 			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
+			TimeElapsed(TIMESTART);
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
+			TimeElapsed(TIMESTOP);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:

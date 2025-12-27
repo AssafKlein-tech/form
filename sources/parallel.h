@@ -251,7 +251,7 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 /* parallel.c */
 extern LONG PF_allocateSbuf(void);
 extern int PF_allocatePFTerm(int numtasks);
-extern int    PF_ForwardTermsToMaster(void);
+extern LONG    PF_ForwardTermsToMaster(void);
 extern void   PF_SetupFlatRequestsView(void);
 extern int 	  PF_ReducerInit(void);
 extern int    PF_EndSort(void);

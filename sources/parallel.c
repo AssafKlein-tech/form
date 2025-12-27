@@ -175,7 +175,7 @@ static POSITION PF_exprsize;   /* (master) The size of the expression at PF_EndS
  		#[ variables : (should be part of a struct?)
 */
 static LONG PF_linterms;     /* local interms on this proces: PF_Proces */
-#define PF_STATS_SIZE 5
+#define PF_STATS_SIZE 7
 static LONG **PF_stats = NULL;/* space for collecting statistics of all procs */
 static LONG PF_laststat;     /* last realtime when statistics were printed */
 static LONG PF_statsinterval;/* timeinterval for printing statistics */
@@ -633,9 +633,12 @@ static int PF_StoreBuffer()
 	PF_BUFFER *rbuf;
 	PF_Dispatch* d = &PF.dispatch;
 	int src = 0;
+	TimeElapsed(TIMERESET);
 newsrc:
 	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
+	TimeElapsed(TIMESTART);
 	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
+	TimeElapsed(TIMESTOP);
 	if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 	{
 		src = 0;
@@ -1633,6 +1636,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	POSITION position;
 	int role, k, src, tag;
 	FILEHANDLE *oldoutfile = AR.outfile;
+	TimeElapsed(TIMERESET);
 
 	PF.numreducers = (PF.numtasks - 1)*AM.ReducerPer / 100;
 	if (PF.numreducers <2 ) PF.numreducers = 2;
@@ -1864,6 +1868,22 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			Expressions[AR.CurExpr].size = PF_exprsize;
 		}
 		PF_Statistics(PF_stats,0);
+		if( AC.sMRflag != NO_MAPREDUCE){
+			WORD cpart, rpart, csort, rsort;
+			for ( int proc = 1; proc < PF.numtasks; proc++){
+				cpart = (WORD)(PF_stats[proc][5]%1000);
+				rpart = PF_stats[proc][5] / 1000;
+				cpart /= 10;
+				csort = (WORD)(PF_stats[proc][6]%1000);
+				rsort = (WORD) (PF_stats[proc][6] / 1000);
+				csort /= 10;
+				if ( proc < PF.nummappers){
+					MesPrint("Mapper  [%d]: Send time %7l.%2i sec. Wait time for Reducers: %7l.%2i sec", proc, rsort, csort, rpart, cpart);
+				}
+				else{
+					MesPrint("Reducer [%d]: Sort time %7l.%2i sec. Wait time for Mappers:  %7l.%2i sec", proc, rsort, csort, rpart, cpart);
+				}
+		}}
 /*
 			#] Collect (stats,prepro,...): 
 			#[ Update flags :
@@ -1957,6 +1977,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
+		LONG send_time = TimeCPU(1);
 		while ( PF_GetTerm(term) ) {
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
 			AT.WorkPointer = term + *term;
@@ -2015,6 +2036,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fout->POsize   = oldsize;
 			fout->POfill = fout->POfull = fout->PObuffer;
 		}
+		send_time = TimeCPU(1) - send_time;
+		LONG waittime = TimeElapsed(TIMEGET);
 		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		AR.BracketOn = oldBracketOn;
 		AT.BrackBuf = oldBrackBuf;
@@ -2032,6 +2055,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&PF_linterms,      1, PF_LONG);
 		PF_LongSinglePack(&AM.S0->GenTerms,  1, PF_LONG);
 		PF_LongSinglePack(&AM.S0->TermsLeft, 1, PF_LONG);
+		PF_LongSinglePack(&waittime,		 1, PF_LONG);
+		PF_LongSinglePack(&send_time,		 1, PF_LONG);
+
 		{
 			WORD numdummies = AR.MaxDum - AM.IndDum;
 			PF_LongSinglePack(&numdummies,    1, PF_WORD);
@@ -2075,7 +2101,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#] the receive buffers : 
 		#[ Reducer Loop & EndSort :
 */
-		int ret = PF_ForwardTermsToMaster();
+		LONG ret = PF_ForwardTermsToMaster();
 		if ( ret < 0 ) {
 			MesPrint("PF_forwardTermsToMaster error");
 			return ret;
@@ -2084,6 +2110,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		#[ Reducer Loop & EndSort :
 		#[ Collect (stats,prepro...) :
 */
+		LONG waittime = TimeElapsed(TIMEGET);
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
 		cpu = TimeCPU(1);
@@ -2093,6 +2120,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&PF_linterms,      1, PF_LONG);
 		PF_LongSinglePack(&AM.S0->GenTerms,  1, PF_LONG);
 		PF_LongSinglePack(&AM.S0->TermsLeft, 1, PF_LONG);
+		PF_LongSinglePack(&waittime,		 1, PF_LONG);
+		PF_LongSinglePack(&ret,		 		 1, PF_LONG);
 		{
 			WORD numdummies = AR.MaxDum - AM.IndDum;
 			PF_LongSinglePack(&numdummies,    1, PF_WORD);
@@ -2185,7 +2214,7 @@ int PF_ReducerInit()
  * @return      0 if OK, -1 otherwise
  *
  */
-int PF_ForwardTermsToMaster()
+LONG PF_ForwardTermsToMaster()
 {
 	POSITION oldposition, position;
 	AR.CompressPointer = AR.CompressBuffer;
@@ -2197,13 +2226,15 @@ int PF_ForwardTermsToMaster()
 	WORD *oldbuff = fout->PObuffer;
 	WORD *oldstop = fout->POstop;
 	LONG  oldsize = fout->POsize;
+	LONG sort_time = TimeCPU(1);
 	if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+	sort_time = TimeCPU(1) - sort_time;
 	fout->PObuffer = oldbuff;
 	fout->POstop   = oldstop;
 	fout->POsize   = oldsize;
 	fout->POfill = fout->POfull = fout->PObuffer;
 	position = oldposition;
-    return (0);
+    return (sort_time);
 }
 /*
  	#] PF_ForwardTermsToMaster : 

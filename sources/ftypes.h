@@ -1123,3 +1123,8 @@ typedef int (*TFUN1)();
 #define NOSNAILS            1024
 #define NOEXTSELF           2048
 
+#define TIMERESET				0
+#define TIMESTART				1
+#define TIMESTOP				2
+#define TIMEGET					3
+

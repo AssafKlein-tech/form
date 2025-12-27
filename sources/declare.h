@@ -725,6 +725,7 @@ extern VOID   PutInVflags(WORD);
 extern WORD   TestMatch(PHEAD WORD *,WORD *);
 extern WORD   TestSub(PHEAD WORD *,WORD);
 extern LONG   TimeCPU(WORD);
+extern LONG   TimeElapsed(WORD);
 extern LONG   TimeChildren(WORD);
 extern LONG   TimeWallClock(WORD);
 extern LONG   Timer(int);

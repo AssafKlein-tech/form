@@ -1990,7 +1990,7 @@ VOID PrintRunningTime(VOID)
 		wallclocktime = TimeWallClock(1);
 		totaltime = mastertime+workertime;
 		if ( !AM.silent ) {
-		MesPrint("  %l.%2i sec + %l.%2i sec: %l.%2i sec out of %l.%2i sec",
+		MesPrint("Master Time %l.%2i sec +  Workers Time %l.%2i sec: %l.%2i sec out of %l.%2i sec wallclock time",
 			mastertime/1000,(WORD)((mastertime%1000)/10),
 			workertime/1000,(WORD)((workertime%1000)/10),
 			totaltime/1000,(WORD)((totaltime%1000)/10),

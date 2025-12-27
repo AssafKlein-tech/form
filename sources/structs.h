@@ -2052,6 +2052,10 @@ struct R_const {
     char    *moebiustable;
 
     LONG    OldTime;               /* (R) Zero time. Needed in timer. */
+#ifdef WITHMPI
+    LONG    Waittime;              /* (R) Zero time. Needed in differential elapsed time. */
+    LONG    TotalWaittime;         /* (R) Zero time. Needed in elapsed timer. */
+#endif
     LONG    InInBuf;               /* (R) Characters in input buffer. Scratch files. */
     LONG    InHiBuf;               /* (R) Characters in hide buffer. Scratch file. */
     LONG    pWorkSize;             /* (R) Size of pWorkSpace */
@@ -2103,13 +2107,13 @@ struct R_const {
 #if ( BITSINWORD == 32 )
 #ifdef WITHPTHREADS
 #ifdef WITHMPI
-	PADPOSITION(10,7,8,5029,0);
+	PADPOSITION(10,9,8,5029,0);
 #else
     PADPOSITION(8,7,8,5028,0);
 #endif
 #else
 #ifdef WITHMPI
-    PADPOSITION(10,7,7,5029,0);
+    PADPOSITION(10,9,7,5029,0);
 #else
 	PADPOSITION(8,7,7,5029,0);
 #endif
@@ -2117,13 +2121,13 @@ struct R_const {
 #else
 #ifdef WITHPTHREADS
 #ifdef WITHMPI
-    PADPOSITION(10,7,8,27,0);
+    PADPOSITION(10,9,8,27,0);
 #else
 	PADPOSITION(8,7,8,27,0);
 #endif
 #else
 #ifdef WITHMPI
-    PADPOSITION(10,7,7,27,0);
+    PADPOSITION(10,9,7,27,0);
 #else
 	PADPOSITION(8,7,7,27,0);
 #endif

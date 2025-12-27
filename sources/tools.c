@@ -3557,6 +3557,41 @@ LONG TimeCPU(WORD par)
 
 /*
  		#] TimeCPU : 
+*/
+#ifdef WITHMPI
+/*
+ 		#[ TimeElapsed :
+*/
+
+/**
+ * Returns the CPU time.
+ *
+ * @param   par  RESET to reset it, START to start the timer an STOP to stop
+ * @return       The CPU time in milliseconds.
+ */
+LONG TimeElapsed(WORD par)
+{
+	GETIDENTITY
+	switch (par){
+		case TIMERESET:
+			AR.TotalWaittime = 0;
+			break;
+		case TIMESTART:
+			AR.Waittime = Timer(0);
+			break;
+		case TIMESTOP:
+			AR.TotalWaittime += Timer(0) - AR.Waittime;
+		case TIMEGET:
+			break;
+	}
+	return(AR.TotalWaittime);
+}
+
+/*
+ 		#] TimeElapsed : 
+*/
+#endif
+/*
  		#[ Timer :
 */
 #if defined(WINDOWS)
