@@ -190,7 +190,7 @@ UWORD hash_list_avx512(const WORD *arr, WORD n) {
 
     return hash_uint32(acc);
 }
-#elif define __AVX2__
+#elif defined(__AVX2__)
 #include <immintrin.h>
 
 UWORD hash_list32_avx2(const WORD *arr, WORD n) {

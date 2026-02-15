@@ -2391,10 +2391,13 @@ continue_fold:
 /*
 	We have the name of the file in 'name' and the fold in 'fold' (or NULL)
 */
+	MesPrint("DEBUG Include: Attempting to open file '%s'", name);
 	if ( OpenStream(name,type,0,PRENOACTION) == 0 ) {
+		MesPrint("DEBUG Include: Failed to open file '%s'", name);
 		if ( fold ) { M_free(fold,"foldname"); fold = 0; }
 		return(-1);
 	}
+	MesPrint("DEBUG Include: Successfully opened file '%s'", name);
 	if ( fold ) {
 		LONG position = -1;
 		int foldopen = 0;

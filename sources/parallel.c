@@ -315,8 +315,7 @@ static PF_BUFFER *PF_AllocBuf(int nbufs, LONG bsize, WORD free)
 	LONG allocsize;
 	int i;
 
-	allocsize =
-		(LONG)(sizeof(PF_BUFFER) + 4*nbufs*sizeof(WORD*) + (nbufs-free)*bsize);
+	allocsize = (LONG)(sizeof(PF_BUFFER) + 4*nbufs*sizeof(WORD*) + (nbufs-free)*bsize);
 
 	allocsize +=
 		(LONG)( nbufs * (  2 * sizeof(MPI_Status)
@@ -325,7 +324,10 @@ static PF_BUFFER *PF_AllocBuf(int nbufs, LONG bsize, WORD free)
 		                )  );
 	allocsize += (LONG)( nbufs * 3 * sizeof(int) );
 
-	if ( ( buf = (PF_BUFFER*)Malloc1(allocsize,"PF_AllocBuf") ) == NULL ) return(NULL);
+	if ( ( buf = (PF_BUFFER*)Malloc1(allocsize,"PF_AllocBuf") ) == NULL ) {
+		MesPrint("ERROR: PF_AllocBuf failed to allocate %ld bytes for %d buffers", allocsize, nbufs);
+		return(NULL);
+	}
 
 	p = ((UBYTE *)buf) + sizeof(PF_BUFFER);
 	stop = ((UBYTE *)buf) + allocsize;
@@ -978,7 +980,12 @@ int PF_EndSort(void)
 */
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
 			return 0; //mappers won't enter
-		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
+		MesPrint("[%d] PF_EndSort: Slave allocating send buffer", PF.me);
+		if ((size = PF_allocateSbuf()) == 0 ) {
+			MesPrint("[%d] ERROR in endsort: Failed to allocate send buffer", PF.me);
+			return -1;
+		}
+		MesPrint("[%d] PF_EndSort: Send buffer allocated successfully (size=%ld)", PF.me, size);
 		
 		AR.CompressPointer = AR.CompressBuffer;
 		*AR.CompressPointer = 0;
@@ -2391,13 +2398,13 @@ int PF_Init(int *argc, char ***argv)
 		}
 		if ( ( c = (char*)getenv("PF_RBUFS") ) != 0 ) {
 			PF.numrbufs = (int)atoi(c);
-			fprintf(stderr,"[%d] changing numrbufs to: %d\n",PF.me,PF.numrbufs);
-			fflush(stderr);
+			//fprintf(stdout,"[%d] changing numrbufs to: %d\n",PF.me,PF.numrbufs);
+			//fflush(stdout);
 		}
 		if ( ( c = (char*)getenv("PF_SBUFS") ) != 0 ) {
 			PF.numsbufs = (int)atoi(c);
-			fprintf(stderr,"[%d] changing numsbufs to: %d\n",PF.me,PF.numsbufs);
-			fflush(stderr);
+			//fprintf(stdout,"[%d] changing numsbufs to: %d\n",PF.me,PF.numsbufs);
+			//fflush(stdout);
 		}
 		if ( PF.numsbufs > 10 ) PF.numsbufs = 10;
 		if ( PF.numsbufs <  1 ) PF.numsbufs = 1;
