@@ -6,7 +6,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -53,7 +53,7 @@ static INDEXBLOCK scratchblock;
 static NAMESBLOCK scratchnamesblock;
  
 #define CFD(y,s,type,x,j) for(x=0,j=0;j<((int)sizeof(type));j++) \
-	x=(x<<8)+((*s++)&0x00FF); y=x;
+	{x=(x<<8)+((*s++)&0x00FF);} y=x;
 #define CTD(y,s,type,x,j) x=y;for(j=sizeof(type)-1;j>=0;j--){s[j]=x&0xFF; \
                       x>>=8;} s += sizeof(type);
 
@@ -222,12 +222,13 @@ void convertiniinfo(INIINFO *in,INIINFO *out,int mode)
  		#[ LocateBase :
 */
 
-FILE *LocateBase(char **name, char **newname)
+FILE *LocateBase(char **name, char **newname, char *iomode)
 {
 	FILE *handle;
 	int  namesize, i;
 	UBYTE *s, *to, *u1, *u2, *indir;	
-	if ( ( handle = fopen(*name,"r+b") ) != 0 ) {
+	
+	if ( ( handle = fopen(*name,iomode) ) != 0 ) {
 		*newname = (char *)strDup1((UBYTE *)(*name),"LocateBase");
 		return(handle);
 	}
@@ -244,7 +245,7 @@ FILE *LocateBase(char **name, char **newname)
 		s = (UBYTE *)(*name);
 		while ( *s ) *to++ = *s++;
 		*to = 0;
-		if ( ( handle = fopen(*newname,"r+b") ) != 0 ) {
+		if ( ( handle = fopen(*newname,iomode) ) != 0 ) {
 			return(handle);
 		}
 		M_free(*newname,"LocateBase, incdir/file");
@@ -267,7 +268,7 @@ FILE *LocateBase(char **name, char **newname)
 			s = (UBYTE *)(*name);
 			while ( *s ) *to++ = *s++;
 			*to = 0;
-			if ( ( handle = fopen(*newname,"r+b") ) != 0 ) {
+			if ( ( handle = fopen(*newname,iomode) ) != 0 ) {
 				return(handle);
 			}
 			M_free(*newname,"LocateBase Path/file");
@@ -294,13 +295,11 @@ int ReadIndex(DBASE *d)
 	Allocate the pieces one by one (makes it easier to give it back)
 */
 	if ( d->info.numberofindexblocks <= 0 ) return(0);
-#ifndef WORDSIZE32
 	if ( sizeof(INDEXBLOCK)*d->info.numberofindexblocks > MAXINDEXSIZE ) {
 		MesPrint("We need more than %ld bytes for the index.\n",MAXINDEXSIZE);
 		MesPrint("The file %s may not be a proper database\n",d->name);
 		return(-1);
 	}
-#endif
 	size = sizeof(INDEXBLOCK *)*d->info.numberofindexblocks;
 	if ( ( ib = (INDEXBLOCK **)Malloc1(size,"tb,index") ) == 0 ) return(-1);
 	for ( i = 0; i < d->info.numberofindexblocks; i++ ) {
@@ -544,15 +543,24 @@ int ReadIniInfo(DBASE *d)
   	#[ GetDbase :
 */
 
-DBASE *GetDbase(char *filename)
+DBASE *GetDbase(char *filename, MLONG rwmode)
 {
 	FILE *f;
 	DBASE *d;
 	char *newname;
-	if ( ( f = LocateBase(&filename,&newname) ) == 0 ) {
-		
-		return(NewDbase(filename,0));
+	if ( rwmode == 0 ) {
+		if ( ( f = LocateBase(&filename,&newname,"rb") ) == 0 ) {
+	
+			MesPrint("&Trying to open non-existent TableBase in readonly mode: %s", filename);
+			Terminate(-1);
+		}
+	} else {
+		if ( ( f = LocateBase(&filename,&newname,"r+b") ) == 0 ) {
+	
+			return(NewDbase(filename,0));
+		}	
 	}
+
 /*	setbuf(f,0); */
 	d = (DBASE *)From0List(&(AC.TableBaseList));
 	d->mode = 0;
@@ -562,6 +570,7 @@ DBASE *GetDbase(char *filename)
 	d->iblocks = 0;
 	d->nblocks = 0;
 	d->tablenames = 0;
+	d->rwmode = rwmode;
 
 	d->info.entriesinindex = 0;
 	d->info.numberofindexblocks = 0;
@@ -576,6 +585,8 @@ DBASE *GetDbase(char *filename)
 	d->handle = f;
 	if ( ReadIniInfo(d) || ReadIndex(d) ) { M_free(d,"index-d"); fclose(f); return(0); }
 	if ( ComposeTableNames(d) < 0 ) { FreeTableBase(d); fclose(f); return(0); }
+	// free allocation from previous str_dup
+	M_free(d->name, "from str_dup");
 	d->name = str_dup(filename);
 	d->fullname = newname;
 	return(d);
@@ -617,6 +628,7 @@ DBASE *NewDbase(char *name,MLONG number)
 	d->tablenamessize = 0;
 	d->topnumber = 0;
 	d->tablenamefill = 0;
+	d->rwmode = 1;
 
 	d->mode = 0;
 	if ( ( d->nblocks = (NAMESBLOCK **)Malloc1(sizeof(NAMESBLOCK *)*numnameblocks,
@@ -664,6 +676,8 @@ getout:
 		if ( i > 0 ) d->iblocks[i]->previousblock = d->iblocks[i-1]->position;
 		else d->iblocks[i]->previousblock = -1;
 		d->iblocks[i]->position = ftell(f);
+		// Initialise, to keep valgrind happy
+		d->iblocks[i]->flags = -1;
 /*----------change 10-feb-2003 */
 /*
 			Zero things properly. We don't want garbage in the file.
@@ -808,7 +822,7 @@ DBASE *OpenDbase(char *filename)
 	FILE *f;
 	DBASE *d;
 	char *newname;
-	if ( ( f = LocateBase(&filename,&newname) ) == 0 ) {
+	if ( ( f = LocateBase(&filename,&newname,"r+b") ) == 0 ) {
 		MesPrint("Cannot open file %s\n",filename);
 		return(0);
 	}
@@ -1231,12 +1245,21 @@ int WriteObject(DBASE *d,MLONG tablenumber,char *arguments,char *rhs,MLONG numbe
 	else buffer = 0;
 	if ( buffer ) {
 		ssize = size;
+#ifdef WITHZSTD
+		// Force the use of zlib for compressed Tablebase entries, so that tablebases created
+		// with zstd-supported FORM builds can be used by zstd-unsupported FORM builds.
+		const int old_isUsingZSTDcompression = ZWRAP_isUsingZSTDcompression();
+		ZWRAP_useZSTDcompression(0);
+#endif
 		if ( ( error = compress((Bytef *)buffer,&newsize,(Bytef *)rhs,ssize) ) != Z_OK ) {
 			MesPrint("Error = %d\n",error);
 			MesPrint("Due to error no compress used for element %s in file %s\n",arguments,d->name);
 			M_free(buffer,"tb,WriteObject");
 			buffer = 0;
 		}
+#ifdef WITHZSTD
+		ZWRAP_useZSTDcompression(old_isUsingZSTDcompression);
+#endif
 	}
 	if ( buffer ) {
 		rhs = buffer;

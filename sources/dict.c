@@ -17,7 +17,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -68,7 +68,7 @@
 		DICT_ALLNUMBERS, DICT_RATIONALONLY, DICT_INTEGERONLY, DICT_NONUMBERS
 */
 
-VOID TransformRational(UWORD *a, WORD na)
+void TransformRational(UWORD *a, WORD na)
 {
 	DICTIONARY *dict;
 	WORD i, j, nb, i1, i2; UWORD *b;
@@ -215,7 +215,7 @@ NoAction:
   	#[ IsMultiplySign:
 */
 
-UBYTE *IsMultiplySign(VOID)
+UBYTE *IsMultiplySign(void)
 {
 	DICTIONARY *dict;
 	int i;
@@ -235,7 +235,7 @@ UBYTE *IsMultiplySign(VOID)
   	#[ IsExponentSign:
 */
 
-UBYTE *IsExponentSign(VOID)
+UBYTE *IsExponentSign(void)
 {
 	DICTIONARY *dict;
 	int i;
@@ -593,7 +593,7 @@ IllLeft:MesPrint("&Illegal LHS in dictionary");
 		AN.RepPoint = AT.RepCount + 1;
         ow = (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer);
 		mm = s; ww = ow; i = *mm;
-		while ( --i >= 0 ) *ww++ = *mm++; AT.WorkPointer = ww;
+		while ( --i >= 0 ) {*ww++ = *mm++;} AT.WorkPointer = ww;
 		AC.lhdollarflag = 0; oldEside = AR.Eside; AR.Eside = LHSIDE;
 		AR.Cnumlhs = C->numlhs;
 		if ( Generator(BHEAD ow,C->numlhs) ) {
@@ -801,7 +801,7 @@ int SetDictionaryOptions(UBYTE *options)
 	AO.CurDictInDollars = DICT_NOTINDOLLARS;
 	while ( *s ) {
 		opt = s;
-		while ( *s && *s != ',' && *s != ' ' ) s++;
+		while ( *s && *s != ',' ) s++;
 		c = *s; *s = 0;
 		if ( opt[0] == '$' && opt[1] == 0 ) {
 			AO.CurDictInDollars = DICT_INDOLLARS;
@@ -880,7 +880,7 @@ int SetDictionaryOptions(UBYTE *options)
   	#[ UnSetDictionary :
 */
 
-void UnSetDictionary(VOID)
+void UnSetDictionary(void)
 {
 	AO.CurrentDictionary = 0;
 	AO.CurDictNumbers = -1;

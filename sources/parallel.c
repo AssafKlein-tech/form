@@ -10,7 +10,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -1558,7 +1558,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	}
 #endif
 
-	if ( ( (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer ) ) > AT.WorkTop ) return(MesWork());
+	if ( ( (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer ) ) > AT.WorkTop ) {
+		MesWork();
+	}
 
 	/* For redefine statements. */
 	if ( AC.numpfirstnum > 0 ) {
@@ -1971,7 +1973,8 @@ int PF_Init(int *argc, char ***argv)
 	PF.numsbufs = 2; /* might be changed by the environment variable on the master ! */
 	PF.numrbufs = 2; /* might be changed by the environment variable on the master ! */
 
-	PF_LibInit(argc,argv);
+	int ret = PF_LibInit(argc,argv);
+	if (ret) { return ret; }
 	PF_RealTime(PF_RESET);
 
 	PF.log = 0;
@@ -2479,7 +2482,6 @@ typedef struct {
 	VectorStruct(WORD) buf;
 	LONG size;
 	WORD type;
-	PADPOINTER(1,0,1,0);
 } dollar_buf;
 
 /* Buffers used to store data for each variable from each slave. */

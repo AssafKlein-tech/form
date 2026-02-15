@@ -7,7 +7,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -48,7 +48,7 @@
 		function
 */
 
-WORD MakeDirty(WORD *term, WORD *x, WORD par)
+int MakeDirty(WORD *term, WORD *x, WORD par)
 {
 	WORD *next, *n;
 	if ( !par ) {
@@ -370,7 +370,7 @@ recycle:
 			1 if they are OK.
 */
 
-WORD CompGroup(PHEAD WORD type, WORD **args, WORD *a1, WORD *a2, WORD num)
+int CompGroup(PHEAD WORD type, WORD **args, WORD *a1, WORD *a2, WORD num)
 {
 	GETBIDENTITY
 	WORD *t1, *t2, i1, i2, n, k;
@@ -515,7 +515,7 @@ int FullSymmetrize(PHEAD WORD *fun, int type)
 					   >0 -> must have right number of arguments
 */
 
-WORD SymGen(PHEAD WORD *term, WORD *params, WORD num, WORD level)
+int SymGen(PHEAD WORD *term, WORD *params, WORD num, WORD level)
 {
 	GETBIDENTITY
 	WORD *t, *r, *m;
@@ -630,7 +630,7 @@ NextFun:
 
 */
 
-WORD SymFind(PHEAD WORD *term, WORD *params)
+int SymFind(PHEAD WORD *term, WORD *params)
 {
 	GETBIDENTITY
 	WORD *t, *r, *m;
@@ -692,7 +692,7 @@ int ChainIn(PHEAD WORD *term, WORD funnum)
 {
 	GETBIDENTITY
 	WORD *t, *tend, *m, *tt, *ts;
-	int action;
+	int action, normFlag = 0;
 	if ( funnum < 0 ) {	/* Dollar to be expanded */
 		funnum = DolToFunction(BHEAD -funnum);
 		if ( AN.ErrorInDollar || funnum <= 0 ) {
@@ -714,6 +714,7 @@ int ChainIn(PHEAD WORD *term, WORD funnum)
 			tt = t;
 			if ( t >= tend || *t != funnum ) continue;
 			action = 1;
+			normFlag = 1;
 			while ( t < tend && *t == funnum ) {
 				ts = t + t[1];
 				t += FUNHEAD;
@@ -726,6 +727,14 @@ int ChainIn(PHEAD WORD *term, WORD funnum)
 			break;
 		}
 	} while ( action );
+
+	if ( normFlag ) {
+		/* We need to check the newly-constructed arguments w.r.t symmetry properties */
+		MarkDirty(term, DIRTYSYMFLAG);
+		AT.WorkPointer = term + *term;
+		Normalize(BHEAD term);
+	}
+
 	return(0);
 }
 
@@ -814,7 +823,7 @@ int ChainOut(PHEAD WORD *term, WORD funnum)
 		?a,?b give a match that later turns out to be useless.
 */
 
-WORD MatchFunction(PHEAD WORD *pattern, WORD *interm, WORD *wilds)
+int MatchFunction(PHEAD WORD *pattern, WORD *interm, WORD *wilds)
 {
 	GETBIDENTITY
 	WORD *m, *t, *r, i;
@@ -830,6 +839,12 @@ WORD MatchFunction(PHEAD WORD *pattern, WORD *interm, WORD *wilds)
 	CBUF *C = cbuf+AT.ebufnum;
 	int ntwa = AN.NumTotWildArgs;
 	LONG oldcpointer = C->Pointer - C->Buffer;
+#ifdef WITHFLOAT
+	// Pattern matching against float_ functions is currently disabled.
+	// To relax this in the future, move this early return down to where gamma
+	// functions and tensors are handled specially. 
+	if ( *interm == FLOATFUN ) return(0);
+#endif
 /*
 	Test first for a straight match
 */
@@ -851,10 +866,6 @@ WORD MatchFunction(PHEAD WORD *pattern, WORD *interm, WORD *wilds)
 			i = *pattern - WILDOFFSET;
 			if ( i >= FUNCTION ) {
 				if ( *interm != GAMMA
-#ifdef WITHFLOAT
-				&& ( *interm != FLOATFUN )
-#endif
-
 				&& !CheckWild(BHEAD i,FUNTOFUN,*interm,&newvalue) ) {
 					AddWild(BHEAD i,FUNTOFUN,newvalue);
 					return(1);
@@ -1604,7 +1615,7 @@ NoCaseB:
 	function. This will take care of whatever happens in MatchE etc.
 */
 
-WORD ScanFunctions(PHEAD WORD *inpat, WORD *inter, WORD par)
+int ScanFunctions(PHEAD WORD *inpat, WORD *inter, WORD par)
 {
 	GETBIDENTITY
 	WORD i, *m, *t, *r, sym, psym;

@@ -116,6 +116,26 @@ P;
 assert succeeded?
 assert result("F") =~ expr("f1(1)+f2(0)+f3(3)")
 *--#] Forum3t187 : 
+*--#[ Discussion639 :
+#-
+Off stats;
+
+CFunction eps(antisymmetric);
+Vector p1,p2,p3;
+
+Local zero = eps(p1,p2,p3,p1+p2);
+
+ChainOut eps;
+SplitArg eps;
+Repeat Identify eps(p1?,p2?) = eps(p1)+eps(p2);
+ChainIn eps;
+* the result should be zero without a sort here
+
+Print;
+.end
+assert succeeded?
+assert result("zero") =~ expr("0")
+*--#] Discussion639 :
 *--#[ Issue7_1 :
 * SegFault when #optimizing trivial bracket
 Symbol x;
@@ -173,6 +193,26 @@ Print;
 assert succeeded?
 assert result("expr") =~ expr("1")
 *--#] Issue8 : 
+*--#[ Issue10 :
+#-
+Local test1 = 1;
+Local test2 = 1;
+.sort
+IntoHide;
+NIntoHide test2;
+* test1 should be multiplied here
+Multiply 2;
+.sort
+* test1 should not be multiplied here
+Multiply 2;
+.sort
+UnHide;
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("2");
+assert result("test2") =~ expr("4");
+*--#] Issue10 :
 *--#[ Issue21 :
 * Occurs() with two or more terms in function arguments may get freeze
 S x;
@@ -296,6 +336,7 @@ endinside;
 P " a=%$;", $a;
 $a = f($a);
 P " a=%$;", $a;
+ModuleOption local $a;
 .end
 assert succeeded?
 assert result("a", 0) =~ expr("f*f(1)")
@@ -407,6 +448,7 @@ inexpression F3;
     multiply num($F3[$i]);
   enddo;
 endinexpression;
+ModuleOption local $i,$F3;
 
 .sort
 
@@ -527,6 +569,7 @@ L   Diagrams=
 
    $color = $color * topo($topo);
 
+   ModuleOption noparallel;
 .sort
 L Color = `$color';
 P;
@@ -834,6 +877,7 @@ L F = 1;
 #$x = x;
 id $x^n? = 1;
 P;
+ModuleOption local $x;
 .end
 assert succeeded?
 assert result("F") =~ expr("1")
@@ -845,6 +889,7 @@ L F = x^3 * y^5 * p.q^6;
 #$x = x*y*p.q;
 id $x^n? = z^n;
 P;
+ModuleOption local $x;
 .end
 assert succeeded?
 assert result("F") =~ expr("p.q^3*y^2*z^3")
@@ -1623,6 +1668,7 @@ if ($n == 0);
   P "Error: F[%$] == %$", $x, $y;
   redefine failed "1";
 endif;
+ModuleOption local $n,$x,$y;
 .sort:test;
 
 #if `failed'
@@ -1685,6 +1731,7 @@ L G = 1 + x + x^2;
 $x = f(count_(x,1));
 multiply $x;
 P;
+ModuleOption local $x;
 .end
 assert succeeded?
 assert result("F") =~ expr("f(0) + f(0)*x + f(0)*x^2")
@@ -1814,6 +1861,7 @@ L F = f(x1,...,x4);
 id f(?a$a) = 1;
 multiply distrib_(1,1,f,dummy_,$a);
 P;
+ModuleOption local $a;
 .end
 assert succeeded?
 assert result("F") =~ expr("f(x1) + f(x2) + f(x3) + f(x4)")
@@ -2172,6 +2220,63 @@ assert stdout =~ exact_pattern(<<'EOF')
    S1(spectator)(5)
 EOF
 *--#] Issue231 :
+*--#[ Issue251_1
+#-
+Symbol x,a0,...,a3;
+Local F = <a0*x^0>+...+<a3*x^3>;
+Bracket x;
+.sort
+
+Local G =
+	+ 1 / F[1]
+	+ x * (-F[x]) / F[1]^2
+	+ x^2 * (F[x]^2 - F[1]*F[x^2]) / F[1]^3
+	+ x^3 * (-F[x]^3 + 2*F[1]*F[x]*F[x^2] - F[1]^2*F[x^3]) / F[1]^4
+	;
+Print +s G;
+.end
+assert succeeded?
+assert result("G") =~ expr("
+       + a0^-1
+       - x*a0^-2*a1
+       + x^2*a0^-3*a1^2
+       - x^2*a0^-2*a2
+       - x^3*a0^-4*a1^3
+       + 2*x^3*a0^-3*a1*a2
+       - x^3*a0^-2*a3
+")
+*--#] Issue251_1
+*--#[ Issue251_2
+#-
+Symbol x,a0,...,a3;
+Local F = <a0*x^0>+...+<a3*x^3>;
+Bracket x;
+.sort
+
+Local G =
+	+ 1 / F[1]
+	+ x * (-F[x]) / F[1]^2
+	+ x^2 * (F[x]^2 - F[1]*F[x^2]) / F[1]^3
+	+ x^3 * (-F[x]^3 + 2*F[1]*F[x]*F[x^2] - F[1]^2*F[x^3]
+		#do i = 1,100
+			+ F[1]^1
+		#enddo
+	) / F[1]^4
+	;
+Print +s G;
+.end
+assert succeeded?
+assert result("G") =~ expr("
+       + a0^-1
+       - x*a0^-2*a1
+       + x^2*a0^-3*a1^2
+       - x^2*a0^-2*a2
+       - x^3*a0^-4*a1^3
+       + 100*x^3*a0^-3
+       + 2*x^3*a0^-3*a1*a2
+       - x^3*a0^-2*a3
+")
+*--#] Issue251_2
 *--#[ Issue253 :
 * Memory error for local $-variable in TFORM
 #$x = 0;
@@ -2331,6 +2436,19 @@ P;
 #pend_if mpi?
 assert runtime_error?
 *--#] Issue261_7 : 
+*--#[ Issue267 :
+#-
+CFunction f,g,h,i;
+Local test = f + g + h(1,2) + i(1,2) + h(1,2,3) + i(1,2,3);
+Transform f addargs(1,last);
+Transform g mulargs(1,last);
+Transform h addargs(1,3);
+Transform i mulargs(1,3);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f + g + h(1,2) + h(6) + i(2) + i(6)");
+*--#] Issue267 :
 *--#[ Issue268_1 :
 * Invalid read in Normalize
 #define N "9999"
@@ -2512,6 +2630,7 @@ DropCoefficient;
 Multiply tag($i);
 $i = $i+1;
 Print +s;
+ModuleOption noparallel;
 .sort
 
 * Everything should cancel in the end, and we should get zero.
@@ -2574,6 +2693,7 @@ DropCoefficient;
 Multiply tag($i);
 $i = $i+1;
 Print +s;
+ModuleOption noparallel;
 .sort
 
 * Everything should cancel in the end, and we should get zero.
@@ -2920,7 +3040,7 @@ id g(N?) = 1;
 print;
 .end
 #require linux?
-#ulimit -v 8_000_000
+#ulimit -v 8_200_000
 # We assume more memory than a 32bit system can provide
 #require wordsize >= 4
 assert succeeded?
@@ -3774,6 +3894,560 @@ assert stdout =~ exact_pattern(<<'EOF')
    {}: -10 -20 30
 EOF
 *--#] Issue599 : 
+*--#[ Issue615 :
+#-
+Off stats;
+
+Index i1,i2,i3,i4;
+CFunction f;
+Set sumind: i2,i3;
+
+Local test1 = f(i1,i2,i3,i4)^2;
+Local test2 = f(i1,i2,i3,i4)^2;
+
+Repeat;
+	If (Match(f(?a,i1?sumind$sum,?b))) Sum $sum;
+EndRepeat;
+InExpression test2;
+	Repeat;
+		If (Match(f(?a,i1?!dummyindices_$sum,?b))) Sum $sum;
+	EndRepeat;
+EndInExpression;
+
+ModuleOption,local $sum;
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("f(i1,N1_?,N2_?,i4)^2")
+assert result("test2") =~ expr("f(N1_?,N2_?,N3_?,N4_?)^2")
+*--#] Issue615 :
+*--#[ Issue617_1 :
+#-
+Model TMP;
+	Particle s;
+	Particle i;
+	Particle v;
+	Particle cf;
+	Particle f;
+	Particle ct;
+	Particle t;
+	Particle ctab;
+	Particle tab;
+EndModel;
+Symbol s;
+Index i;
+Vector v;
+CFunction cf;
+Function f;
+CTensor ct;
+Tensor t;
+CTable ctab(1:2,3:4);
+NTable tab(1:2,3:4);
+.end
+assert runtime_error?("s has been declared as a function already")
+assert runtime_error?("v has been declared as a function already")
+assert runtime_error?("i has been declared as a function already")
+assert runtime_error?("Function or Tensor cf already declared as a Particle")
+assert runtime_error?("Function or Tensor f already declared as a Particle")
+assert runtime_error?("Function or Tensor ct already declared as a Particle")
+assert runtime_error?("Function or Tensor t already declared as a Particle")
+assert runtime_error?("(N)(C)Tables should not be declared previously")
+*--#] Issue617_1 :
+*--#[ Issue617_2 :
+#-
+Symbol s;
+Index i;
+Vector v;
+CFunction cf;
+Function f;
+CTensor ct;
+Tensor t;
+CTable ctab(1:2,3:4);
+NTable tab(1:2,3:4);
+Model TMP;
+	Particle s;
+	Particle i;
+	Particle v;
+	Particle cf;
+	Particle f;
+	Particle ct;
+	Particle t;
+	Particle ctab;
+	Particle tab;
+EndModel;
+.end
+assert runtime_error?("s has been declared as a symbol already")
+assert runtime_error?("Name of particle previously declared as another variable: s")
+assert runtime_error?("i has been declared as an index already")
+assert runtime_error?("Name of particle previously declared as another variable: i")
+assert runtime_error?("v has been declared as a vector already")
+assert runtime_error?("Name of particle previously declared as another variable: v")
+assert runtime_error?("Name of particle previously declared as another variable: cf")
+assert runtime_error?("Name of particle previously declared as another variable: f")
+assert runtime_error?("Name of particle previously declared as another variable: ct")
+assert runtime_error?("Name of particle previously declared as another variable: t")
+assert runtime_error?("Name of particle previously declared as another variable: ctab")
+assert runtime_error?("Name of particle previously declared as another variable: tab")
+*--#] Issue617_2 :
+*--#[ Issue631_1 :
+#procedure foo(?a)
+	#message `toupper_(abc)'
+	#message `toupper_(a,b,c)'
+	#message `toupper_(`?a')'
+	#message `tolower_(ABC)'
+	#message `tolower_(A,B,C)'
+	#message `tolower_(`?a')'
+	#message `?a'
+#endprocedure
+
+#call foo(1,2,3,abc,a,b,c,ABC,A,B,C)
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~ABC
+~~~A,B,C
+~~~1,2,3,ABC,A,B,C,ABC,A,B,C
+~~~abc
+~~~a,b,c
+~~~1,2,3,abc,a,b,c,abc,a,b,c
+~~~1,2,3,abc,a,b,c,ABC,A,B,C
+EOF
+*--#] Issue631_1 :
+*--#[ Issue631_2 :
+#-
+#define MYTOUPPER(x,y) "toupper_(`~x',`~y')"
+#procedure foo(x,y)
+	#message ``MYTOUPPER(`x',`y')''
+	#message `toupper_(`x',`y')'
+#endprocedure
+#call foo(a,b)
+#message ``MYTOUPPER(c,d)''
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~A,B
+~~~A,B
+~~~C,D
+EOF
+*--#] Issue631_2 :
+*--#[ Issue631_3 :
+#-
+#define str "abcde"
+#do i = 0,6
+	#message takeleft_(`str',`i')  = `takeleft_(`str',`i')'
+	#message takeright_(`str',`i') = `takeright_(`str',`i')'
+	#message keepleft_(`str',`i')  = `keepleft_(`str',`i')'
+	#message keepright_(`str',`i') = `keepright_(`str',`i')'
+#enddo
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~takeleft_(abcde,0)  = abcde
+~~~takeright_(abcde,0) = abcde
+~~~keepleft_(abcde,0)  = 
+~~~keepright_(abcde,0) = 
+~~~takeleft_(abcde,1)  = bcde
+~~~takeright_(abcde,1) = abcd
+~~~keepleft_(abcde,1)  = a
+~~~keepright_(abcde,1) = e
+~~~takeleft_(abcde,2)  = cde
+~~~takeright_(abcde,2) = abc
+~~~keepleft_(abcde,2)  = ab
+~~~keepright_(abcde,2) = de
+~~~takeleft_(abcde,3)  = de
+~~~takeright_(abcde,3) = ab
+~~~keepleft_(abcde,3)  = abc
+~~~keepright_(abcde,3) = cde
+~~~takeleft_(abcde,4)  = e
+~~~takeright_(abcde,4) = a
+~~~keepleft_(abcde,4)  = abcd
+~~~keepright_(abcde,4) = bcde
+~~~takeleft_(abcde,5)  = 
+~~~takeright_(abcde,5) = 
+~~~keepleft_(abcde,5)  = abcde
+~~~keepright_(abcde,5) = abcde
+~~~takeleft_(abcde,6)  = 
+~~~takeright_(abcde,6) = 
+~~~keepleft_(abcde,6)  = abcde
+~~~keepright_(abcde,6) = abcde
+EOF
+*--#] Issue631_3 :
+*--#[ Issue633 :
+s x,y,z;
+c f;
+v p;
+g ff1 = f(5*x) + f(-5*x) + f(-x) + f(x);
+g ff2 = f(5*p) + f(-5*p) + f(-p) + f(p);
+factarg f;
+print;
+.end
+assert succeeded?
+assert result("ff1") =~ expr("f(x) + f(-5,x) + f(-1,x) + f(5,x)")
+assert result("ff2") =~ expr("f(p) + f(-5,p) + f(-1,p) + f(5,p)")
+*--#] Issue633 :
+*--#[ Issue633_2 :
+on oldfactarg;
+s x,y,z;
+c f;
+v p;
+g ff1 = f(5*x) + f(-5*x) + f(-x) + f(x);
+g ff2 = f(5*p) + f(-5*p) + f(-p) + f(p);
+factarg f;
+print;
+.end
+assert succeeded?
+assert result("ff1") =~ expr("f(x) + f(x,-1,1) + f(x,-1,5) + f(x,5)")
+assert result("ff2") =~ expr("f(p) + f(p,-1,1) + f(p,-1,5) + f(p,5)")
+*--#] Issue633_2 :
+*--#[ Issue642 :
+#-
+Off statistics;
+
+CFunction d;
+CFunction f,g;
+Symbol a,b,c;
+CFunction h;
+
+Local F =
+*	Example terms with args that are in fast notation and full expressions
+	+ f(1,a,2)
+	+ f(1,-a,2)
+	+ f(1,a+b,2)
+	+ f(1,h,2)
+	+ f(1,h(1,2),2)
+	+ f(1,h(a),2)
+	+ f(1,h(a)+a,2)
+	;
+Identify f(?a) = f(?a) - g(?a);
+* Produce test terms where f appears at the beginning, end,
+* and in the middle of the term data.
+Multiply 1+d(1,2,3);
+Multiply 1+h(1,2,3);
+.sort
+
+Identify f(?a) = putfirst_(f,2,?a);
+Identify g(a?,b?,c?) = f(b,a,c);
+
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("0")
+*--#] Issue642 :
+*--#[ Issue646 :
+#StartFloat 9d
+Local F = mzv_+euler_+mzvhalf_;
+Evaluate;
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("mzv_ + euler_ + mzvhalf_")
+*--#] Issue646 :
+*--#[ Issue647 :
+#-
+#define NEXPR "4"
+
+Symbol x;
+#do i = 1,`NEXPR'
+    Local F`i' = x^`i';
+    Local G`i' = x^`i';
+#enddo
+.sort
+Hide;
+.sort
+UnHide;
+
+#do i = 1,`NEXPR'
+    Local diff`i' = F`i' - G`i';
+#enddo
+ModuleOption inparallel;
+.sort
+
+Print;
+.end
+#pend_if mpi?
+assert succeeded?
+assert result("diff1") =~ expr("0")
+assert result("diff2") =~ expr("0")
+assert result("diff3") =~ expr("0")
+assert result("diff4") =~ expr("0")
+*--#] Issue647 :
+*--#[ Issue664 :
+#-
+#StartFloat 64b
+Evaluate 1;
+.end
+#pend_if wordsize == 2
+assert compile_error?("should be a built in function that can be evaluated numerically.")
+*--#] Issue664 :
+*--#[ Issue666 :
+#-
+#$repcount = 1;
+Local test = 1;
+Multiply 2;
+.sort:iter `$repcount++';
+Multiply 2;
+.sort:iter `$repcount++';
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("4")
+*--#] Issue666 :
+*--#[ Issue668_1 :
+* Check error message for invalid setup parameter:
+#:x
+#message test
+.end
+assert runtime_error?("Setups in .frm file: Keyword not recognized: x")
+*--#] Issue668_1 :
+*--#[ Issue668_2 :
+* Check error message for invalid setup parameter:
+* In this case, an unexpected end-of-file as in the original report.
+#system printf "#:x">temp.frm
+#system `FORM' temp.frm
+.end
+#pend_if mpi?
+#require linux?
+assert runtime_error?("Setups in .frm file: Keyword not recognized: x")
+*--#] Issue668_2 : 
+*--#[ Issue695_1 :
+#StartFloat 20b
+CFunction f;
+Local F1 = f(1.0)+f(1.0);
+Local F2 = f(1.0)/3+f(1.0)*2.0;
+Local F3 = 1.0*f(1.0)/3+f(1.0)*2.0;
+Local F4 = f(1.0)+f(1.1);
+Local F5 = f(0.5)+f(1/2);
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F1") =~ expr("2*f(1.0e+00)")
+assert result("F2") =~ expr("2.33333e+00*f(1.0e+00)")
+assert result("F3") =~ expr("2.33333e+00*f(1.0e+00)")
+assert result("F4") =~ expr("f(1.0e+00) + f(1.1e+00)")
+assert result("F5") =~ expr("f(1/2) + f(5.0e-01)")
+*--#] Issue695_1 :
+*--#[ Issue695_2 :
+#StartFloat 9d
+Symbol a,b;
+CFunction f;
+Local F = 1.0*f(a);
+.sort
+#endfloat
+
+Local F = F + f(a);
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("f(a) + f(a)*float_(2,3,1,340282366920938463463374607431768211456)")
+*--#] Issue695_2 :
+*--#[ Issue710_1 :
+#-
+Off statistics;
+Index uu1;
+CFunction fun;
+Local expr = fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?);
+Bracket fun,e_;
+.sort
+Keep Brackets;
+Sum uu1;
+Print;
+.end
+assert succeeded?
+assert result("expr") =~ expr("fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+*--#] Issue710_1 :
+*--#[ Issue710_2 :
+#-
+Off statistics;
+CFunction fun;
+Local expr = fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?);
+Bracket fun,e_;
+.sort
+Keep Brackets;
+ReNumber;
+Print;
+.end
+assert succeeded?
+assert result("expr") =~ expr("fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+*--#] Issue710_2 :
+*--#[ Issue710_3 :
+#-
+Off statistics;
+CFunction fun;
+Local expr = fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?);
+Bracket fun,e_;
+.sort
+Keep Brackets;
+ReNumber,1;
+Print;
+.end
+assert succeeded?
+assert result("expr") =~ expr("fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+*--#] Issue710_3 :
+*--#[ Issue710_4 :
+#-
+Off statistics;
+Index i1,i2,i3,i4;
+CFunction fun;
+Local expr1 = fun(i1,i2)*fun(i3,i4)*e_(i1,i2,i3,i4);
+Local expr2 = fun(i2,i1)*fun(i4,i3)*e_(i1,i2,i3,i4);
+Local expr3 = fun(i2,i1)*fun(i3,i4)*e_(i1,i2,i3,i4);
+Bracket fun,e_;
+.sort
+Keep Brackets;
+Sum i1,...,i4;
+Print;
+.end
+assert succeeded?
+assert result("expr1") =~ expr("fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+assert result("expr2") =~ expr("fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+assert result("expr3") =~ expr("- fun(N1_?,N2_?)*fun(N3_?,N4_?)*e_(N1_?,N2_?,N3_?,N4_?)")
+*--#] Issue710_4 :
+*--#[ Issue710_4 :
+#-
+Off statistics;
+CFunction indhide;
+Index i1,i2,i3,i4;
+Vector v1,v2,v3,v4;
+Local expr = v1(i1)*v2(i2)*v3(i3)*v4(i4)*indhide(e_(i1,i2,i3,i4));
+Sum i1,i2,i3,i4;
+Print;
+.end
+assert succeeded?
+assert result("expr") =~ expr("indhide(e_(N1_?,N2_?,N3_?,N4_?))*v1(N1_?)*v2(N2_?)*v3(N3_?)*v4(N4_?)")
+*--#] Issue710_4 :
+*--#[ Issue710_5 :
+#-
+Off statistics;
+CFunction indhide;
+Index i1,i2,i3,i4;
+Vector v1,v2,v3,v4;
+Local expr = v1(i1)*v2(i2)*v3(i3)*v4(i4)*indhide(e_(i1,i2,i3,i4));
+Bracket v1,v2,v3,v4,indhide;
+.sort
+Keep Brackets;
+Sum i1,i2,i3,i4;
+Print;
+.end
+assert succeeded?
+assert result("expr") =~ expr("indhide(e_(N1_?,N2_?,N3_?,N4_?))*v1(N1_?)*v2(N2_?)*v3(N3_?)*v4(N4_?)")
+*--#] Issue710_5 :
+*--#[ Issue747_1 :
+#-
+Off Statistics;
+
+Symbol a;
+CFunction f,g;
+
+Local test = f(a)^2;
+
+#do i = 1,2
+	Identify,once f(a?$dol) = g(a);
+	FactDollar $dol;
+	Do $i = 1,$dol[0];
+		Print "In %t factor %$ is %$",$i,$dol[$i];
+	Enddo;
+	ModuleOption local $dol,$i;
+	.sort
+#enddo
+
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("g(a)^2")
+assert stdout =~ exact_pattern(<<'EOF')
+In  + f(a)*g(a) factor 1 is a
+In  + g(a)^2 factor 1 is a
+EOF
+*--#] Issue747_1 :
+*--#[ Issue747_2 :
+#-
+Off Statistics;
+
+Symbol a;
+#$dol = a;
+#FactDollar $dol
+#FactDollar $dol
+#do i = 1,`$dol[0]'
+	#message Factor `i' is `$dol[`i']'
+#enddo
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~Factor 1 is a
+EOF
+*--#] Issue747_2 :
+*--#[ Issue750 :
+#-
+Off Statistics;
+
+NTensor   A,B,C;
+CTensor   D,E,F;
+NFunction a,b,c;
+CFunction d,e,f;
+
+AutoDeclare Vector p;
+AutoDeclare Index mu;
+
+Local testNT1 = A(mu1)        *B(mu1)        *C(mu1);
+Local testNT2 = A(mu1,mu2)    *B(mu1,mu2)    *C(mu1,mu2);
+Local testNT3 = A(mu1,mu2,mu3)*B(mu1,mu2,mu3)*C(mu1,mu2,mu3);
+Local testCT1 = D(mu1)        *E(mu1)        *F(mu1);
+Local testCT2 = D(mu1,mu2)    *E(mu1,mu2)    *F(mu1,mu2);
+Local testCT3 = D(mu1,mu2,mu3)*E(mu1,mu2,mu3)*F(mu1,mu2,mu3);
+Local testNF1 = a(mu1)        *b(mu1)        *c(mu1);
+Local testNF2 = a(mu1,mu2)    *b(mu1,mu2)    *c(mu1,mu2);
+Local testNF3 = a(mu1,mu2,mu3)*b(mu1,mu2,mu3)*c(mu1,mu2,mu3);
+Local testCF1 = d(mu1)        *e(mu1)        *f(mu1);
+Local testCF2 = d(mu1,mu2)    *e(mu1,mu2)    *f(mu1,mu2);
+Local testCF3 = d(mu1,mu2,mu3)*e(mu1,mu2,mu3)*f(mu1,mu2,mu3);
+
+* Replace the last first, to make sure the non-commuting
+* versions stay in-order in the single-index case.
+Identify C(?a) = putfirst_(C,2,?a);
+Identify F(?a) = putfirst_(F,2,?a);
+Identify c(?a) = putfirst_(c,2,?a);
+Identify f(?a) = putfirst_(f,2,?a);
+
+Identify B(?a) = putfirst_(B,2,?a);
+Identify E(?a) = putfirst_(E,2,?a);
+Identify b(?a) = putfirst_(b,2,?a);
+Identify e(?a) = putfirst_(e,2,?a);
+
+Identify A(?a) = putfirst_(A,2,?a);
+Identify D(?a) = putfirst_(D,2,?a);
+Identify a(?a) = putfirst_(a,2,?a);
+Identify d(?a) = putfirst_(d,2,?a);
+
+Print;
+.end
+assert succeeded?
+assert result("testNT1") =~ expr("putfirst_(A,2,mu1)*putfirst_(B,2,mu1)*putfirst_(C,2,mu1)")
+assert result("testNT2") =~ expr("A(mu2,mu1)*B(mu2,mu1)*C(mu2,mu1)")
+assert result("testNT3") =~ expr("A(mu2,mu1,mu3)*B(mu2,mu1,mu3)*C(mu2,mu1,mu3)")
+assert result("testCT1") =~ expr("putfirst_(F,2,mu1)*putfirst_(E,2,mu1)*putfirst_(D,2,mu1)")
+assert result("testCT2") =~ expr("D(mu2,mu1)*E(mu2,mu1)*F(mu2,mu1)")
+assert result("testCT3") =~ expr("D(mu2,mu1,mu3)*E(mu2,mu1,mu3)*F(mu2,mu1,mu3)")
+assert result("testNF1") =~ expr("putfirst_(a,2,mu1)*putfirst_(b,2,mu1)*putfirst_(c,2,mu1)")
+assert result("testNF2") =~ expr("a(mu2,mu1)*b(mu2,mu1)*c(mu2,mu1)")
+assert result("testNF3") =~ expr("a(mu2,mu1,mu3)*b(mu2,mu1,mu3)*c(mu2,mu1,mu3)")
+assert result("testCF1") =~ expr("putfirst_(f,2,mu1)*putfirst_(e,2,mu1)*putfirst_(d,2,mu1)")
+assert result("testCF2") =~ expr("d(mu2,mu1)*e(mu2,mu1)*f(mu2,mu1)")
+assert result("testCF3") =~ expr("d(mu2,mu1,mu3)*e(mu2,mu1,mu3)*f(mu2,mu1,mu3)")
+*--#] Issue750 :
+*--#[ Issue766 :
+* Unintended "&" in some warning messages
+CF f(s,s);
+CF f>=x<=x;
+ModuleOption local,$a;
+.end
+assert return_value == 0
+assert warning?("Excess information in symmetric properties")
+assert warning?("Illegal information in number of arguments properties")
+assert warning?("Undefined $-variable")
+*--#] Issue766 : 
 *--#[ PullReq535 :
 * This test requires more than the specified 50K workspace.
 #:maxtermsize 200
@@ -3789,3 +4463,121 @@ P G;
 assert succeeded?
 assert result("G") =~ expr("389")
 *--#] PullReq535 :
+*--#[ PullReq649_1 :
+* Test warning message when modifying a dollar variable forces
+* a module into sequential mode
+
+*  need an expression with a non-zero value
+Local expr = 1;
+*  and a new module, since parallel execution does not work
+*  in the module defining an expression
+.sort
+$a = 1;
+.end
+#require threaded?
+assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
+*--#] PullReq649_1 :
+*--#[ PullReq649_2 :
+* same as `PullReq649_1` with a longer variable name
+Local expr = 1;
+.sort
+$n1MdWu6rNU1d29yW3ukhzV7YuY = 1;
+.end
+#require threaded?
+assert warning?("This module is forced to run in sequential mode due to $-variable: $n1MdWu6rNU1d29yW3ukhzV7YuY")
+*--#] PullReq649_2 :
+*--#[ PullReq649_3 :
+* assigning in the preprocessor should not veto parallel execution
+Local expr = 1;
+.sort
+#$a = 1;
+.end
+assert succeeded?
+*--#] PullReq649_3 :
+*--#[ PullReq649_4 :
+* assigning through pattern matching
+Local expr = 1;
+.sort
+Symbol x;
+id x?$a = x;
+.end
+#require threaded?
+assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
+*--#] PullReq649_4 :
+*--#[ PullReq649_5 :
+* don't veto parallel execution if there is a matching moduleoption statement
+Local expr = 1;
+.sort
+$a = 1;
+moduleoption local $a;
+.end
+assert succeeded?
+*--#] PullReq649_5 :
+*--#[ PullReq649_6 :
+Local expr = 1;
+.sort
+$a = 1;
+moduleoption sum $a;
+.end
+assert succeeded?
+*--#] PullReq649_6 :
+*--#[ PullReq649_7 :
+Local expr = 1;
+.sort
+$a = 1;
+moduleoption minimum $a;
+.end
+assert succeeded?
+*--#] PullReq649_7 :
+*--#[ PullReq649_8 :
+Local expr = 1;
+.sort
+$a = 1;
+moduleoption maximum $a;
+.end
+assert succeeded?
+*--#] PullReq649_8 :
+*--#[ PullReq649_9 :
+* *do veto* if the moduleoption statement is for the wrong variable
+Local expr = 1;
+.sort
+#$b = 1;
+$a = 1;
+moduleoption local $b;
+.end
+#require threaded?
+assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
+*--#] PullReq649_9 :
+*--#[ PullReq652 :
+#-
+Off statistics;
+#$a = 0;
+Local test = 1;
+$b = 0;
+* Test no leaks when working inside a 0 dollar variable
+#inside $a
+	Multiply 2;
+#endinside
+Inside $a;
+	Multiply 2;
+EndInside;
+Inside $b;
+	Multiply 2;
+EndInside;
+ModuleOption local $a,$b;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("1")
+*--#] PullReq652 :
+*--#[ PullReq691 :
+#-
+#: SubTermsInSmall 112
+#: SubLargePatches 10
+* A par=2 EndSort, which ends in the PObuffer.
+* This tests a repaired memory leak.
+Symbol x;
+#$dol = <x^1>+...+<x^1001>;
+.end
+assert succeeded?
+*--#] PullReq691 :

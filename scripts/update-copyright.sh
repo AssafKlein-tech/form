@@ -17,12 +17,13 @@ set -eu
 
 year=$(date +%Y)
 
-grep -l -r 'Copyright *(C).*Vermaseren' . | while IFS= read -r f; do
+grep -l -r 'Copyright *(C).*' . | while IFS= read -r f; do
   case $f in
     *update-copyright.sh)
       ;;
     *)
       sed -i "s/Copyright *(C).*Vermaseren/Copyright (C) 1984-$year J.A.M. Vermaseren/g" "$f"
+      sed -i "s/Copyright *(C).*Kaneko/Copyright (C) 2023-$year T. Kaneko/g" "$f"
       ;;
   esac
 done

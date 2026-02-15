@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -770,9 +770,10 @@ int ConvertFromPoly(PHEAD WORD *term, WORD *outterm, WORD from, WORD to, WORD of
 		Notice that in TFORM we should be in sequential mode.
 */
 
-WORD FindSubterm(WORD *subterm)
+int FindSubterm(WORD *subterm)
 {
-	WORD old[5], *ss, *term, number;
+	WORD old[5], *ss, *term;
+	int number;
 	CBUF *C = cbuf + AM.sbufnum;
 	LONG oldCpointer;
 	term = subterm-1;
@@ -839,9 +840,10 @@ WORD FindSubterm(WORD *subterm)
 		Notice that in TFORM we should be in sequential mode.
 */
 
-WORD FindLocalSubterm(PHEAD WORD *subterm, WORD startebuf)
+int FindLocalSubterm(PHEAD WORD *subterm, WORD startebuf)
 {
-	WORD old[5], *ss, *term, number, i, j, *t1, *t2;
+	WORD old[5], *ss, *term, i, j, *t1, *t2;
+	int number;
 	CBUF *C = cbuf + AT.ebufnum;
 	term = subterm-1;
 	ss = subterm+subterm[1];
@@ -1091,9 +1093,10 @@ void PrintExtraSymbol(int num, WORD *terms,int par)
 		Notice that in TFORM we should be in sequential mode.
 */
 
-WORD FindSubexpression(WORD *subexpr)
+int FindSubexpression(WORD *subexpr)
 {
-	WORD *term, number;
+	WORD *term;
+	int number;
 	CBUF *C = cbuf + AM.sbufnum;
 	LONG oldCpointer;
 

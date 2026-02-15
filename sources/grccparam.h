@@ -2,6 +2,29 @@
 #else
 #define GRCC_PARAM_H
 
+/* #[ License : */
+/*
+ *   Copyright (C) 2023-2026 T. Kaneko
+ *   When using this file you are requested to refer to the publication
+ *   Comput.Phys.Commun. 92 (1995) 127-152
+ *
+ *   This file is part of FORM.
+ *
+ *   FORM is free software: you can redistribute it and/or modify it under the
+ *   terms of the GNU General Public License as published by the Free Software
+ *   Foundation, either version 3 of the License, or (at your option) any later
+ *   version.
+ *
+ *   FORM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *   WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ *   FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ *   details.
+ *
+ *   You should have received a copy of the GNU General Public License along
+ *   with FORM.  If not, see <http://www.gnu.org/licenses/>.
+ */
+/* #] License : */
+
 /*==============================================================
  * Parameters
  */
@@ -12,7 +35,7 @@
 #define GRCC_MAXNCPLG         4
 #define GRCC_MAXLEGS         10
 #define GRCC_MAXMPARTICLES   50
-#define GRCC_MAXMINTERACT   200
+#define GRCC_MAXMINTERACT   500
 #define GRCC_MAXSUBPROCS    500
 #define GRCC_MAXNODES        20
 #define GRCC_MAXEDGES       100
@@ -26,15 +49,15 @@
 
 #define GRCC_FRACERROR       (1.0e-10)
 
-/* error message */
-/*
-#define GRCC_Stderr          stderr
-*/
+/* Standard and error message destination */
+#define GRCC_Stdout          stdout
 #define GRCC_Stderr          stdout
-/*
-#define GRCC_ABORT()         exit(1)
-*/
-#define GRCC_ABORT()         abort()
+
+#ifndef NOFORM
+    #define GRCC_ABORT()      Terminate(-1);
+#else
+    #define GRCC_ABORT()      exit(1)
+#endif
 
 /*---------------------------------------------------------------
  * Constants
@@ -60,9 +83,6 @@
 #define GRCC_PTS_Vector     "vector"
 #define GRCC_PTS_Ghost      "ghost"
 
-#define GRCC_PTO_General   0
-#define GRCC_PTO_ExtOnly   1
-
 #define GRCC_PT_Table  { GRCC_PTS_Undef, GRCC_PTS_Scalar, GRCC_PTS_Dirac, GRCC_PTS_Majorana, GRCC_PTS_Vector, GRCC_PTS_Ghost}
 
 #define GRCC_PT_GTable { "Undef", "Scalar", "Fermion", "Majorana", "Vector", "Ghost"}
@@ -75,7 +95,7 @@
 
 #define GRCC_AT_NdStr(x)   ((x)>=GRCC_AT_Vertex   ?"Vertex":       \
                            ((x)==GRCC_AT_External ?"External":     \
-                           ((x)==GRCC_AT_Final    ?"Fianl":        \
+                           ((x)==GRCC_AT_Final    ?"Final":        \
                            ((x)==GRCC_AT_Initial  ?"Initial":"Undef"))))
 
 /* graph generation */
@@ -94,9 +114,12 @@
 #define GRCC_OPT_NoExtSelf       8
 #define GRCC_OPT_NoAdj2PtV       9
 #define GRCC_OPT_Block          10
-#define GRCC_OPT_SymmInitial    11
-#define GRCC_OPT_SymmFinal      12
-#define GRCC_OPT_Size           13
+#define GRCC_OPT_NoMultiEdge    11
+#define GRCC_OPT_SymmInitial    12
+#define GRCC_OPT_SymmFinal      13
+#define GRCC_OPT_Size           14
+
+typedef unsigned long ULong;
 
 typedef struct {
     const char *name;
@@ -104,6 +127,39 @@ typedef struct {
     int         defaultv;
     int         DUMMYPADDING;
 } OptDef;
+
+typedef struct {
+    const char *name;
+    const char *cname;
+    const char *mean;
+} OptQGDef;
+
+typedef struct {
+    const char *name;
+    int         index;
+    int         sign; 
+} OptQGRef;
+
+/*---------------------------------------------------------------
+ * QGRAF options
+ */
+#define GRCC_QGRAF_OPT_ONEPI       0
+#define GRCC_QGRAF_OPT_ONSHELL     1
+#define GRCC_QGRAF_OPT_NOSIGMA     2
+#define GRCC_QGRAF_OPT_NOSNAIL     3
+#define GRCC_QGRAF_OPT_NOTADPOLE   4
+#define GRCC_QGRAF_OPT_SIMPLE      5
+#define GRCC_QGRAF_OPT_BIPART      6
+#define GRCC_QGRAF_OPT_CYCLI       7
+#define GRCC_QGRAF_OPT_FLOOP       8
+//TODO what does this do? Does it work?
+//#define GRCC_QGRAF_OPT_TOPOL       9
+
+#ifdef GRCC_QGRAF_OPT_TOPOL
+#define GRCC_QGRAF_OPT_Size       10
+#else
+#define GRCC_QGRAF_OPT_Size        9
+#endif
 
 /*---------------------------------------------------------------
  * Conversion of 
@@ -175,7 +231,7 @@ typedef struct {
 /* class of node : input for SProcess */
 typedef struct {
     int         cdeg;                 /* degree of each node */
-    int         ctyp;                 /* typde : GRCC_AT_xxx */
+    int         ctyp;                 /* type : GRCC_AT_xxx */
     int         cnum;                 /* the number of nodes in the class */
     int         cple;                 /* total order of c.c. of each node */
                                       /* = 0 for external particle */

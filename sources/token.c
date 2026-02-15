@@ -7,7 +7,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -144,13 +144,14 @@ dovariable:		c = *in; *in = 0;
 										}
 /*[06nov2003 mt]:*/
 #ifdef WITHMPI
-										else/*RHSide*/
+										else { /*RHSide*/
 											/* NOTE: We always set AC.RhsExprInModuleFlag regardless of
 											 *       AP.PreAssignFlag or AP.PreInsideLevel because we have to detect
 											 *       RHS expressions even in those cases. */
 											AC.RhsExprInModuleFlag = 1;
-											if ( !AP.PreAssignFlag && !AP.PreInsideLevel )
-												Expressions[number].vflags |= ISINRHS;
+										}
+										if ( !AP.PreAssignFlag && !AP.PreInsideLevel )
+											Expressions[number].vflags |= ISINRHS;
 #endif
 /*:[06nov2003 mt]*/
 										if ( AC.exprfillwarning == 0 ) {
@@ -198,10 +199,7 @@ donumber:		i = 0;
 #ifdef WITHFLOAT
 				in2 = CheckFloat(in,&spec);
 				if ( in2 > in ) {
-					if ( spec == 1 ) {
-						*out++ = TNUMBER; *out++ = 0; s = in2;
-					}
-					else if ( spec == -1 ) {
+					if ( spec == -1 ) {
 						MesPrint("&The floating point system has not been started: %s",in);
 	                    if ( !error ) error = 1;
 					}
@@ -311,13 +309,10 @@ dofloat:
 						int spec;
 						s = CheckFloat(in,&spec);
 						if ( s > in ) {
-							if ( spec == 1 ) {
-								*out++ = TNUMBER; *out++ = 0;
-								object = 2; in = s;
-							}
-							else if ( spec == -1 ) {
+							if ( spec == -1 ) {
 								MesPrint("&The floating point system has not been started: %s",in);
-	            		        if ( !error ) error = 1;
+								if ( !error ) error = 1;
+								in++;
 							}
 							else {
 								UBYTE *a = s; s = in; in = a;
@@ -612,10 +607,11 @@ IllPos:			MesPrint("&Illegal character at this position: %s",in);
 	if ( error == 0 && ( numexp = simp3atoken(AC.tokens,leftright) ) < 0 )
 		error = 1;
 	if ( numexp > 0 ) {
+		// Make some space at the beginning of AC.tokens, filled with TEMPTY.
 		SBYTE *tt;
 		out = AC.tokens;
 		while ( *out != TENDOFIT ) out++;
-		while ( out+numexp*9+20 > outtop ) {
+		while ( out+numexp*9 > outtop ) {
 			LONG oldsize = (LONG)(out - AC.tokens);
 			SBYTE **ppp = &(AC.tokens); /* to avoid a compiler warning */
 			SBYTE **pppp = &(AC.toptokens);
@@ -623,7 +619,7 @@ IllPos:			MesPrint("&Illegal character at this position: %s",in);
 			out = AC.tokens + oldsize;
 			outtop = AC.toptokens - MAXNUMSIZE;
 		}
-		tt = out + numexp*9+20;
+		tt = out + numexp*9;
 		while ( out >= AC.tokens ) { *tt-- = *out--; }
 		while ( tt >= AC.tokens ) { *tt-- = TEMPTY; }
 		if ( error == 0 && simp3btoken(AC.tokens,leftright) ) error = 1;
@@ -1439,15 +1435,33 @@ int simp3btoken(SBYTE *s, int mode)
 	SBYTE *t, c, *fill, *ff, *ss;
 	LONG num;
 	WORD *prot;
+
+	// Work in a temporary buffer, to avoid clashes between input and output
+	SBYTE *tmptokens = (SBYTE*)Malloc1((AC.toptokens-AC.tokens)*sizeof(SBYTE), "simp3btoken scratch");
+	SBYTE* tmptoptokens = tmptokens + (AC.toptokens-AC.tokens);
+	fill = tmptokens;
+
 	if ( mode == RHSIDE ) {
 		prot = AC.ProtoType;
 		numprot = prot[1] - SUBEXPSIZE;
 		prot += SUBEXPSIZE;
 	}
 	else { prot = 0; numprot = 0; }
-	fill = s;
 	while ( *s == TEMPTY ) s++;
 	while ( *s != TENDOFIT ) {
+		// If we are near the end of the output buffer, we'd better reallocate
+		// both tmptokens and AC.tokens (which must fit the final result).
+		// Experimentally, fill can move by at most 5 per loop iteration, but
+		// this buffer of 20 of might not be enough for all cases!
+		while ( tmptoptokens - fill < 20 ) {
+			LONG tmppos;
+			tmppos = s - AC.tokens;
+			DoubleBuffer((void**)&(AC.tokens), (void**)&(AC.toptokens), sizeof(SBYTE), "simp3btoken double");
+			s = AC.tokens + tmppos;
+			tmppos = fill - tmptokens;
+			DoubleBuffer((void**)&tmptokens, (void**)&tmptoptokens, sizeof(SBYTE), "simp3btoken scratch double");
+			fill = tmptokens + tmppos;
+		}
 		if ( *s == TEMPTY ) { s++; continue; }
 		denom = 1;
 		if ( *s == TDIVIDE ) { denom = -1; *fill++ = *s++; }
@@ -1805,9 +1819,17 @@ nodot:				MesPrint("&Illegal second element in dotproduct");
 		}
 	}
 	*fill = TENDOFIT;
+	// Now copy the modified tokens back to the original buffer
+	fill = tmptokens;
+	s = AC.tokens;
+	do {
+		*s++ = *fill;
+	} while ( *fill++ != TENDOFIT );
+	M_free(tmptokens, "simp3btoken scratch");
 	return(error);
 doublepower:;
 	MesPrint("&Dubious notation with power of power");
+	M_free(tmptokens, "simp3btoken scratch");
 	return(-1);
 }
 

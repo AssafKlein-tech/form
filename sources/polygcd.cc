@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -1388,7 +1388,7 @@ const map<vector<int>,int> polygcd::bracket_count(const poly &a, const vector<in
 
 struct BracketInfo {
 	std::vector<int> pattern;
-	int num_terms, dummy;
+	int num_terms, dummy = 0;
 	const poly* p;
 
 	BracketInfo(const std::vector<int>& pattern, int num_terms, const poly* p) : pattern(pattern), num_terms(num_terms), p(p) {}

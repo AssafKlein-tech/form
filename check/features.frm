@@ -303,10 +303,13 @@ assert succeeded?
 #timeoutafter 0
 .end
 #require unix?
-# ParFORM may terminate without printing the error message,
-# depending on the MPI environment.
+# Sometimes, FORM can terminate without printing the error message, so don't
+# assert anything. We only test whether this hits the test suite timeout limit,
+# or not. TODO in principle this can be considered to be a bug, to be looked at
+# in the future.
+# For parform, there is no attempt to ensure the master process recieves SIGALRM
+# and not the workers.
 #pend_if mpi?
-assert runtime_error?
 *--#] TimeoutAfter_2 :
 *--#[ dedup :
 * Test deduplication
@@ -592,6 +595,1852 @@ assert result("F", 3) =~ expr("
      & x1**2*x2 + x1**3
 ")
 *--#] Format_noreset_linelen :
+*--#[ Float_1 :
+#-
+* Example from the FORM Workshop (Madrid 2023) slides, also in the manual.
+
+#StartFloat 500b,MZV=15
+
+Local F1 =
+	-mzv_(8,1,1,5)
+	+29056868/39414375*mzv_(2)^6*mzv_(3)
+	-47576/40425*mzv_(2)^5*mzv_(5)
+	-163291/18375*mzv_(2)^4*mzv_(7)
+	-4/105*mzv_(2)^3*mzv_(3)^3
+	-450797/11025*mzv_(2)^3*mzv_(9)
+	+7/5*mzv_(2)^2*mzv_(3)^2*mzv_(5)
+	+16/25*mzv_(2)^2*mzv_(3)*mzv_(5,3)
+	+454049/1400*mzv_(2)^2*mzv_(11)
+	-16/25*mzv_(2)^2*mzv_(5,3,3)
+	+3*mzv_(2)*mzv_(3)^2*mzv_(7)
+	+61/14*mzv_(2)*mzv_(3)*mzv_(5)^2
+	+2/7*mzv_(2)*mzv_(3)*mzv_(7,3)
+	+2172853/420*mzv_(2)*mzv_(13)
+	-2/7*mzv_(2)*mzv_(7,3,3)
+	+1/7*mzv_(2)*mzv_(5,5,3)
+	-33/4*mzv_(3)^2*mzv_(9)
+	-133/6*mzv_(3)*mzv_(5)*mzv_(7)
+	-25/9*mzv_(3)*mzv_(9,3)
+	-244/105*mzv_(5)^3
+	-359/105*mzv_(5)*mzv_(7,3)
+	+3/10*mzv_(7)*mzv_(5,3)
+	+89/18*mzv_(9,3,3)
+	+569/105*mzv_(7,3,5);
+L F2 = mzv_(15);
+Evaluate mzv_;
+Print;
+.sort
+
+Skip F1,F2;
+Local X = F1/F2;
+ToRational;
+Print;
+.sort
+
+#EndFloat
+Local G1 = F1;
+Local G2 = F2;
+
+Print G1,G2;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("X") =~ expr("229903169/25200")
+assert stdout =~ exact_pattern(<<'EOF')
+   F1 =
+      9.1234206877960755900164875575406726239325002222490534540605137258846994\
+      916348297032751308227224952419629422497720599224543719959652966613231560\
+      6913926e+03;
+EOF
+assert stdout =~ exact_pattern(<<'EOF')
+   F2 =
+      1.0000305882363070204935517285106450625876279487068581775065699328933322\
+      671563422795730723343470175484943669684442492832530297757588781904321794\
+      40477e+00;
+EOF
+assert stdout =~ exact_pattern(<<'EOF')
+   G1 =
+      float_(10,10,1,225649930152063087544280124519603661924016376904153173222\
+      961313295752588365049496190204609112667217257624737508104376810254484309\
+      3830597279756558899541412586941038636793415360118);
+EOF
+assert stdout =~ exact_pattern(<<'EOF')
+   G2 =
+      float_(10,10,1,247337966873870703631573653423368526098272821023387457752\
+      643030990710929556575503489173572446024607642191456056189912528713904095\
+      704444384800390830056125051897088334731440434);
+EOF
+*--#] Float_1 :
+*--#[ evaluate_symbol :
+#-
+#StartFloat 64b
+
+Symbol a,b;
+Local PI0 = a*b;
+Local PI1 = pi_;
+Local PI2 = pi_*3;
+Local PI3 = pi_*sqrt_(3);
+Local PI4 = pi_*pi_*pi_;
+Local PI5 = a*pi_*b;
+Local PI6 = sqrt_(pi_);
+
+Local EE1 = ee_;
+Local EE2 = pi_*ee_;
+
+Local EM1 = em_;
+
+ToFloat;
+Evaluate;
+
+Print;
+.end
+#pend_if wordsize == 2
+assert result("PI0") =~ expr("1.0e+00*a*b")
+assert result("PI1") =~ expr("3.141592653589793238e+00")
+assert result("PI2") =~ expr("9.424777960769379715e+00")
+assert result("PI3") =~ expr("5.441398092702653552e+00")
+assert result("PI4") =~ expr("3.100627668029982018e+01")
+assert result("PI5") =~ expr("3.141592653589793238e+00*a*b")
+assert result("PI6") =~ expr("1.772453850905516027e+00")
+assert result("EE1") =~ expr("2.718281828459045235e+00")
+assert result("EE2") =~ expr("8.539734222673567065e+00")
+assert result("EM1") =~ expr("5.772156649015328606e-01")
+*--#] evaluate_symbol :
+*--#[ evaluate_symbol_pi :
+#-
+#StartFloat 128b
+
+Local PI = pi_;
+Local EE = ee_;
+Local EM = em_;
+
+ToFloat;
+Evaluate pi_;
+
+Print;
+.end
+#pend_if wordsize == 2
+assert result("PI") =~ expr("3.1415926535897932384626433832795028842e+00")
+assert result("EE") =~ expr("1.0e+00*ee_")
+assert result("EM") =~ expr("1.0e+00*em_")
+*--#] evaluate_symbol_pi :
+*--#[ evaluate_symbol_ee :
+#-
+#StartFloat 160b
+
+Local PI = pi_;
+Local EE = ee_;
+Local EM = em_;
+
+ToFloat;
+Evaluate ee_;
+
+Print;
+.end
+#pend_if wordsize == 2
+assert result("PI") =~ expr("1.0e+00*pi_")
+assert result("EE") =~ expr("2.7182818284590452353602874713526624977572470937e+00")
+assert result("EM") =~ expr("1.0e+00*em_")
+*--#] evaluate_symbol_ee :
+*--#[ evaluate_symbol_em :
+#-
+#StartFloat 192b
+
+Local PI = pi_;
+Local EE = ee_;
+Local EM = em_;
+
+ToFloat;
+Evaluate em_;
+
+Print;
+.end
+#pend_if wordsize == 2
+assert result("PI") =~ expr("1.0e+00*pi_")
+assert result("EE") =~ expr("1.0e+00*ee_")
+assert result("EM") =~ expr("5.77215664901532860606512090082402431042159335939923598806e-01")
+*--#] evaluate_symbol_em :
+*--#[ evaluate_mzv_2 :
+#-
+L F = mzv_(2);
+.sort
+
+Hide;
+#do digits=1,10
+	#StartFloat `digits'd,MZV=2
+	Local F`digits' = F;
+	Evaluate mzv_;
+	Print;
+	.sort
+	Hide;
+	#endfloat
+#enddo
+* The following checks that a new StartFloat without a previous  
+* EndFloat causes no problems. 
+#do digits=11,20
+	#StartFloat `digits'd,MZV=2
+	Local F`digits' = F;
+	Evaluate mzv_;
+	Print;
+	.sort
+	Hide;
+#enddo
+.end
+#pend_if wordsize == 2
+assert result("F1") =~ expr("2e+00")
+assert result("F2") =~ expr("1.6e+00")
+assert result("F3") =~ expr("1.64e+00")
+assert result("F4") =~ expr("1.645e+00")
+assert result("F5") =~ expr("1.6449e+00")
+assert result("F6") =~ expr("1.64493e+00")
+assert result("F7") =~ expr("1.644934e+00")
+assert result("F8") =~ expr("1.6449341e+00")
+assert result("F9") =~ expr("1.64493407e+00")
+assert result("F10") =~ expr("1.644934067e+00")
+assert result("F11") =~ expr("1.6449340668e+00")
+assert result("F12") =~ expr("1.64493406685e+00")
+assert result("F13") =~ expr("1.644934066848e+00")
+assert result("F14") =~ expr("1.6449340668482e+00")
+assert result("F15") =~ expr("1.64493406684823e+00")
+assert result("F16") =~ expr("1.644934066848226e+00")
+assert result("F17") =~ expr("1.6449340668482264e+00")
+assert result("F18") =~ expr("1.64493406684822644e+00")
+assert result("F19") =~ expr("1.644934066848226436e+00")
+assert result("F20") =~ expr("1.6449340668482264365e+00")
+*--#] evaluate_mzv_2 : 
+*--#[ evaluate_all_mzv_2-6 : 
+#-
+Symbol a,n,x,jj;
+CFunction mzv;
+#do weight=2,6
+	L F`weight' = x^`weight'*mzv();
+#enddo
+* Generate all possible arguments
+repeat id x^n?{>0}*mzv(?a) = sum_(jj,1,n, x^(n-jj)*mzv(?a,jj));
+* Only keep convergent MZVs
+id mzv(1,?a) = 0;
+.sort
+
+Hide;
+#do weight=2,6
+	#StartFloat 74b,MZV=`weight'
+	Local MZV`weight' = F`weight';
+	id mzv(?a) = mzv(?a)*mzv_(?a);
+	Evaluate mzv_;
+	Print +s;
+	.sort
+	Hide;
+	#endfloat
+#enddo
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("MZV2") =~ expr("
+	   + 1.644934066848226436472e+00*mzv(2)
+")
+assert result("MZV3") =~ expr("
+       + 1.2020569031595942854e+00*mzv(2,1)
+       + 1.2020569031595942854e+00*mzv(3)
+")
+assert result("MZV4") =~ expr("
+       + 1.082323233711138191516e+00*mzv(2,1,1)
+       + 8.11742425283353643637e-01*mzv(2,2)
+       + 2.70580808427784547879e-01*mzv(3,1)
+       + 1.082323233711138191516e+00*mzv(4)
+")
+assert result("MZV5") =~ expr("
+       + 1.036927755143369926331e+00*mzv(2,1,1,1)
+       + 7.11566197550572432097e-01*mzv(2,1,2)
+       + 2.288103976033537597687e-01*mzv(2,2,1)
+       + 7.11566197550572432097e-01*mzv(2,3)
+       + 9.655115998944373446565e-02*mzv(3,1,1)
+       + 2.288103976033537597687e-01*mzv(3,2)
+       + 9.655115998944373446565e-02*mzv(4,1)
+       + 1.036927755143369926331e+00*mzv(5)
+")
+assert result("MZV6") =~ expr("
+       + 1.017343061984449139715e+00*mzv(2,1,1,1,1)
+       + 6.745239140339681404916e-01*mzv(2,1,1,2)
+       + 2.137988682245925470996e-01*mzv(2,1,2,1)
+       + 6.183495605712693078956e-01*mzv(2,1,3)
+       + 8.848338245436871429433e-02*mzv(2,2,1,1)
+       + 1.907518241220842136965e-01*mzv(2,2,2)
+       + 7.922139756520716599903e-02*mzv(2,3,1)
+       + 6.745239140339681404916e-01*mzv(2,4)
+       + 4.053689727151973782905e-02*mzv(3,1,1,1)
+       + 7.922139756520716599903e-02*mzv(3,1,2)
+       + 3.230902899166988169841e-02*mzv(3,2,1)
+       + 2.137988682245925470996e-01*mzv(3,3)
+       + 1.748985316901140442593e-02*mzv(4,1,1)
+       + 8.848338245436871429433e-02*mzv(4,2)
+       + 4.053689727151973782905e-02*mzv(5,1)
+       + 1.017343061984449139715e+00*mzv(6)
+")
+*--#] evaluate_all_mzv_2-6 :
+*--#[ evaluate_all_euler_1-4 : 
+Symbol a,n,x,jj;
+CFunction euler;
+#do weight=1,6
+	L F`weight' = x^`weight'*euler();
+#enddo
+* Generate all possible arguments
+repeat id x^n?{>0}*euler(?a) = sum_(jj,1,n, x^(n-jj)*euler(?a,-jj))+sum_(jj,1,n, x^(n-jj)*euler(?a,jj));
+* Only keep convergent sums
+id euler(1,?a) = 0;
+.sort
+
+Hide;
+#do weight=1,4
+	#StartFloat 74b,MZV=`weight'
+	Local EULER`weight' = F`weight';
+	id euler(?a) = euler(?a)*euler_(?a);
+	Evaluate euler_;
+	Print +s;
+	.sort
+	Hide;
+	#endfloat
+#enddo
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("EULER1") =~ expr("
+       - 6.931471805599453094172e-01*euler(-1)
+")
+assert result("EULER2") =~ expr("
+       - 8.224670334241132182362e-01*euler(-2)
+       - 5.822405264650125059027e-01*euler(-1,-1)
+       + 2.402265069591007123336e-01*euler(-1,1)
+       + 1.644934066848226436472e+00*euler(2)
+")
+assert result("EULER3") =~ expr("
+       - 9.015426773696957140498e-01*euler(-3)
+       - 2.430703516700615775627e-01*euler(-2,-1)
+       + 1.50257112894949285675e-01*euler(-2,1)
+       - 3.888958461681063290997e-01*euler(-1,-2)
+       + 2.140723708667062274342e-01*euler(-1,-1,-1)
+       - 5.372131936080402009406e-01*euler(-1,-1,1)
+       + 9.475300423012770572183e-02*euler(-1,1,-1)
+       - 5.550410866482157995314e-02*euler(-1,1,1)
+       + 2.695764795315278073874e-01*euler(-1,2)
+       - 5.082152128046848508121e-01*euler(2,-1)
+       + 1.2020569031595942854e+00*euler(2,1)
+       + 1.2020569031595942854e+00*euler(3)
+")
+assert result("EULER4") =~ expr("
+       - 9.470328294972459175765e-01*euler(-4)
+       - 1.17875999650509326841e-01*euler(-3,-1)
+       + 8.778567156865530203659e-02*euler(-3,1)
+       - 2.029356063208384109093e-01*euler(-2,-2)
+       + 5.465305273826365205925e-02*euler(-2,-1,-1)
+       - 9.309712599176857714371e-02*euler(-2,-1,1)
+       + 3.41591261665139137232e-02*euler(-2,1,-1)
+       - 2.375236632261848595145e-02*euler(-2,1,1)
+       + 1.626546673974200807756e-01*euler(-2,2)
+       - 3.395454690873598695907e-01*euler(-1,-3)
+       + 6.936803430285457740076e-02*euler(-1,-2,-1)
+       - 1.1285749644390297273e-01*euler(-1,-2,1)
+       + 2.410220753003005639135e-01*euler(-1,-1,-2)
+       + 8.798553701050896029994e-02*euler(-1,-1,-1,-1)
+       - 5.091676406429263452417e-02*euler(-1,-1,-1,1)
+       + 2.02865795179889634385e-01*euler(-1,-1,1,-1)
+       - 5.174790616738993863308e-01*euler(-1,-1,1,1)
+       - 3.522826783975370883778e-01*euler(-1,-1,2)
+       + 7.734090056675821939211e-02*euler(-1,1,-2)
+       - 2.327506608672756416438e-02*euler(-1,1,-1,-1)
+       + 4.075823915930925192076e-02*euler(-1,1,-1,1)
+       - 1.413423721499000878947e-02*euler(-1,1,1,-1)
+       + 9.618129107628477161979e-03*euler(-1,1,1,1)
+       - 6.053489317192111168615e-02*euler(-1,1,2)
+       + 4.551222386652609668434e-02*euler(-1,2,-1)
+       - 3.289319519435604132636e-02*euler(-1,2,1)
+       + 2.866757544385383102356e-01*euler(-1,3)
+       - 5.685258800390969025941e-01*euler(2,-2)
+       - 1.935553538130652468834e-01*euler(2,-1,-1)
+       + 1.141234274160608451268e-01*euler(2,-1,1)
+       - 4.336923770489551966887e-01*euler(2,1,-1)
+       + 1.082323233711138191516e+00*euler(2,1,1)
+       + 8.11742425283353643637e-01*euler(2,2)
+       - 1.728452782389843861048e-01*euler(3,-1)
+       + 2.70580808427784547879e-01*euler(3,1)
+       + 1.082323233711138191516e+00*euler(4)
+")
+*--#] evaluate_all_euler_1-4 :
+*--#[ evaluate_all_mzvhalf_1-6 : 
+Symbol a,n,x,jj;
+CFunction mzvhalf;
+#do weight=1,6
+	L F`weight' = x^`weight'*mzvhalf();
+#enddo
+* Generate all possible arguments
+repeat id x^n?{>0}*mzvhalf(?a) = sum_(jj,1,n, x^(n-jj)*mzvhalf(?a,jj));
+.sort
+
+Hide;
+#do weight=1,6
+	#StartFloat 74b, MZV = `weight'
+	Local MZVHALF`weight' = F`weight';
+	id mzvhalf(?a) = mzvhalf(?a)*mzvhalf_(?a);
+	Evaluate mzvhalf_;
+	Print +s;
+	.sort
+	Hide;
+	#endfloat
+#enddo
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("MZVHALF1") =~ expr("
+        +6.931471805599453094172e-01*mzvhalf(1)
+")
+assert result("MZVHALF2") =~ expr("
+        +2.402265069591007123336e-01*mzvhalf(1,1)
+       + 5.822405264650125059027e-01*mzvhalf(2)
+")
+assert result("MZVHALF3") =~ expr("
+        +5.550410866482157995314e-02*mzvhalf(1,1,1)
+       + 2.140723708667062274342e-01*mzvhalf(1,2)
+       + 9.475300423012770572182e-02*mzvhalf(2,1)
+       + 5.372131936080402009406e-01*mzvhalf(3)
+")
+assert result("MZVHALF4") =~ expr("
+        +9.618129107628477161979e-03*mzvhalf(1,1,1,1)
+       + 5.091676406429263452417e-02*mzvhalf(1,1,2)
+       + 2.327506608672756416438e-02*mzvhalf(1,2,1)
+       + 2.02865795179889634385e-01*mzvhalf(1,3)
+       + 1.413423721499000878947e-02*mzvhalf(2,1,1)
+       + 8.798553701050896029994e-02*mzvhalf(2,2)
+       + 4.075823915930925192076e-02*mzvhalf(3,1)
+       + 5.174790616738993863308e-01*mzvhalf(4)
+")
+assert result("MZVHALF5") =~ expr("
+        +1.333355814642844342341e-03*mzvhalf(1,1,1,1,1)
+       + 8.977079866463296833435e-03*mzvhalf(1,1,1,2)
+       + 4.180785927505245511698e-03*mzvhalf(1,1,2,1)
+       + 4.888837363087644124842e-02*mzvhalf(1,1,3)
+       + 2.590491526783706529017e-03*mzvhalf(1,2,1,1)
+       + 2.202353039232048705332e-02*mzvhalf(1,2,2)
+       + 1.040778815345923684362e-02*mzvhalf(1,3,1)
+       + 1.977851218733276555108e-01*mzvhalf(1,4)
+       + 1.801653787038017905577e-03*mzvhalf(2,1,1,1)
+       + 1.326622979787512352052e-02*mzvhalf(2,1,2)
+       + 6.215468460408135423935e-03*mzvhalf(2,2,1)
+       + 8.496239975196462665687e-02*mzvhalf(2,3)
+       + 3.876067314665263762197e-03*mzvhalf(3,1,1)
+       + 3.888005884184390429248e-02*mzvhalf(3,2)
+       + 1.853078606546661304236e-02*mzvhalf(4,1)
+       + 5.084005792422687074591e-01*mzvhalf(5)
+")
+assert result("MZVHALF6") =~ expr("
+        +1.540353039338160995444e-04*mzvhalf(1,1,1,1,1,1)
+       + 1.258876902820489070556e-03*mzvhalf(1,1,1,1,2)
+       + 5.934649939092641274313e-04*mzvhalf(1,1,1,2,1)
+       + 8.687699837464924332492e-03*mzvhalf(1,1,1,3)
+       + 3.725016654823881497105e-04*mzvhalf(1,1,2,1,1)
+       + 3.999767838591861292463e-03*mzvhalf(1,1,2,2)
+       + 1.911985496708273694742e-03*mzvhalf(1,1,3,1)
+       + 4.795057789712260825139e-02*mzvhalf(1,1,4)
+       + 2.626471417724444826556e-04*mzvhalf(1,2,1,1,1)
+       + 2.463136250615208192292e-03*mzvhalf(1,2,1,2)
+       + 1.169869909499536413856e-03*mzvhalf(1,2,2,1)
+       + 2.145129727375666323602e-02*mzvhalf(1,2,3)
+       + 7.400960371731285392346e-04*mzvhalf(1,3,1,1)
+       + 1.004682297311360973229e-02*mzvhalf(1,3,2)
+       + 4.847461771043371713843e-03*mzvhalf(1,4,1)
+       + 1.953981544864645991443e-01*mzvhalf(1,5)
+       + 1.97232820211621153726e-04*mzvhalf(2,1,1,1,1)
+       + 1.706168769515668670888e-03*mzvhalf(2,1,1,2)
+       + 8.069036109476304022076e-04*mzvhalf(2,1,2,1)
+       + 1.287224686067429263904e-02*mzvhalf(2,1,3)
+       + 5.081857692654553033744e-04*mzvhalf(2,2,1,1)
+       + 5.968128689077008853625e-03*mzvhalf(2,2,2)
+       + 2.863764078749510138598e-03*mzvhalf(2,3,1)
+       + 8.355552124728128937156e-02*mzvhalf(2,4)
+       + 3.596008310955505224866e-04*mzvhalf(3,1,1,1)
+       + 3.701399425949438029416e-03*mzvhalf(3,1,2)
+       + 1.765926326069690097067e-03*mzvhalf(3,2,1)
+       + 3.801462469797616251775e-02*mzvhalf(3,3)
+       + 1.122469979658377667375e-03*mzvhalf(4,1,1)
+       + 1.798212154990578314126e-02*mzvhalf(4,2)
+       + 8.723003057596888427165e-03*mzvhalf(5,1)
+       + 5.0409539780398855069e-01*mzvhalf(6)
+")
+*--#] evaluate_all_mzvhalf_1-6 : 
+*--#[ evaluate_sin :
+#StartFloat 24d
+Symbol n;
+CFunction sin;
+Local SIN = sum_(n,4,27,sin(2*pi_*n/24)*sin_(2*pi_*n/24))+sin(4*pi_/13)*sin_(4*pi_/13)+sin(-1.2*pi_/13)*sin_(-1.2*pi_/13);
+Evaluate sin_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("SIN") =~ expr("
+       + 8.22983865893656394579617e-01*sin(4/13*pi_)
+       + 8.66025403784438646763723e-01*sin(1/3*pi_)
+       + 9.65925826289068286749743e-01*sin(5/12*pi_)
+       + 1.0e+00*sin(1/2*pi_)
+       + 9.65925826289068286749743e-01*sin(7/12*pi_)
+       + 8.66025403784438646763723e-01*sin(2/3*pi_)
+       + 7.07106781186547524400844e-01*sin(3/4*pi_)
+       + 5.0e-01*sin(5/6*pi_)
+       + 2.58819045102520762348899e-01*sin(11/12*pi_)
+       - 2.58819045102520762348899e-01*sin(13/12*pi_)
+       - 5.0e-01*sin(7/6*pi_)
+       - 7.07106781186547524400844e-01*sin(5/4*pi_)
+       - 8.66025403784438646763723e-01*sin(4/3*pi_)
+       - 9.65925826289068286749743e-01*sin(17/12*pi_)
+       - 1.0e+00*sin(3/2*pi_)
+       - 9.65925826289068286749743e-01*sin(19/12*pi_)
+       - 8.66025403784438646763723e-01*sin(5/3*pi_)
+       - 7.07106781186547524400844e-01*sin(7/4*pi_)
+       - 5.0e-01*sin(11/6*pi_)
+       - 2.58819045102520762348899e-01*sin(23/12*pi_)
+       + 2.58819045102520762348899e-01*sin(25/12*pi_)
+       + 5.0e-01*sin(13/6*pi_)
+       + 7.07106781186547524400844e-01*sin(9/4*pi_)
+       - 2.8594567839868926206474e-01*sin( - 9.23076923076923076923077e-02*pi_
+      )
+")
+*--#] evaluate_sin : 
+*--#[ evaluate_cos :
+#StartFloat 24d
+Symbol n;
+CFunction cos;
+Local COS = sum_(n,4,27,cos(2*pi_*n/24)*cos_(2*pi_*n/24))+cos(-2^32*pi_/3)*cos_(-2^32*pi_/3)+cos(4*pi_/13)*cos_(4*pi_/13)+cos(-1.2*pi_/13)*cos_(-1.2*pi_/13)+cos(2^32*pi_/(2^32+1))*cos_(2^32*pi_/(2^32+1));
+Evaluate cos_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("COS") =~ expr("
+       - 5.0e-01*cos( - 4294967296/3*pi_)
+       + 5.68064746731155802511808e-01*cos(4/13*pi_)
+       + 5.0e-01*cos(1/3*pi_)
+       + 2.58819045102520762348899e-01*cos(5/12*pi_)
+       - 2.58819045102520762348899e-01*cos(7/12*pi_)
+       - 5.0e-01*cos(2/3*pi_)
+       - 7.07106781186547524400844e-01*cos(3/4*pi_)
+       - 8.66025403784438646763723e-01*cos(5/6*pi_)
+       - 9.65925826289068286749743e-01*cos(11/12*pi_)
+       - 9.99999999999999999732484e-01*cos(4294967296/4294967297*pi_)
+       - 9.65925826289068286749743e-01*cos(13/12*pi_)
+       - 8.66025403784438646763723e-01*cos(7/6*pi_)
+       - 7.07106781186547524400844e-01*cos(5/4*pi_)
+       - 5.0e-01*cos(4/3*pi_)
+       - 2.58819045102520762348899e-01*cos(17/12*pi_)
+       + 2.58819045102520762348899e-01*cos(19/12*pi_)
+       + 5.0e-01*cos(5/3*pi_)
+       + 7.07106781186547524400844e-01*cos(7/4*pi_)
+       + 8.66025403784438646763723e-01*cos(11/6*pi_)
+       + 9.65925826289068286749743e-01*cos(23/12*pi_)
+       + 1.0e+00*cos(2*pi_)
+       + 9.65925826289068286749743e-01*cos(25/12*pi_)
+       + 8.66025403784438646763723e-01*cos(13/6*pi_)
+       + 7.07106781186547524400844e-01*cos(9/4*pi_)
+       + 9.58245829109166210690747e-01*cos( - 9.23076923076923076923077e-02*
+      pi_)
+       - 1.0e+00*cos(pi_)
+")
+*--#] evaluate_cos : 
+*--#[ evaluate_tan :
+#StartFloat 24d
+Symbol n;
+CFunction tan;
+Local TAN = sum_(n,4,27,tan(2*pi_*n/24)*tan_(2*pi_*n/24))+tan(4*pi_/13)*tan_(4*pi_/13)+tan(-1.2*pi_/13)*tan_(-1.2*pi_/13);
+Evaluate tan_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("TAN") =~ expr("
+         + tan_(1/2*pi_)*tan(1/2*pi_)
+       + tan_(3/2*pi_)*tan(3/2*pi_)
+       + 1.44875011278097222958133e+00*tan(4/13*pi_)
+       + 1.73205080756887729352745e+00*tan(1/3*pi_)
+       + 3.73205080756887729352745e+00*tan(5/12*pi_)
+       - 3.73205080756887729352745e+00*tan(7/12*pi_)
+       - 1.73205080756887729352745e+00*tan(2/3*pi_)
+       + 1.0e+00*tan(3/4*pi_)
+       - 5.77350269189625764509149e-01*tan(5/6*pi_)
+       - 2.67949192431122706472554e-01*tan(11/12*pi_)
+       + 2.67949192431122706472554e-01*tan(13/12*pi_)
+       + 5.77350269189625764509149e-01*tan(7/6*pi_)
+       + 1.0e+00*tan(5/4*pi_)
+       + 1.73205080756887729352745e+00*tan(4/3*pi_)
+       + 3.73205080756887729352745e+00*tan(17/12*pi_)
+       - 3.73205080756887729352745e+00*tan(19/12*pi_)
+       - 1.73205080756887729352745e+00*tan(5/3*pi_)
+       + 1.0e+00*tan(7/4*pi_)
+       - 5.77350269189625764509149e-01*tan(11/6*pi_)
+       - 2.67949192431122706472554e-01*tan(23/12*pi_)
+       + 2.67949192431122706472554e-01*tan(25/12*pi_)
+       + 5.77350269189625764509149e-01*tan(13/6*pi_)
+       + 1.0e+00*tan(9/4*pi_)
+       - 2.9840534621947567190308e-01*tan( - 9.23076923076923076923077e-02*pi_
+      )
+")
+*--#] evaluate_tan : 
+*--#[ evaluate_asin :
+#StartFloat 82b
+CFunction asin;
+Local ASIN = asin(0)*asin_(0)+2*asin(-1.0)*asin_(-1.0)/pi_+2*asin(1)*asin_(1)/pi_+asin(-0.7356)*asin_(-0.7356)+asin(4/13)*asin_(4/13)+asin(-3/2)*asin_(-3/2)+asin(5)*asin_(5);
+Evaluate asin_, pi_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ASIN") =~ expr("
+       + asin_( - 3/2)*asin( - 3/2)
+       + asin_(5)*asin(5)
+       + 3.12766721941544958213894e-01*asin(4/13)
+       - 8.26551974047654326578014e-01*asin( - 7.356e-01)
+       - 1.0e+00*asin( - 1.0e+00)
+       + 1.0e+00*asin(1)
+")
+*--#] evaluate_asin : 
+*--#[ evaluate_acos :
+#StartFloat 82b
+CFunction acos;
+Local ACOS = 2*acos(0)*acos_(0)/pi_+acos(-1.0)*acos_(-1.0)/pi_+acos(1)*acos_(1)+acos(-0.7356)*acos_(-0.7356)+acos(4/13)*acos_(4/13)+acos(-3/2)*acos_(-3/2)+acos(5)*acos_(5);
+Evaluate acos_, pi_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ACOS") =~ expr("
+         + acos_( - 3/2)*acos( - 3/2)
+       + acos_(5)*acos(5)
+       + 1.25802960485335166101743e+00*acos(4/13)
+       + 2.39734830084255094580934e+00*acos( - 7.356e-01)
+       + 1.0e+00*acos( - 1.0e+00)
+       + 1.0e+00*acos(0)
+")
+*--#] evaluate_acos : 
+*--#[ evaluate_atan :
+#StartFloat 82b
+CFunction atan;
+Local ATAN = atan(0)*atan_(0)+atan(-1.0)*atan_(-1.0)+atan(1)*atan_(1)+atan(-0.7356)*atan_(-0.7356)+atan(4/13)*atan_(4/13)+2*atan(-10^20)*atan_(-10^20)/pi_+2*atan(10^20)*atan_(10^20)/pi_;
+Evaluate atan_, pi_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ATAN") =~ expr("
+       - 9.99999999999999999993634e-01*atan( - 100000000000000000000)
+       + 2.98498931586179277935128e-01*atan(4/13)
+       + 9.99999999999999999993634e-01*atan(100000000000000000000)
+       - 6.34221230827067632052843e-01*atan( - 7.356e-01)
+       - 7.85398163397448309615661e-01*atan( - 1.0e+00)
+       + 7.85398163397448309615661e-01*atan(1)
+")
+*--#] evaluate_atan : 
+*--#[ evaluate_atan2 :
+#Startfloat 21d
+CFunction atan2;
+Local ATAN2 = atan2(0,0)*atan2_(0,0)
+			+atan2(0,24)*atan2_(0,24)
+			+atan2(24/13,0)*atan2_(24/13,0)
+			+atan2(3,-1.45)*atan2_(3,-1.45)
+			+atan2(0.54321,-1.2345)*atan2_(0.54321,-1.2345)
+			+atan2(5.4321,-45/11)*atan2_(5.4321,-45/11);
+Evaluate;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ATAN2") =~ expr("
+         + 1.57079632679489661923e+00*atan2(24/13,0)
+       + 2.72706541948852419832e+00*atan2(5.4321e-01, - 1.2345e+00)
+       + 2.21627784862167698618e+00*atan2(5.4321e+00, - 45/11)
+       + 2.02102192305561165724e+00*atan2(3, - 1.45e+00)
+")
+*--#] evaluate_atan2 : 
+*--#[ evaluate_sqrt :
+#Startfloat 21d
+CFunction sqrt;
+Local SQRT = sqrt(0)*sqrt_(0)+sqrt(1)*sqrt_(1)+sqrt(1.456789)*sqrt_(1.456789)+sqrt(25/7)*sqrt_(25/7)+sqrt(-1)*sqrt_(-1)+sqrt(5932)*sqrt_(5932);
+Evaluate sqrt_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("SQRT") =~ expr("
+       + sqrt_(-1)*sqrt(-1)
+       + 1.88982236504613613607e+00*sqrt(25/7)
+       + 1.20697514473165519284e+00*sqrt(1.456789e+00)
+       + 1.0e+00*sqrt(1)
+       + 7.70194780558788258528e+01*sqrt(5932)
+")
+*--#] evaluate_sqrt : 
+*--#[ evaluate_ln :
+#Startfloat 60b
+CFunction ln;
+Local LN = ln(1)*ln_(1)+ln(0)*ln_(0)+ln(ee_)*ln_(ee_)+ln(2.71828)*ln_(2.71828)+ln(2/3)*ln_(2/3)+ln(-5)*ln_(-5);
+Evaluate ln_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("LN") =~ expr("
+       + ln_(ee_)*ln(ee_)
+       + ln_(-5)*ln(-5)
+       + ln_(0)*ln(0)
+       - 4.05465108108164382e-01*ln(2/3)
+       + 9.99999327347282003e-01*ln(2.71828e+00)
+")
+*--#] evaluate_ln : 
+*--#[ evaluate_eexp :
+#Startfloat 84b
+CFunction exp;
+Local EXP = exp(0)*eexp_(0)+exp(1)*eexp_(1)+exp(-10)*eexp_(-10)+exp(2/11)*eexp_(2/11)+exp(36124.5)*eexp_(36124.5);
+Evaluate;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("EXP") =~ expr("
+         + 1.199396102035385909645662e+00*exp(2/11)
+       + 4.688258114961839863324201e+15688*exp(3.61245e+04)
+       + 4.539992976248485153559152e-05*exp(-10)
+       + 1.0e+00*exp(0)
+       + 2.718281828459045235360287e+00*exp(1)
+")
+*--#] evaluate_eexp : 
+*--#[ evaluate_li2 :
+#Startfloat 18d
+CFunction li2;
+Local LI2 = li2(0)*li2_(0)+li2(1)*li2_(1)+li2(-1)*li2_(-1)+li2(1/2)*li2_(1/2)+li2(1.4)*li2_(1.4)+li2(-10)*li2_(-10);
+Evaluate li2_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("LI2") =~ expr("
+         + li2_(1.4e+00)*li2(1.4e+00)
+       + li2_(-10)*li2(-10)
+       + 5.82240526465012506e-01*li2(1/2)
+       - 8.22467033424113218e-01*li2(-1)
+       + 1.64493406684822644e+00*li2(1)
+")
+*--#] evaluate_li2 : 
+*--#[ evaluate_gamma :
+#Startfloat 131b
+CFunction gamma;
+Local GAMMA = gamma(-754)*gamma_(-754)+gamma(-1)*gamma_(-1)+gamma(0)*gamma_(0)+gamma(1)*gamma_(1)+gamma(563)*gamma_(563)*invfac_(562)+gamma(-3/2)*gamma_(-3/2)+gamma(3.456)*gamma_(3.456);
+Evaluate gamma_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("GAMMA") =~ expr("
+       + gamma_(-754)*gamma(-754)
+       + gamma_(-1)*gamma(-1)
+       + gamma_(0)*gamma(0)
+       + 2.3632718012073547030642233111215269104e+00*gamma( - 3/2)
+       + 3.1669090330100746768222387336126462899e+00*gamma(3.456e+00)
+       + 1.0e+00*gamma(1)
+       + 1.0e+00*gamma(563)
+")
+
+*--#] evaluate_gamma : 
+*--#[ evaluate_agm :
+#Startfloat 33b
+CFunction agm,f;
+Local AGM = agm(24,6)*agm_(24,6)+agm(24,0)*agm_(24,0)+agm(0,6)*agm_(0,6)+agm(24,-1)*agm_(24,-1)+agm(-1,6)*agm_(-1,6)+agm(0,-1)*agm_(0,-1)+agm(-1,0)*agm_(-1,0);
+Evaluate agm_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("AGM") =~ expr("
+       + agm_(-1,6)*agm(-1,6)
+       + agm_(24,-1)*agm(24,-1)
+       + 1.34581715e+01*agm(24,6)
+")
+
+*--#] evaluate_agm : 
+*--#[ evaluate_sinh :
+#Startfloat 96b
+CFunction sinh;
+Local SINH = sinh(0)*sinh_(0)+sinh(1.0)*sinh_(1.0)+sinh(ln_(2))*sinh_(ln_(2))+sinh(-ln_(2))*sinh_(-ln_(2));
+Argument sinh_;
+	Evaluate;
+Endargument;
+Evaluate sinh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("SINH") =~ expr("
+       - 7.5e-01*sinh( - ln_(2))
+       + 7.5e-01*sinh(ln_(2))
+       + 1.175201193643801456882381851e+00*sinh(1.0e+00)
+")
+*--#] evaluate_sinh : 
+*--#[ evaluate_cosh :
+#Startfloat 96b
+CFunction cosh;
+Local COSH = cosh(0)*cosh_(0)+cosh(1.0)*cosh_(1.0)+cosh(-1.0)*cosh_(-1.0)+cosh(ln_(2))*cosh_(ln_(2))+cosh(-ln_(2))*cosh_(-ln_(2));
+Argument cosh_;
+	Evaluate;
+Endargument;
+Evaluate cosh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("COSH") =~ expr("
+       + 1.25e+00*cosh( - ln_(2))
+       + 1.25e+00*cosh(ln_(2))
+       + 1.543080634815243778477905621e+00*cosh( - 1.0e+00)
+       + 1.543080634815243778477905621e+00*cosh(1.0e+00)
+       + 1.0e+00*cosh(0)
+")
+*--#] evaluate_cosh : 
+*--#[ evaluate_tanh :
+#Startfloat 96b
+CFunction tanh;
+Local TANH = tanh(0)*tanh_(0)+tanh(1.0)*tanh_(1.0)+tanh(-1.0)*tanh_(-1.0)+tanh(ln_(2))*tanh_(ln_(2))+tanh(-ln_(2))*tanh_(-ln_(2));
+Argument tanh_;
+	Evaluate;
+Endargument;
+Evaluate tanh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("TANH") =~ expr("
+       - 6.0e-01*tanh( - ln_(2))
+       + 6.0e-01*tanh(ln_(2))
+       - 7.615941559557648881194582826e-01*tanh( - 1.0e+00)
+       + 7.615941559557648881194582826e-01*tanh(1.0e+00)
+")
+*--#] evaluate_tanh : 
+*--#[ evaluate_asinh :
+#Startfloat 21d
+CFunction asinh;
+Local ASINH = asinh(0)*asinh_(0)+asinh(1.0)*asinh_(1.0)+asinh(-1)*asinh_(-1);
+Evaluate asinh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ASINH") =~ expr("
+       + 8.81373587019543025233e-01*asinh(1.0e+00)
+       - 8.81373587019543025233e-01*asinh(-1)
+")
+*--#] evaluate_asinh : 
+*--#[ evaluate_acosh :
+#Startfloat 21d
+CFunction acosh;
+Local ACOSH = acosh(0)*acosh_(0)+acosh(1.0)*acosh_(1.0)+acosh(-1)*acosh_(-1)+acosh(24/7)*acosh_(24/7);
+Evaluate acosh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ACOSH") =~ expr("
+       + acosh_(-1)*acosh(-1)
+       + acosh_(0)*acosh(0)
+       + 1.90331107830883818521e+00*acosh(24/7)
+")
+*--#] evaluate_acosh : 
+*--#[ evaluate_atanh :
+#Startfloat 21d
+CFunction atanh;
+Local ATANH = atanh(0)*atanh_(0)+atanh(1.0)*atanh_(1.0)+atanh(-1)*atanh_(-1)+atanh(24/7)*atanh_(24/7)+atanh(1/9)*atanh_(1/9)+atanh(-.54321)*atanh_(-.54321);
+Evaluate atanh_;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("ATANH") =~ expr("
+         + atanh_(24/7)*atanh(24/7)
+       + atanh_(1.0e+00)*atanh(1.0e+00)
+       + atanh_(-1)*atanh(-1)
+       + 1.11571775657104877883e-01*atanh(1/9)
+       - 6.08698087464190136361e-01*atanh( - 5.4321e-01)
+")
+*--#] evaluate_atanh : 
+*--#[ torat :
+#-
+#StartFloat 16d
+Symbol a,b,jj;
+Local F1 = 0.0
+		  -10^-20*a
+		  +1023/1024*a^2
+		  -17/1024*a^3
+		  +3602879701896397/2^55*a^4
+		  -10^20*a^5
+		  +17*a^6
+		  ;
+Local F2 = sum_(jj,1,16,(355/113+10^-jj)*a^jj);
+Local F3 = 0.3*a^1+0.33*a^2+0.333*a^3+0.3333*a^4+0.33333*a^5+0.333333*a^6+0.3333333*a^7+0.33333333*a^8+0.333333333*a^9+0.3333333333*a^10+0.33333333333*a^11+0.333333333333*a^12+0.3333333333333*a^13+0.33333333333333*a^14+0.333333333333333*a^15+0.3333333333333333*a^16;
+ToFloat;
+.sort
+
+ToRat;
+.sort
+
+#StartFloat 50d
+Local F4 = 10e-20;
+ToRat;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F1") =~ expr("+ 1023/1024*a^2
+       - 17/1024*a^3
+       + 1/10*a^4
+       - 100000000000000000000*a^5
+       + 17*a^6")
+assert result("F2") =~ expr("+ 3663/1130*a
+       + 35613/11300*a^2
+       + 355113/113000*a^3
+       + 3550113/1130000*a^4
+       + 35500113/11300000*a^5
+       + 355000113/113000000*a^6
+       + 2205176720676/701929469027*a^7
+       + 5798543718053/1845733628322*a^8
+       + 4781671236789/1522053097423*a^9
+       + 492368235747/156725663768*a^10
+       + 355/113*a^11
+       + 355/113*a^12
+       + 355/113*a^13
+       + 355/113*a^14
+       + 355/113*a^15
+       + 355/113*a^16")
+assert result("F3") =~ expr("
+       + 3/10*a
+       + 33/100*a^2
+       + 333/1000*a^3
+       + 3333/10000*a^4
+       + 33333/100000*a^5
+       + 333333/1000000*a^6
+       + 3333333/10000000*a^7
+       + 33333333/100000000*a^8
+       + 1/3*a^9
+       + 1/3*a^10
+       + 1/3*a^11
+       + 1/3*a^12
+       + 1/3*a^13
+       + 1/3*a^14
+       + 1/3*a^15
+       + 1/3*a^16")
+assert result("F4") =~ expr("+ 1/10000000000000000000")
+*--#] torat : 
+*--#[ strictrounding_1 :
+#StartFloat 6d
+CFunction f;
+Local F1 = 1.23456789e-4+f(1.0)+f(1.0000001);
+Print;
+.sort
+
+Skip F1;
+Local F2 = F1;
+StrictRounding 4d;
+Argument f;
+	StrictRounding;
+EndArgument;
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F1") =~ expr("1.23457e-04 + f(1.0e+00) + f(1.0e+00)")
+assert result("F2") =~ expr("1.235e-04 + 2*f(1.0e+00)")
+*--#] strictrounding_1 : 
+*--#[ strictrounding_2 :
+#StartFloat 20b
+CFunction f;
+Local F = 1.1e-4;
+StrictRounding 5b;
+.sort
+
+#EndFloat
+#StartFloat 40d
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("1.10626220703125e-04")
+*--#] strictrounding_2 : 
+*--#[ strictrounding_error: 
+#-
+StrictRounding;
+#StartFloat 10d
+StrictRounding 5;
+StrictRounding d5;
+StrictRounding 5 d;
+.end
+#pend_if wordsize == 2
+assert runtime_error?("Illegal attempt for strict rounding without activating floating point numbers.")
+assert runtime_error?("Forgotten #startfloat instruction?")
+assert runtime_error?("Illegal argument(s) in StrictRounding statement: ''")
+assert runtime_error?("Illegal argument(s) in StrictRounding statement: 'd5'")
+assert runtime_error?("Illegal argument(s) in StrictRounding statement: ',d'")
+*--#] strictrounding_error :
+*--#[ chop :
+#StartFloat 15d
+#StartFloat 15d
+Symbol x;
+Local F1 = 4.7*x-1.0e-10*x^2+.2e-10*x^3-0.00005*x^4+x^5/1000000;
+Local F2 = 4.7*x-1.0e-10*x^2+.2e-10*x^3-0.00005*x^4+x^5/1000000;
+Local F3 = 4.7*x-1.0e-10*x^2+.2e-10*x^3-0.00005*x^4+x^5/1000000;
+Local F4 = 4.7*x-1.0e-10*x^2+.2e-10*x^3-0.00005*x^4+x^5/1000000;
+Local F5 = 4.7*x-1.0e-10*x^2+.2e-10*x^3-0.00005*x^4+x^5/1000000;
+Print;
+.sort
+Skip;
+NSkip F1;
+Chop 1.0e-10;
+.sort
+Skip;
+NSkip F2;
+Chop 1/10000;
+.sort
+Skip;
+NSkip F3;
+Chop 7;
+.sort
+Skip;
+NSkip F4;
+Chop 10^-6;
+.sort
+Skip;
+NSkip F5;
+Chop 10^6;
+.sort
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F1") =~ expr("4.7e+00*x - 1.0e-10*x^2 - 5.0e-05*x^4 + 1/1000000*x^5")
+assert result("F2") =~ expr("4.7e+00*x + 1/1000000*x^5")
+assert result("F3") =~ expr("1/1000000*x^5")
+assert result("F4") =~ expr("4.7e+00*x - 5.0e-05*x^4 + 1/1000000*x^5")
+assert result("F5") =~ expr("1/1000000*x^5")
+*--#] chop : 
+*--#[ chop_error :
+Chop 10;
+#StartFloat 10d
+Chop;
+Chop 1/0;
+Chop 1e-10a;
+.end
+#pend_if wordsize == 2
+assert compile_error?("Illegal attempt to chop a float_ without activating floating point numbers.")
+assert compile_error?("Forgotten #startfloat instruction?")
+assert compile_error?("Chop needs a number (float, rational or power) as an argument.")
+assert compile_error?("Division by zero in chop statement.")
+assert compile_error?("Illegal argument(s) in Chop statement: 'a'.")
+*--#] chop_error :
+*--#[ pattern_float : 
+#-
+Off Statistics;
+#StartFloat 10d
+#message StartFloat
+Symbol a,x1,...,x4;
+CFunction f,g;
+Vector p;
+Local F = 1.0-2.0*a+3.0*f-4.0*p.p+5.0*p;
+id 1.0 = 5;
+id f?(?a) = g(?a);
+id float_(?a) = g(?a);
+id float_(x1?,x2?,x3?,x4?) = g(x1,x2,x3,x4);
+Print;
+.sort
+
+#endfloat
+#message endfloat
+id float_(2,3,1,340282366920938463463374607431768211456) = 5;
+id f?(?a) = g(?a);
+id float_(?a) = g(?a);
+id float_(x1?,x2?,x3?,x4?) = g(x1,x2,x3,x4);
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~StartFloat
+
+   F =
+       - 2.0e+00*a - 4.0e+00*p.p + 5.0e+00*p + 1.0e+00 + 3.0e+00*g;
+
+~~~endfloat
+
+   F =
+       - a*float_(2,3,1,680564733841876926926749214863536422912)
+       - p.p*float_(2,3,1,1361129467683753853853498429727072845824)
+       + p*float_(2,3,1,1701411834604692317316873037158841057280)
+       + float_(2,3,1,340282366920938463463374607431768211456)
+       + g*float_(2,3,1,1020847100762815390390123822295304634368)
+      ;
+EOF
+*--#] pattern_float :
+*--#[ transform_float : 
+#-
+CFunction f;
+Off Statistics;
+#StartFloat 10d
+#message StartFloat
+Local F = 1.0*f(1,2,3);
+Transform replace(1,last)=(xarg_,2*xarg_+1);
+Print;
+.sort
+
+#endfloat
+#message endfloat
+Transform mulargs(1,last);
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~StartFloat
+
+   F =
+      1.0e+00*f(3,5,7);
+
+~~~endfloat
+
+   F =
+      f(105)*float_(2,3,1,340282366920938463463374607431768211456);
+EOF
+*--#] transform_float :
+*--#[ transform_float_error : 
+#-
+CFunction f,g;
+Off Statistics;
+#StartFloat 10d
+Local F = 1.0*f(1,2,3)*g(3,2,1);
+Transform float_, reverse(1,last);
+Transform {float_,f}, addargs(1,last);
+Print;
+.sort
+
+#endfloat
+Transform float_, dropargs(1,last);
+Transform {float_,f}, selectargs(1,2);
+Print;
+.end
+#pend_if wordsize == 2
+assert runtime_error?("Illegal use of a transform statement and float_")
+assert runtime_error?("Illegal use of a transform statement and float_")
+assert runtime_error?("Illegal use of a transform statement and float_")
+assert runtime_error?("Illegal use of a transform statement and float_")
+*--#] transform_float_error :
+*--#[ argument_float :
+#StartFloat 24d
+CFunction f;
+Symbol a,b,c,d;
+#StartFloat 24d
+Local F = 1.0 -2.0*f(a+5*b-3*c)+f(3.14*a*b);
+Normalize;
+MakeInteger;
+Argument;
+	Multiply 10*d;
+EndArgument;
+SplitArg;
+FactArg;
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("1.0e+00 + f(a,b,d,3.14e+01) + 2.0e+00*f(30,c,d,-50,b,d,-10,a,d)")
+*--#] argument_float : 
+*--#[ AddWithFloat :
+* This tests AddWithFloat in float.c
+#StartFloat 10d
+Symbol x1,...,x4;
+Local F = (x1+1.0*x2+x3+1.0*x4)^5;
+id x1 = 1-x2-x3-x4;
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("1 + 0.0e+00*x4 + 0.0e+00*x4^2 + 0.0e+00*x4^3 + 0.0e+00*x4^4 + 0.0e+00*
+      x4^5 + 0.0e+00*x3*x4 + 0.0e+00*x3*x4^2 + 0.0e+00*x3*x4^3 + 0.0e+00*x3*
+      x4^4 + 0.0e+00*x3^2*x4 + 0.0e+00*x3^2*x4^2 + 0.0e+00*x3^2*x4^3 + 0.0e+00
+      *x3^3*x4 + 0.0e+00*x3^3*x4^2 + 0.0e+00*x3^4*x4 + 0.0e+00*x2 + 0.0e+00*x2
+      *x4 + 0.0e+00*x2*x4^2 + 0.0e+00*x2*x4^3 + 0.0e+00*x2*x4^4 + 0.0e+00*x2*
+      x3 + 0.0e+00*x2*x3*x4 + 0.0e+00*x2*x3*x4^2 + 0.0e+00*x2*x3*x4^3 + 
+      0.0e+00*x2*x3^2 + 0.0e+00*x2*x3^2*x4 + 0.0e+00*x2*x3^2*x4^2 + 0.0e+00*x2
+      *x3^3 + 0.0e+00*x2*x3^3*x4 + 0.0e+00*x2*x3^4 + 0.0e+00*x2^2 + 0.0e+00*
+      x2^2*x4 + 0.0e+00*x2^2*x4^2 + 0.0e+00*x2^2*x4^3 + 0.0e+00*x2^2*x3 + 
+      0.0e+00*x2^2*x3*x4 + 0.0e+00*x2^2*x3*x4^2 + 0.0e+00*x2^2*x3^2 + 0.0e+00*
+      x2^2*x3^2*x4 + 0.0e+00*x2^2*x3^3 + 0.0e+00*x2^3 + 0.0e+00*x2^3*x4 + 
+      0.0e+00*x2^3*x4^2 + 0.0e+00*x2^3*x3 + 0.0e+00*x2^3*x3*x4 + 0.0e+00*x2^3*
+      x3^2 + 0.0e+00*x2^4 + 0.0e+00*x2^4*x4 + 0.0e+00*x2^4*x3 + 0.0e+00*x2^5")
+*--#] AddWithFloat : 
+*--#[ float_extremes :
+#StartFloat 10d
+CFunction f;
+#do i = 0,62
+	Local F`i' = 1.`i'e{2^`i'}*f({2^`i'});
+	Local G`i' = 1.`i'e{-2^`i'}*f({2^`i'});
+#enddo
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F0") =~ expr("1.0e+01*f(1)")
+assert result("G0") =~ expr("1.0e-01*f(1)")
+assert result("F1") =~ expr("1.1e+02*f(2)")
+assert result("G1") =~ expr("1.1e-02*f(2)")
+assert result("F2") =~ expr("1.2e+04*f(4)")
+assert result("G2") =~ expr("1.2e-04*f(4)")
+assert result("F3") =~ expr("1.3e+08*f(8)")
+assert result("G3") =~ expr("1.3e-08*f(8)")
+assert result("F4") =~ expr("1.4e+16*f(16)")
+assert result("G4") =~ expr("1.4e-16*f(16)")
+assert result("F5") =~ expr("1.5e+32*f(32)")
+assert result("G5") =~ expr("1.5e-32*f(32)")
+assert result("F6") =~ expr("1.6e+64*f(64)")
+assert result("G6") =~ expr("1.6e-64*f(64)")
+assert result("F7") =~ expr("1.7e+128*f(128)")
+assert result("G7") =~ expr("1.7e-128*f(128)")
+assert result("F8") =~ expr("1.8e+256*f(256)")
+assert result("G8") =~ expr("1.8e-256*f(256)")
+assert result("F9") =~ expr("1.9e+512*f(512)")
+assert result("G9") =~ expr("1.9e-512*f(512)")
+assert result("F10") =~ expr("1.1e+1024*f(1024)")
+assert result("G10") =~ expr("1.1e-1024*f(1024)")
+assert result("F11") =~ expr("1.11e+2048*f(2048)")
+assert result("G11") =~ expr("1.11e-2048*f(2048)")
+assert result("F12") =~ expr("1.12e+4096*f(4096)")
+assert result("G12") =~ expr("1.12e-4096*f(4096)")
+assert result("F13") =~ expr("1.13e+8192*f(8192)")
+assert result("G13") =~ expr("1.13e-8192*f(8192)")
+assert result("F14") =~ expr("1.14e+16384*f(16384)")
+assert result("G14") =~ expr("1.14e-16384*f(16384)")
+assert result("F15") =~ expr("1.15e+32768*f(32768)")
+assert result("G15") =~ expr("1.15e-32768*f(32768)")
+assert result("F16") =~ expr("1.16e+65536*f(65536)")
+assert result("G16") =~ expr("1.16e-65536*f(65536)")
+assert result("F17") =~ expr("1.17e+131072*f(131072)")
+assert result("G17") =~ expr("1.17e-131072*f(131072)")
+assert result("F18") =~ expr("1.18e+262144*f(262144)")
+assert result("G18") =~ expr("1.18e-262144*f(262144)")
+assert result("F19") =~ expr("1.19e+524288*f(524288)")
+assert result("G19") =~ expr("1.19e-524288*f(524288)")
+assert result("F20") =~ expr("1.2e+1048576*f(1048576)")
+assert result("G20") =~ expr("1.2e-1048576*f(1048576)")
+assert result("F21") =~ expr("1.21e+2097152*f(2097152)")
+assert result("G21") =~ expr("1.21e-2097152*f(2097152)")
+assert result("F22") =~ expr("1.22e+4194304*f(4194304)")
+assert result("G22") =~ expr("1.22e-4194304*f(4194304)")
+assert result("F23") =~ expr("1.23e+8388608*f(8388608)")
+assert result("G23") =~ expr("1.23e-8388608*f(8388608)")
+assert result("F24") =~ expr("1.24e+16777216*f(16777216)")
+assert result("G24") =~ expr("1.24e-16777216*f(16777216)")
+assert result("F25") =~ expr("1.25e+33554432*f(33554432)")
+assert result("G25") =~ expr("1.25e-33554432*f(33554432)")
+assert result("F26") =~ expr("1.26e+67108864*f(67108864)")
+assert result("G26") =~ expr("1.26e-67108864*f(67108864)")
+assert result("F27") =~ expr("1.27e+134217728*f(134217728)")
+assert result("G27") =~ expr("1.27e-134217728*f(134217728)")
+assert result("F28") =~ expr("1.28e+268435456*f(268435456)")
+assert result("G28") =~ expr("1.28e-268435456*f(268435456)")
+assert result("F29") =~ expr("1.29e+536870912*f(536870912)")
+assert result("G29") =~ expr("1.29e-536870912*f(536870912)")
+assert result("F30") =~ expr("1.3e+1073741824*f(1073741824)")
+assert result("G30") =~ expr("1.3e-1073741824*f(1073741824)")
+assert result("F31") =~ expr("1.31e+2147483648*f(2147483648)")
+assert result("G31") =~ expr("1.31e-2147483648*f(2147483648)")
+assert result("F32") =~ expr("1.32e+4294967296*f(4294967296)")
+assert result("G32") =~ expr("1.32e-4294967296*f(4294967296)")
+assert result("F33") =~ expr("1.33e+8589934592*f(8589934592)")
+assert result("G33") =~ expr("1.33e-8589934592*f(8589934592)")
+assert result("F34") =~ expr("1.34e+17179869184*f(17179869184)")
+assert result("G34") =~ expr("1.34e-17179869184*f(17179869184)")
+assert result("F35") =~ expr("1.35e+34359738368*f(34359738368)")
+assert result("G35") =~ expr("1.35e-34359738368*f(34359738368)")
+assert result("F36") =~ expr("1.36e+68719476736*f(68719476736)")
+assert result("G36") =~ expr("1.36e-68719476736*f(68719476736)")
+assert result("F37") =~ expr("1.37e+137438953472*f(137438953472)")
+assert result("G37") =~ expr("1.37e-137438953472*f(137438953472)")
+assert result("F38") =~ expr("1.38e+274877906944*f(274877906944)")
+assert result("G38") =~ expr("1.38e-274877906944*f(274877906944)")
+assert result("F39") =~ expr("1.39e+549755813888*f(549755813888)")
+assert result("G39") =~ expr("1.39e-549755813888*f(549755813888)")
+assert result("F40") =~ expr("1.4e+1099511627776*f(1099511627776)")
+assert result("G40") =~ expr("1.4e-1099511627776*f(1099511627776)")
+assert result("F41") =~ expr("1.41e+2199023255552*f(2199023255552)")
+assert result("G41") =~ expr("1.41e-2199023255552*f(2199023255552)")
+assert result("F42") =~ expr("1.42e+4398046511104*f(4398046511104)")
+assert result("G42") =~ expr("1.42e-4398046511104*f(4398046511104)")
+assert result("F43") =~ expr("1.43e+8796093022208*f(8796093022208)")
+assert result("G43") =~ expr("1.43e-8796093022208*f(8796093022208)")
+assert result("F44") =~ expr("1.44e+17592186044416*f(17592186044416)")
+assert result("G44") =~ expr("1.44e-17592186044416*f(17592186044416)")
+assert result("F45") =~ expr("1.45e+35184372088832*f(35184372088832)")
+assert result("G45") =~ expr("1.45e-35184372088832*f(35184372088832)")
+assert result("F46") =~ expr("1.46e+70368744177664*f(70368744177664)")
+assert result("G46") =~ expr("1.46e-70368744177664*f(70368744177664)")
+assert result("F47") =~ expr("1.47e+140737488355328*f(140737488355328)")
+assert result("G47") =~ expr("1.47e-140737488355328*f(140737488355328)")
+assert result("F48") =~ expr("1.48e+281474976710656*f(281474976710656)")
+assert result("G48") =~ expr("1.48e-281474976710656*f(281474976710656)")
+assert result("F49") =~ expr("1.49e+562949953421312*f(562949953421312)")
+assert result("G49") =~ expr("1.49e-562949953421312*f(562949953421312)")
+assert result("F50") =~ expr("1.5e+1125899906842624*f(1125899906842624)")
+assert result("G50") =~ expr("1.5e-1125899906842624*f(1125899906842624)")
+assert result("F51") =~ expr("1.51e+2251799813685248*f(2251799813685248)")
+assert result("G51") =~ expr("1.51e-2251799813685248*f(2251799813685248)")
+assert result("F52") =~ expr("1.52e+4503599627370496*f(4503599627370496)")
+assert result("G52") =~ expr("1.52e-4503599627370496*f(4503599627370496)")
+assert result("F53") =~ expr("1.53e+9007199254740992*f(9007199254740992)")
+assert result("G53") =~ expr("1.53e-9007199254740992*f(9007199254740992)")
+assert result("F54") =~ expr("1.54e+18014398509481984*f(18014398509481984)")
+assert result("G54") =~ expr("1.54e-18014398509481984*f(18014398509481984)")
+assert result("F55") =~ expr("1.55e+36028797018963968*f(36028797018963968)")
+assert result("G55") =~ expr("1.55e-36028797018963968*f(36028797018963968)")
+assert result("F56") =~ expr("1.56e+72057594037927936*f(72057594037927936)")
+assert result("G56") =~ expr("1.56e-72057594037927936*f(72057594037927936)")
+assert result("F57") =~ expr("1.57e+144115188075855872*f(144115188075855872)")
+assert result("G57") =~ expr("1.57e-144115188075855872*f(144115188075855872)")
+assert result("F58") =~ expr("1.58e+288230376151711744*f(288230376151711744)")
+assert result("G58") =~ expr("1.58e-288230376151711744*f(288230376151711744)")
+assert result("F59") =~ expr("1.59e+576460752303423488*f(576460752303423488)")
+assert result("G59") =~ expr("1.59e-576460752303423488*f(576460752303423488)")
+assert result("F60") =~ expr("1.6e+1152921504606846976*f(1152921504606846976)")
+assert result("G60") =~ expr("1.6e-1152921504606846976*f(1152921504606846976)")
+assert result("F61") =~ expr("1.61e+2305843009213693952*f(2305843009213693952)")
+assert result("G61") =~ expr("1.61e-2305843009213693952*f(2305843009213693952)")
+assert result("F62") =~ expr("1.62e+4611686018427387904*f(4611686018427387904)")
+assert result("G62") =~ expr("1.62e-4611686018427387904*f(4611686018427387904)")
+*--#] float_extremes : 
+*--#[ MergeWithFloat :
+* This tests MergeWithFloat in float.c
+#: termsinsmall 16
+On fewerstats 1;
+#StartFloat 10d
+Auto Symbol x;
+* This tests most cases of MergeWithFloat
+Local F = (x1+1.0*x2+x3+1.0*x4)^5;
+id x1 = 1-x2-x3-x4;
+.sort
+* This tests a corncer case of MergeWithFloat
+Local G = x1+...+x15+1.0*x16+2^320*x16;
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("F") =~ expr("1 + 0.0e+00*x4 + 0.0e+00*x4^2 + 0.0e+00*x4^3 + 0.0e+00*x4^4 + 0.0e+00*
+      x4^5 + 0.0e+00*x3*x4 + 0.0e+00*x3*x4^2 + 0.0e+00*x3*x4^3 + 0.0e+00*x3*
+      x4^4 + 0.0e+00*x3^2*x4 + 0.0e+00*x3^2*x4^2 + 0.0e+00*x3^2*x4^3 + 0.0e+00
+      *x3^3*x4 + 0.0e+00*x3^3*x4^2 + 0.0e+00*x3^4*x4 + 0.0e+00*x2 + 0.0e+00*x2
+      *x4 + 0.0e+00*x2*x4^2 + 0.0e+00*x2*x4^3 + 0.0e+00*x2*x4^4 + 0.0e+00*x2*
+      x3 + 0.0e+00*x2*x3*x4 + 0.0e+00*x2*x3*x4^2 + 0.0e+00*x2*x3*x4^3 + 
+      0.0e+00*x2*x3^2 + 0.0e+00*x2*x3^2*x4 + 0.0e+00*x2*x3^2*x4^2 + 0.0e+00*x2
+      *x3^3 + 0.0e+00*x2*x3^3*x4 + 0.0e+00*x2*x3^4 + 0.0e+00*x2^2 + 0.0e+00*
+      x2^2*x4 + 0.0e+00*x2^2*x4^2 + 0.0e+00*x2^2*x4^3 + 0.0e+00*x2^2*x3 + 
+      0.0e+00*x2^2*x3*x4 + 0.0e+00*x2^2*x3*x4^2 + 0.0e+00*x2^2*x3^2 + 0.0e+00*
+      x2^2*x3^2*x4 + 0.0e+00*x2^2*x3^3 + 0.0e+00*x2^3 + 0.0e+00*x2^3*x4 + 
+      0.0e+00*x2^3*x4^2 + 0.0e+00*x2^3*x3 + 0.0e+00*x2^3*x3*x4 + 0.0e+00*x2^3*
+      x3^2 + 0.0e+00*x2^4 + 0.0e+00*x2^4*x4 + 0.0e+00*x2^4*x3 + 0.0e+00*x2^5")
+assert result("G") =~ expr("
+      2.135987036e+96*x16 + x15 + x14 + x13 + x12 + x11 + x10 + x9 + x8 + x7
+       + x6 + x5 + x4 + x3 + x2 + x1")
+*--#] MergeWithFloat : 
+*--#[ float_zero :
+#StartFloat 10d
+CFunction f;
+Local FloatZero = f(0.0,0.0-123,000.000000,0.0e-13,.0e+4,0e1,0.,0.e+2,0e-10);
+Print;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert result("FloatZero") =~ expr("f(0.0e+00, - 1.23e+02,0.0e+00,0.0e+00,0.0e+00,0.0e+00,0.0e+00,0.0e+00,
+      0.0e+00)")
+*--#] float_zero : 
+*--#[ float_error :
+Local F = 1.0;
+Evaluate;
+ToFloat;
+ToRat;
+.sort
+#StartFloat 10d
+Evaluate x;
+.sort
+CFunction x;
+Evaluate x;
+ToFloat y;
+ToRat z;
+.end
+#pend_if wordsize == 2
+assert compile_error?("The floating point system has not been started: .0")
+assert compile_error?("Illegal character at this position: .0")
+assert compile_error?("Illegal position for 0")
+assert compile_error?("Illegal attempt to evaluate a function without activating floating point numbers.")
+assert compile_error?("Forgotten #startfloat instruction?")
+assert compile_error?("Illegal attempt to convert to float_ without activating floating point numbers.")
+assert compile_error?("Forgotten #startfloat instruction?")
+assert compile_error?("Illegal attempt to convert from float_ without activating floating point numbers.")
+assert compile_error?("Forgotten #startfloat instruction?")
+assert compile_error?("should be a built in function that can be evaluated numerically.")
+assert compile_error?("should be a built in function that can be evaluated numerically.")
+assert compile_error?("Illegal argument(s) in ToFloat statement: 'y'")
+assert compile_error?("Illegal argument(s) in ToRat statement: 'z'")
+*--#] float_error :
+*--#[ format_and_floats :
+#-
+Off Statistics;
+#Startfloat 10d
+Symbol x,y;
+
+Local test =
+	+ 1
+	+ 3*x
+	+ 3/4*x^2
+	+ (2^y-1)*x^3
+	+ (2^y)*x^4
+	+ 1/(2^y-1)*x^5
+	+ 1/(2^y)*x^6
+	+ 3/(2^y-1)*x^7
+	+ 3/(2^y)*x^8
+	+ (2^y)/(2^y-1)*x^9
+	+ (2^y-1)/(2^y)*x^10
+	+ (2^y)/(2^y+1)*x^11
+	;
+.sort
+Drop;
+Local test31 = replace_(y,31)*test;
+Local test32 = replace_(y,32)*test;
+ToFloat;
+#message Raw
+Format FloatPrecision off;
+Print +s;
+.sort
+
+#message Mathematica
+Format FloatPrecision 5d;
+Format mathematica;
+Print +s;
+.sort
+
+#message Maple
+Format FloatPrecision 20b;
+Format maple;
+Print +s;
+.sort
+
+#message C
+Format FloatPrecision;
+Format c;
+Print +s;
+.sort
+
+#message Fortran
+Format Fortran;
+Print +s;
+.sort
+
+#message Doublefortran
+Format Doublefortran;
+Print +s;
+.sort
+
+#message Quadfortran
+Format Quadfortran;
+Print +s;
+.sort
+
+#message Fortran90
+Format Fortran90;
+Print +s;
+.sort
+
+#message Fortran90_ki
+Format Fortran90,_ki;
+Print +s;
+.end
+#pend_if wordsize == 2
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+~~~Raw
+
+   test31 =
+       + x*float_(2,3,1,1020847100762815390390123822295304634368)
+       + x^2*float_(2,2,0,255211775190703847597530955573826158592)
+       + x^3*float_(2,1,1,2147483647)
+       + x^4*float_(2,3,1,730750818665451459101842416358141509827966271488)
+       + x^5*float_(2,2,0,158456325102315651516285845520)
+       + x^6*float_(2,2,0,158456325028528675187087900672)
+       + x^7*float_(2,2,0,475368975306946954548857536560)
+       + x^8*float_(2,2,0,475368975085586025561263702016)
+       + x^9*float_(2,3,1,340282367079394788565690258948054056976)
+       + x^10*float_(2,1,0,18446744065119617024)
+       + x^11*float_(2,2,0,340282366762482138508632908505158778895)
+       + float_(2,3,1,340282366920938463463374607431768211456)
+      ;
+
+   test32 =
+       + x*float_(2,3,1,1020847100762815390390123822295304634368)
+       + x^2*float_(2,2,0,255211775190703847597530955573826158592)
+       + x^3*float_(2,1,1,4294967295)
+       + x^4*float_(2,3,1,1461501637330902918203684832716283019655932542976)
+       + x^5*float_(2,2,0,79228162532711081671548469249)
+       + x^6*float_(2,2,0,79228162514264337593543950336)
+       + x^7*float_(2,2,0,237684487598133245014645407747)
+       + x^8*float_(2,2,0,237684487542793012780631851008)
+       + x^9*float_(2,3,1,340282367000166625996085689103316680705)
+       + x^10*float_(2,1,0,18446744069414584320)
+       + x^11*float_(2,2,0,340282366841710300967557013907638845440)
+       + float_(2,3,1,340282366920938463463374607431768211456)
+      ;
+
+~~~Mathematica
+
+   test31 = (
+       + 3.0*^+00*x
+       + 7.5*^-01*x^2
+       + 2.1475*^+09*x^3
+       + 2.1475*^+09*x^4
+       + 4.6566*^-10*x^5
+       + 4.6566*^-10*x^6
+       + 1.397*^-09*x^7
+       + 1.397*^-09*x^8
+       + 1.0*^+00*x^9
+       + 1.0*^+00*x^10
+       + 1.0*^+00*x^11
+       + 1.0*^+00
+      );
+
+   test32 = (
+       + 3.0*^+00*x
+       + 7.5*^-01*x^2
+       + 4.295*^+09*x^3
+       + 4.295*^+09*x^4
+       + 2.3283*^-10*x^5
+       + 2.3283*^-10*x^6
+       + 6.9849*^-10*x^7
+       + 6.9849*^-10*x^8
+       + 1.0*^+00*x^9
+       + 1.0*^+00*x^10
+       + 1.0*^+00*x^11
+       + 1.0*^+00
+      );
+
+~~~Maple
+
+   test31 =
+       + 3.0e+00*x
+       + 7.5e-01*x^2
+       + 2.14748e+09*x^3
+       + 2.14748e+09*x^4
+       + 4.65661e-10*x^5
+       + 4.65661e-10*x^6
+       + 1.39698e-09*x^7
+       + 1.39698e-09*x^8
+       + 1.0e+00*x^9
+       + 1.0e+00*x^10
+       + 1.0e+00*x^11
+       + 1.0e+00
+      ;
+
+   test32 =
+       + 3.0e+00*x
+       + 7.5e-01*x^2
+       + 4.29497e+09*x^3
+       + 4.29497e+09*x^4
+       + 2.32831e-10*x^5
+       + 2.32831e-10*x^6
+       + 6.98492e-10*x^7
+       + 6.98492e-10*x^8
+       + 1.0e+00*x^9
+       + 1.0e+00*x^10
+       + 1.0e+00*x^11
+       + 1.0e+00
+      ;
+
+~~~C
+
+   test31 =
+       + 3.0e+00*x
+       + 7.5e-01*pow(x,2)
+       + 2.147483647e+09*pow(x,3)
+       + 2.147483648e+09*pow(x,4)
+       + 4.656612875e-10*pow(x,5)
+       + 4.656612873e-10*pow(x,6)
+       + 1.396983863e-09*pow(x,7)
+       + 1.396983862e-09*pow(x,8)
+       + 1.0e+00*pow(x,9)
+       + 9.999999995e-01*pow(x,10)
+       + 9.999999995e-01*pow(x,11)
+       + 1.0e+00
+      ;
+
+   test32 =
+       + 3.0e+00*x
+       + 7.5e-01*pow(x,2)
+       + 4.294967295e+09*pow(x,3)
+       + 4.294967296e+09*pow(x,4)
+       + 2.328306437e-10*pow(x,5)
+       + 2.328306437e-10*pow(x,6)
+       + 6.984919311e-10*pow(x,7)
+       + 6.98491931e-10*pow(x,8)
+       + 1.0e+00*pow(x,9)
+       + 9.999999998e-01*pow(x,10)
+       + 9.999999998e-01*pow(x,11)
+       + 1.0e+00
+      ;
+
+~~~Fortran
+
+      test31 = + 3.0E+00*x
+     &  + 7.5E-01*x**2
+     &  + 2.147483647E+09*x**3
+     &  + 2.147483648E+09*x**4
+     &  + 4.656612875E-10*x**5
+     &  + 4.656612873E-10*x**6
+     &  + 1.396983863E-09*x**7
+     &  + 1.396983862E-09*x**8
+     &  + 1.0E+00*x**9
+     &  + 9.999999995E-01*x**10
+     &  + 9.999999995E-01*x**11
+     &  + 1.0E+00
+     &
+
+      test32 = + 3.0E+00*x
+     &  + 7.5E-01*x**2
+     &  + 4.294967295E+09*x**3
+     &  + 4.294967296E+09*x**4
+     &  + 2.328306437E-10*x**5
+     &  + 2.328306437E-10*x**6
+     &  + 6.984919311E-10*x**7
+     &  + 6.98491931E-10*x**8
+     &  + 1.0E+00*x**9
+     &  + 9.999999998E-01*x**10
+     &  + 9.999999998E-01*x**11
+     &  + 1.0E+00
+     &
+
+~~~Doublefortran
+
+      test31 = + 3.0D+00*x
+     &  + 7.5D-01*x**2
+     &  + 2.147483647D+09*x**3
+     &  + 2.147483648D+09*x**4
+     &  + 4.656612875D-10*x**5
+     &  + 4.656612873D-10*x**6
+     &  + 1.396983863D-09*x**7
+     &  + 1.396983862D-09*x**8
+     &  + 1.0D+00*x**9
+     &  + 9.999999995D-01*x**10
+     &  + 9.999999995D-01*x**11
+     &  + 1.0D+00
+     &
+
+      test32 = + 3.0D+00*x
+     &  + 7.5D-01*x**2
+     &  + 4.294967295D+09*x**3
+     &  + 4.294967296D+09*x**4
+     &  + 2.328306437D-10*x**5
+     &  + 2.328306437D-10*x**6
+     &  + 6.984919311D-10*x**7
+     &  + 6.98491931D-10*x**8
+     &  + 1.0D+00*x**9
+     &  + 9.999999998D-01*x**10
+     &  + 9.999999998D-01*x**11
+     &  + 1.0D+00
+     &
+
+~~~Quadfortran
+
+      test31 = + 3.0Q+00*x
+     &  + 7.5Q-01*x**2
+     &  + 2.147483647Q+09*x**3
+     &  + 2.147483648Q+09*x**4
+     &  + 4.656612875Q-10*x**5
+     &  + 4.656612873Q-10*x**6
+     &  + 1.396983863Q-09*x**7
+     &  + 1.396983862Q-09*x**8
+     &  + 1.0Q+00*x**9
+     &  + 9.999999995Q-01*x**10
+     &  + 9.999999995Q-01*x**11
+     &  + 1.0Q+00
+     &
+
+      test32 = + 3.0Q+00*x
+     &  + 7.5Q-01*x**2
+     &  + 4.294967295Q+09*x**3
+     &  + 4.294967296Q+09*x**4
+     &  + 2.328306437Q-10*x**5
+     &  + 2.328306437Q-10*x**6
+     &  + 6.984919311Q-10*x**7
+     &  + 6.98491931Q-10*x**8
+     &  + 1.0Q+00*x**9
+     &  + 9.999999998Q-01*x**10
+     &  + 9.999999998Q-01*x**11
+     &  + 1.0Q+00
+     &
+
+~~~Fortran90
+
+      test31 = + 3.0E+00*x
+     &  + 7.5E-01*x**2
+     &  + 2.147483647E+09*x**3
+     &  + 2.147483648E+09*x**4
+     &  + 4.656612875E-10*x**5
+     &  + 4.656612873E-10*x**6
+     &  + 1.396983863E-09*x**7
+     &  + 1.396983862E-09*x**8
+     &  + 1.0E+00*x**9
+     &  + 9.999999995E-01*x**10
+     &  + 9.999999995E-01*x**11
+     &  + 1.0E+00
+     &
+
+      test32 = + 3.0E+00*x
+     &  + 7.5E-01*x**2
+     &  + 4.294967295E+09*x**3
+     &  + 4.294967296E+09*x**4
+     &  + 2.328306437E-10*x**5
+     &  + 2.328306437E-10*x**6
+     &  + 6.984919311E-10*x**7
+     &  + 6.98491931E-10*x**8
+     &  + 1.0E+00*x**9
+     &  + 9.999999998E-01*x**10
+     &  + 9.999999998E-01*x**11
+     &  + 1.0E+00
+     &
+
+~~~Fortran90_ki
+
+      test31 = + 3.0E+00_ki*x
+     &  + 7.5E-01_ki*x**2
+     &  + 2.147483647E+09_ki*x**3
+     &  + 2.147483648E+09_ki*x**4
+     &  + 4.656612875E-10_ki*x**5
+     &  + 4.656612873E-10_ki*x**6
+     &  + 1.396983863E-09_ki*x**7
+     &  + 1.396983862E-09_ki*x**8
+     &  + 1.0E+00_ki*x**9
+     &  + 9.999999995E-01_ki*x**10
+     &  + 9.999999995E-01_ki*x**11
+     &  + 1.0E+00_ki
+     &
+
+      test32 = + 3.0E+00_ki*x
+     &  + 7.5E-01_ki*x**2
+     &  + 4.294967295E+09_ki*x**3
+     &  + 4.294967296E+09_ki*x**4
+     &  + 2.328306437E-10_ki*x**5
+     &  + 2.328306437E-10_ki*x**6
+     &  + 6.984919311E-10_ki*x**7
+     &  + 6.98491931E-10_ki*x**8
+     &  + 1.0E+00_ki*x**9
+     &  + 9.999999998E-01_ki*x**10
+     &  + 9.999999998E-01_ki*x**11
+     &  + 1.0E+00_ki
+     &
+EOF
+*--#] format_and_floats  :
+*--#[ startfloat_error :
+#Startfloat 100bd,MZV = 10
+.end
+#pend_if wordsize == 2
+assert runtime_error?("Illegal parameter in #StartFloat: 100bd,MZV = 10")
+*--#] startfloat_error :
+*--#[ mzv_error_1: 
+#StartFloat 10d, MZV=2
+Local F = mzv_(2,1);
+Evaluate mzv_;
+.end
+#pend_if wordsize == 2
+#pend_if mpi?
+assert runtime_error?("Error: Weight of Euler/MZV sum greater than 2.")
+assert runtime_error?("Please increase the maximum weight in #startfloat.")
+*--#] mzv_error_1 :
+*--#[ mzv_error_2: 
+#StartFloat 10d, MZV=3
+Local F = mzv_(1,2);
+Evaluate mzv_;
+.end
+#pend_if wordsize == 2
+#pend_if mpi?
+assert runtime_error?("Divergent MZV in CalculateMZV")
+*--#] mzv_error_2 :
+*--#[ mzv_error_3: 
+#StartFloat 10d, MZV=3
+Local F = mzv_(-2,1);
+Evaluate mzv_;
+.end
+#pend_if wordsize == 2
+#pend_if mpi?
+assert runtime_error?("Illegal index[0] in CalculateMZV: -2")
+*--#] mzv_error_3 :
+*--#[ mzv_error_4: 
+#StartFloat 10d, MZV=3
+Local F = mzvhalf_(2,-1);
+Evaluate mzvhalf_;
+.end
+#pend_if wordsize == 2
+#pend_if mpi?
+assert runtime_error?("Illegal index[1] in CalculateMZVhalf: -1")
+*--#] mzv_error_4 :
+*--#[ mzv_error_5: 
+#StartFloat 10d, MZV=3
+Local F = euler_(1,-2);
+Evaluate euler_;
+.end
+#pend_if wordsize == 2
+#pend_if mpi?
+assert runtime_error?("Divergent Euler sum in CalculateEuler")
+*--#] mzv_error_5 :
+*--#[ humanstats :
+#-
+On humanstats;
+Symbol x;
+Local test1 = (1+x)^499;
+Local test2 = (1+x)^500;
+Local test3 = (1+x)^1000;
+.end
+# In 32bit FORM, the "Bytes used" numbers are different
+#pend_if wordsize != 4
+assert succeeded?
+assert stdout =~ exact_pattern("Generated terms =        500  ( <1 K  )")
+assert stdout =~ exact_pattern("Terms in output =        500  ( <1 K  )")
+assert stdout =~ exact_pattern("Bytes used      =      54420  ( 54 KiB)")
+assert stdout =~ exact_pattern("Generated terms =        501  (  1 K  )")
+assert stdout =~ exact_pattern("Terms in output =        501  (  1 K  )")
+assert stdout =~ exact_pattern("Bytes used      =      54644  ( 55 KiB)")
+assert stdout =~ exact_pattern("Generated terms =       1001  (  1 K  )")
+assert stdout =~ exact_pattern("Terms in output =       1001  (  1 K  )")
+assert stdout =~ exact_pattern("Bytes used      =     199172  (199 KiB)")
+*--#] humanstats :
+*--#[ ModuleOption_dollar_order :
+$a = 0;
+ModuleOption sum,$a;
+$b = 0;
+ModuleOption maximum,$b;
+$c = 0;
+ModuleOption minimum,$c;
+$d = 0;
+ModuleOption local,$d;
+discard;
+.end
+assert succeeded?
+*--#] ModuleOption_dollar_order : 
+*--#[ ModuleOption_dollar_warnings_1 :
+$a = 0;
+ModuleOption local,$a;
+ModuleOption local,$a;
+.end
+assert succeeded?
+*--#] ModuleOption_dollar_warnings_1 : 
+*--#[ ModuleOption_dollar_warnings_2 :
+ModuleOption local,$a;
+$b = 0;
+ModuleOption local,$b;
+ModuleOption sum,$b;
+.end
+assert return_value == 0
+assert warning?("Undefined $-variable in module option; option ignored: $a")
+assert warning?("Conflicting module options for $-variable; later option ignored: $b")
+*--#] ModuleOption_dollar_warnings_2 : 
 *--#[ Issue49 :
 * Add mul_ function for polynomial multiplications
 Symbols x,y,z;
@@ -1112,11 +2961,91 @@ assert succeeded?
 assert result("F") =~ expr("f(1,2,4,5)")
 *--#] Issue243_1 : 
 *--#[ Issue243_2 :
+NF f;
+L F = 1;
+#define i "9"
+#do i=1,2
+  #do i=1,3
+    #do i=1,8
+      #if `i' == 3
+        #continuedo 2
+      #endif
+      multiply right, f(`i');
+    #enddo
+    multiply right, f(-`i');
+  #enddo
+  multiply right, f(-`i');
+#enddo
+multiply right, f(`i');
+chainin f;
+P;
+.end
+assert succeeded?
+assert result("F") =~ expr("f(1,2,1,2,1,2,-1,1,2,1,2,1,2,-2,9)")
+*--#] Issue243_2 : 
+*--#[ Issue243_3 :
+NF f;
+L F = 1;
+#do i=1,3
+  #do i=1,2
+    #continuedo 0
+    multiply right, f(`i');
+  #enddo
+#enddo
+chainin f;
+P;
+.end
+assert succeeded?
+assert result("F") =~ expr("f(1,2,1,2,1,2)")
+*--#] Issue243_3 : 
+*--#[ Issue243_e1 :
 #continuedo
 .end
-assert preprocess_error?
-assert stdout =~ exact_pattern("#continuedo without #do")
-*--#] Issue243_2 : 
+assert preprocess_error?("#continuedo without #do")
+*--#] Issue243_e1 : 
+*--#[ Issue243_e2 :
+#do i=1,3
+  #continuedo -1
+#enddo
+.end
+assert preprocess_error?("Improper syntax of #continuedo instruction")
+*--#] Issue243_e2 : 
+*--#[ Issue243_e3 :
+#do i=1,3
+  #continuedo 1a
+#enddo
+.end
+assert preprocess_error?("Improper syntax of #continuedo instruction")
+*--#] Issue243_e3 : 
+*--#[ Issue243_e4 :
+#do i=1,3
+  #continuedo 2
+#enddo
+.end
+assert preprocess_error?("Too many loop levels requested in #continuedo instruction")
+*--#] Issue243_e4 : 
+*--#[ Issue243_e5 :
+#procedure foo
+  #continuedo
+#endprocedure
+#do i=1,3
+  #call foo
+#enddo
+.end
+assert preprocess_error?("Trying to jump out of a procedure with a #continuedo instruction")
+*--#] Issue243_e5 : 
+*--#[ Issue243_e6 :
+#procedure foo
+  #continuedo 2
+#endprocedure
+#do i=1,3
+  #do j=1,3
+    #call foo
+  #enddo
+#enddo
+.end
+assert preprocess_error?("Trying to jump out of a procedure with a #continuedo instruction")
+*--#] Issue243_e6 : 
 *--#[ Issue392_ContinuationLines_1 :
 #: ContinuationLines 1
 * Setting ContinuationLines to 0 should remove continuation line limit.
@@ -1170,20 +3099,209 @@ assert result("F") =~ expr("0");
 Local test = 1;
 .end
 #require unix?
-if mpi?
-  assert runtime_error?("Could not create sort file: bad/path/0formxxx.sor")
-else
-  assert runtime_error?("Could not create sort file: bad/path/xformxxx.sor")
-end
+assert runtime_error?
 *--#] TempSortDir_unix :
 *--#[ TempSortDir_windows :
 #: TempSortDir bad_path
 Local test = 1;
 .end
 #require windows?
-if mpi?
-  assert runtime_error?('Could not create sort file: bad_path\0formxxx.sor')
-else
-  assert runtime_error?('Could not create sort file: bad_path\xformxxx.sor')
-end
+assert runtime_error?
 *--#] TempSortDir_windows :
+*--#[ ZeroUnchanged :
+#-
+
+#procedure exprinfo
+	#message Module `CMODULE_':
+	#do e = {`activeexprnames_'}
+		#if `ZERO_`e''
+			#message zero `e': `ZERO_`e''
+		#endif
+		#if `UNCHANGED_`e''
+			#message unchanged `e': `UNCHANGED_`e''
+		#endif
+	#enddo
+	#if `ZERO_'
+		#message All zero: `ZERO_'
+	#endif
+	#if `UNCHANGED_'
+		#message All unchanged: `UNCHANGED_'
+	#endif
+	#message
+#endprocedure
+
+
+Off stats;
+
+Symbol x,y;
+
+Local test1 = x;
+Local test2 = y;
+Local test3 = 1;
+.sort:1;
+
+#call exprinfo
+Identify x = 0;
+.sort:2;
+
+#call exprinfo
+Identify y = 0;
+.sort:3;
+
+#call exprinfo
+.sort:4;
+
+#call exprinfo
+Multiply 0;
+.sort:5;
+
+#message Here, test3 is incorrectly flagged as unchanged:
+#call exprinfo
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("0")
+assert result("test2") =~ expr("0")
+assert result("test3") =~ expr("0")
+assert stdout =~ exact_pattern(<<'EOF')
+~~~Module 2:
+~~~
+~~~Module 3:
+~~~zero test1: 1
+~~~unchanged test2: 1
+~~~unchanged test3: 1
+~~~
+~~~Module 4:
+~~~zero test1: 1
+~~~unchanged test1: 1
+~~~zero test2: 1
+~~~unchanged test3: 1
+~~~
+~~~Module 5:
+~~~zero test1: 1
+~~~unchanged test1: 1
+~~~zero test2: 1
+~~~unchanged test2: 1
+~~~unchanged test3: 1
+~~~All unchanged: 1
+~~~
+~~~Here, test3 is incorrectly flagged as unchanged:
+~~~Module 6:
+~~~zero test1: 1
+~~~unchanged test1: 1
+~~~zero test2: 1
+~~~unchanged test2: 1
+~~~zero test3: 1
+~~~unchanged test3: 1
+~~~All zero: 1
+~~~All unchanged: 1
+~~~
+EOF
+*--#] ZeroUnchanged :
+*--#[ tablebase_ro_1 :
+Table,sparse,no1fill(1);
+Fill no1fill(1) = 1;
+Fill no1fill(2) = 2;
+Fill no1fill(3) = 3;
+TableBase "no1.tbl" create;
+TableBase "no1.tbl" addto no1fill;
+.end
+Table,sparse,no2fill(1);
+Fill no2fill(1) = 1;
+Fill no2fill(2) = 2;
+Fill no2fill(3) = 3;
+.sort
+TableBase "no1.tbl" open,readonly;
+TableBase "no1.tbl" addto no2fill;
+.end
+assert runtime_error?('Tablebase with the name no1.tbl opened in read only mode')
+*--#] tablebase_ro_1 :
+*--#[ tablebase_ro_2 :
+TableBase "no212.tbl" open, readonly;
+.end
+assert runtime_error?('Trying to open non-existent TableBase in readonly mode: no212.tbl')
+*--#] tablebase_ro_2 :
+*--#[ diagrams_err_1 :
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:1;
+EndModel;
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid coupling constant in vertex statement.')
+*--#] diagrams_err_1 :
+*--#[ diagrams_err_2 :
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g^-1;
+EndModel;
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid negative power of coupling constant.')
+*--#] diagrams_err_2 :
+*--#[ diagrams_err_3 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{},{p1,p2},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Insufficient external momenta in diagrams_')
+*--#] diagrams_err_3 :
+*--#[ diagrams_err_4 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{q1,q2},{},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Insufficient internal momenta in diagrams_')
+*--#] diagrams_err_4 :
+*--#[ diagrams_err_5 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{q1,-q2},{p1,p2},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid negative external momentum in diagrams_: -q2')
+*--#] diagrams_err_5 :
+*--#[ diagrams_err_6 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{q1,q2},{-p1,p2},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid negative internal momentum in diagrams_: -p1')
+*--#] diagrams_err_6 :
+*--#[ diagrams_err_7 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{q1,q1},{p1,p2},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid repeated momentum in diagrams_: q1')
+*--#] diagrams_err_7 :
+*--#[ diagrams_err_8 :
+Vector q1,q2,p1,p2;
+Model PHI3;
+	Particle phi,1;
+	Vertex phi,phi,phi:g;
+EndModel;
+Local test = diagrams_(PHI3,{phi},{phi},{q1,q2},{q1,p2},1,0);
+.end
+#pend_if mpi?
+assert runtime_error?('Invalid repeated momentum in diagrams_: q1')
+*--#] diagrams_err_8 :

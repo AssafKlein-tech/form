@@ -11,7 +11,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -1358,7 +1358,7 @@ ss10:							*m++ = *t++;
 		substituted. This is ready for further wildcard substitutions.
 */
 
-WORD ResolveSet(PHEAD WORD *from, WORD *to, WORD *subs)
+int ResolveSet(PHEAD WORD *from, WORD *to, WORD *subs)
 {
 	GETBIDENTITY
 	WORD *m, *s, *w, j, i, ii, i3, flag, num;
@@ -1508,14 +1508,14 @@ GotOne:;
 
 /*
  		#] ResolveSet : 
- 		#[ ClearWild :			VOID ClearWild()
+ 		#[ ClearWild :			void ClearWild()
 
 	Clears the current wildcard settings and makes them ready for
 	CheckWild and AddWild.
 
 */
 
-VOID ClearWild(PHEAD0)
+void ClearWild(PHEAD0)
 {
 	GETBIDENTITY
 	WORD n, nn, *w;
@@ -1541,7 +1541,7 @@ VOID ClearWild(PHEAD0)
 
 */
 
-WORD AddWild(PHEAD WORD oldnumber, WORD type, WORD newnumber)
+int AddWild(PHEAD WORD oldnumber, WORD type, WORD newnumber)
 {
 	GETBIDENTITY
 	WORD *w, *m, n, k, i = -1;
@@ -1788,11 +1788,12 @@ FlipOn:
 		or-ed with EATTENSOR which is at least 8192.
 */
 
-WORD CheckWild(PHEAD WORD oldnumber, WORD type, WORD newnumber, WORD *newval)
+int CheckWild(PHEAD WORD oldnumber, WORD type, WORD newnumber, WORD *newval)
 {
 	GETBIDENTITY
 	WORD *w, *m, *s, n, old2, inset;
-	WORD n2, oldval, dirty, i, j, notflag = 0, retblock = 0;
+	WORD n2, oldval, dirty, i, j;
+	int notflag = 0, retblock = 0;
 	CBUF *C = cbuf+AT.ebufnum;
 	WORD eattensor = type & EATTENSOR;
 	type = type & ~EATTENSOR;

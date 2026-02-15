@@ -10,7 +10,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -46,6 +46,7 @@
 
 #define GMPSPREAD (GMP_LIMB_BITS/BITSINWORD)
 
+
 void Form_mpf_init(mpf_t t);
 void Form_mpf_clear(mpf_t t);
 void Form_mpf_set_prec_raw(mpf_t t,ULONG newprec);
@@ -54,7 +55,6 @@ void ZtoForm(UWORD *a,WORD *na,mpz_t z);
 long FloatToInteger(UWORD *out, mpf_t floatin, long *bitsused);
 void IntegerToFloat(mpf_t result, UWORD *formlong, int longsize);
 int FloatToRat(UWORD *ratout, WORD *nratout, mpf_t floatin);
-int SetFloatPrecision(WORD prec);
 int AddFloats(PHEAD WORD *fun3, WORD *fun1, WORD *fun2);
 int MulFloats(PHEAD WORD *fun3, WORD *fun1, WORD *fun2);
 int DivFloats(PHEAD WORD *fun3, WORD *fun1, WORD *fun2);
@@ -65,12 +65,12 @@ void SimpleDeltaC(mpf_t sum, int m);
 void SingleTable(mpf_t *tabl, int N, int m, int pow);
 void DoubleTable(mpf_t *tabout, mpf_t *tabin, int N, int m, int pow);
 void EndTable(mpf_t sum, mpf_t *tabin, int N, int m, int pow);
-void deltaMZV(mpf_t, int *, int);
-void deltaEuler(mpf_t, int *, int);
-void deltaEulerC(mpf_t, int *, int);
-void CalculateMZVhalf(mpf_t, int *, int);
-void CalculateMZV(mpf_t, int *, int);
-void CalculateEuler(mpf_t, int *, int);
+void deltaMZV(mpf_t, WORD *, int);
+void deltaEuler(mpf_t, WORD *, int);
+void deltaEulerC(mpf_t, WORD *, int);
+void CalculateMZVhalf(mpf_t, WORD *, int);
+void CalculateMZV(mpf_t, WORD *, int);
+void CalculateEuler(mpf_t, WORD *, int);
 int ExpandMZV(WORD *term, WORD level);
 int ExpandEuler(WORD *term, WORD level);
 int PackFloat(WORD *,mpf_t);
@@ -274,7 +274,6 @@ int PackFloat(WORD *fun,mpf_t infloat)
 	mp_limb_t *d = infloat->_mp_d; /* Pointer to the limbs.  */
 	int i;
 	long e = infloat->_mp_exp;
-	
 	t = fun;
 	*t++ = FLOATFUN;
 	t++;
@@ -317,6 +316,8 @@ int PackFloat(WORD *fun,mpf_t infloat)
 */
 	nlimbs = infloat->_mp_size < 0 ? -infloat->_mp_size: infloat->_mp_size;
 	if ( nlimbs == 0 ) {
+		*t++ = -SNUMBER;
+		*t++ = 0;
 	}
 	else if ( nlimbs == 1 && (ULONG)(*d) < ((ULONG)1)<<(BITSINWORD-1) ) {
 		*t++ = -SNUMBER;
@@ -373,8 +374,10 @@ int UnpackFloat(mpf_t outfloat,WORD *fun)
 */
 	GETIDENTITY
 	if ( AT.aux_ == 0 ) {
+		MLOCK(ErrorMessageLock);
 		MesPrint("Illegal attempt at using a float_ function without proper startup.");
 		MesPrint("Please use %#StartFloat <options> first.");
+		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
 	}
 /*
@@ -409,11 +412,11 @@ int UnpackFloat(mpf_t outfloat,WORD *fun)
 		f += ARGHEAD+6;
 		if ( f[-1] == -5 ) {
 			outfloat->_mp_exp =
-				-(mp_exp_t)((((ULONG)(f[-4]))<<BITSINWORD)+f[-5]);
+				-(mp_exp_t)((((ULONG)(f[-4]))<<BITSINWORD)+(UWORD)f[-5]);
 		}
 		else if ( f[-1] == 5 ) {
 			outfloat->_mp_exp =
-				 (mp_exp_t)((((ULONG)(f[-4]))<<BITSINWORD)+f[-5]);
+				 (mp_exp_t)((((ULONG)(f[-4]))<<BITSINWORD)+(UWORD)f[-5]);
 		}
 	}
 /*
@@ -588,7 +591,7 @@ long FloatToInteger(UWORD *out, mpf_t floatin, long *bitsused)
 	mpz_set_f(z,floatin);
 	ZtoForm(out,&nout,z);
 	mpz_clear(z);
-	x = out[0]; nx = 0;
+	x = out[nout-1]; nx = 0;
 	while ( x ) { nx++; x >>= 1; }
 	*bitsused = (nout-1)*BITSINWORD + nx;
 	return(nout);
@@ -675,7 +678,7 @@ int FloatToRat(UWORD *ratout, WORD *nratout, mpf_t floatin)
 	WORD na, nb, nc, nd, i;
 	int nout;
 	LONG oldpWorkPointer = AT.pWorkPointer;
-	long bitsused = 0, totalbitsused = 0, totalbits = AC.DefaultPrecision;
+	long bitsused = 0, totalbitsused = 0, totalbits = AC.DefaultPrecision-AC.MaxWeight-1;
 	int retval = 0, startnul;
 	WantAddPointers(AC.DefaultPrecision);  /* Horrible overkill */
 	AT.pWorkSpace[AT.pWorkPointer++] = out;
@@ -707,14 +710,23 @@ int FloatToRat(UWORD *ratout, WORD *nratout, mpf_t floatin)
 		else {
 			nout = FloatToInteger((UWORD *)out,aux1,&bitsused);
 			out += nout;
-			totalbitsused += bitsused;
 		}
 		if ( bitsused > (totalbits-totalbitsused)/2 ) { break; }
 		if ( mpf_sgn(aux2) == 0 ) {
 			/*if ( startnul == 1 )*/ AT.pWorkSpace[AT.pWorkPointer++] = out;
 			break;
 		}
+		totalbitsused += bitsused;
 		AT.pWorkSpace[AT.pWorkPointer++] = out;
+	  }
+	  /* 
+	  	For |floatin| << 1, we have startnul = 1 and hit the precision guard 
+	  	already on the first continued-fraction step. The resulting float is 
+		therefore close to the rational 0/1 and we can immediately return.
+	   */
+	  if ( startnul == 1 && AT.pWorkPointer == oldpWorkPointer + 2 ) {
+		*ratout++ = 0; *ratout++ = 1; *ratout = *nratout = 3;
+		goto ret;
 	  }
 /*
 	  At this point we have the function with the repeated fraction.
@@ -731,11 +743,6 @@ int FloatToRat(UWORD *ratout, WORD *nratout, mpf_t floatin)
 	  na = 1; a[0] = 1;
 	  c = (UWORD *)(AT.pWorkSpace[--AT.pWorkPointer]);
 	  nc = nb = ((UWORD *)out)-c;
-	  if ( nc > 10 ) {
-		mc = c;
-		c = (UWORD *)(AT.pWorkSpace[--AT.pWorkPointer]);
-		nc = nb = ((UWORD *)mc)-c;
-	  }
 	  for ( i = 0; i < nb; i++ ) b[i] = c[i];
 	  mc = c = NumberMalloc("FloatToRat");
 	  while ( AT.pWorkPointer > oldpWorkPointer ) {
@@ -788,12 +795,13 @@ int FloatToRat(UWORD *ratout, WORD *nratout, mpf_t floatin)
 	if ( s < 0 ) mpf_neg(floatin,floatin);
 /*
 	{
-		WORD n = *ratout;
+		WORD n = *nratout;
 		RatToFloat(aux1,ratout,n);
 		mpf_sub(aux2,floatin,aux1);
 		gmp_printf("Diff is %.*Fe\n",40,aux2);
 	}
 */
+ret:
 	return(retval);
 }
 
@@ -850,31 +858,19 @@ UBYTE *CheckFloat(UBYTE *ss, int *spec)
 {
 	GETIDENTITY
 	UBYTE *s = ss;
-	int zero = 1, gotdot = 0;
+	int gotdot = 0;
+	/* A single dot is not a valid float */
+	if ( *s == '.' && FG.cTable[s[-1]] != 1 && FG.cTable[s[1]] != 1 ) return(ss);
 	while ( FG.cTable[s[-1]] == 1 ) s--;
+	/* This cannot be a valid float */
+	if ( *s != '.' && FG.cTable[*s] != 1 ) return(ss);
 	*spec = 0;
-	if ( FG.cTable[*s] == 1 ) {
-		while ( *s == '0' ) s++;
-		if ( FG.cTable[*s] == 1 ) {
-			s++;
-			while ( FG.cTable[*s] == 1 ) s++;
-			zero = 0;
-		}
-		if ( *s == '.' ) { goto dot; }
-	}
-	else if ( *s == '.' ) {
-dot:
+	while ( FG.cTable[*s] == 1 ) s++;
+	if ( *s == '.' ) {
 		gotdot = 1;
 		s++;
-		if ( FG.cTable[*s] != 1 && zero == 1 ) return(ss);
-		while ( *s == '0' ) s++;
-		if ( FG.cTable[*s] == 1 ) {
-			s++;
-			while ( FG.cTable[*s] == 1 ) s++;
-			zero = 0;
-		}
+		while ( FG.cTable[*s] == 1 ) s++;
 	}
-	else return(ss);
 /*
 	Now we have had the mantissa part, which may be zero.
 	Check for an exponent.
@@ -888,12 +884,11 @@ dot:
 		}
 		else { return(ss); }
 	}
-	else if ( gotdot == 0 ) return(ss);
+	else if ( gotdot == 0 ) return(ss); /* No radix point and no exponent */
 	if ( AT.aux_ == 0 ) { /* no floating point system */
 		*spec = -1;
 		return(s);
 	}
-	if ( zero ) *spec = 1;
 	return(s);
 }
 
@@ -903,10 +898,13 @@ dot:
   	#[ Float Routines :
  		#[ SetFloatPrecision :
 
-		We set the default precision of the floats and allocate
-		space for an output string if we want to write the float.
-		Space needed: exponent: up to 12 chars.
-		mantissa 2+10*prec/33 + a little bit extra.
+		Sets the default precision (in bits) of the floats and allocate
+		buffer space for an output string.
+		The buffer is used by PrintFloat (decimal output) and Strictrounding 
+		(binary or decimal output), so it must accommodate the larger space
+		requirement:
+		exponent: up to 12 chars.
+		mantissa: prec + a little bit extra
 */
 
 int SetFloatPrecision(WORD prec)
@@ -918,7 +916,7 @@ int SetFloatPrecision(WORD prec)
 	else {
 		AC.DefaultPrecision = prec;
 		if ( AO.floatspace != 0 ) M_free(AO.floatspace,"floatspace");
-		AO.floatsize = ((10*prec)/33+20)*sizeof(char);
+		AO.floatsize = (prec+20)*sizeof(char);
 		AO.floatspace = (UBYTE *)Malloc1(AO.floatsize,"floatspace");
 		mpf_set_default_prec(prec);
 		return(0);
@@ -935,21 +933,25 @@ int SetFloatPrecision(WORD prec)
 	regular Form function and it should never come here because the
 	print routines in sch.c should intercept it.
 	The buffer AO.floatspace is allocated when the precision of the
-	floats is set in the routine SetupMZVTables.
+	floats is set in the routine SetFloatPrecision.
 */
 
 int PrintFloat(WORD *fun,int numdigits)
 {
 	GETIDENTITY
+	UBYTE *s1, *s2;
 	int n = 0;
 	int prec = (AC.DefaultPrecision-AC.MaxWeight-1)*log10(2.0);
 	if ( numdigits > prec || numdigits == 0 ) {
 		numdigits = prec;
 	}
+/* 
+	GMP's gmp_snprintf always prints a non-zero number before the decimal point, so we 
+	ask for one digit less. 
+*/
 	if ( UnpackFloat(aux4,fun) == 0 )
-		n = gmp_snprintf((char *)(AO.floatspace),AO.floatsize,"%.*Fe",numdigits,aux4);
-	if ( numdigits == prec ) {
-		UBYTE *s1, *s2;
+		n = gmp_snprintf((char *)(AO.floatspace),AO.floatsize,"%.*Fe",numdigits-1,aux4);
+	if ( n > 0 ) {
 		int n1, n2 = n;
 		s1 = AO.floatspace+n;
 		while ( s1 > AO.floatspace && s1[-1] != 'e'
@@ -960,8 +962,26 @@ int PrintFloat(WORD *fun,int numdigits)
 			while ( s1[-1] == '0' ) { s1--; n1--; }
 			if ( s1[-1] == '.' ) { s1++; n1++; }
 			n -= (n2-n1);
-			while ( n1 < n2 ) { *s1++ = *s2++; n1++; }
+			while ( n1 < n ) { *s1++ = *s2++; n1++; }
 			*s1 = 0;
+		}
+		if ( AC.OutputMode == FORTRANMODE ) {
+			s1 = AO.floatspace+n;
+			while ( s1 > AO.floatspace && *s1 != 'e' && *s1 != 'E' ) { 
+				s1--; 
+			}
+			if ( ( AO.DoubleFlag & 2 ) == 2 ) { *s1 = 'Q'; } /* Quadruple precision fortran */
+			else if ( ( AO.DoubleFlag & 1 ) == 1 ) { *s1 = 'D'; } /* Double precision fortran */
+			else { *s1 = 'E'; } /* Single precision fortran */
+		}
+		if ( AC.OutputMode == MATHEMATICAMODE ) {
+			s1 = AO.floatspace+n;
+			s2 = s1+2; *s2-- = 0;
+			while ( s1 > AO.floatspace && *s1 != 'e' && *s1 != 'E' ) { 
+				*s2-- = *s1--; 
+			}
+			*s2-- = '^'; *s2 = '*'; /* Replace 'e' by '^*' */
+			n++;
 		}
 	}
 	return(n);
@@ -1058,7 +1078,7 @@ int MulRatToFloat(PHEAD WORD *outfun, WORD *infun, UWORD *formrat, WORD nrat)
  		#[ SetupMZVTables :
 */
 
-void SetupMZVTables(VOID)
+void SetupMZVTables(void)
 {
 /*
 	Sets up a table of N+1 mpf_t floats with variable precision.
@@ -1069,164 +1089,86 @@ void SetupMZVTables(VOID)
 	and each deeper sum goes one higher, we make the tablesize a bit bigger.
 	This may not be needed if we fiddle with the sum boundaries.
 */
-	size_t nt = sizeof(mp_limb_t);
-	int prec;
 #ifdef WITHPTHREADS
 	int i, Nw, id, totnum;
-	size_t fullsize, N, sumsize, j;
-	mp_limb_t *d;
-	Nw = AC.DefaultPrecision+AC.MaxWeight+1;
-	SetFloatPrecision(Nw);
-/*	prec = (AC.DefaultPrecision + 8*nt-1)/(8*nt); */
+	size_t N;
+	mpf_t *a;
+	Nw = AC.DefaultPrecision;
 	N = (size_t)Nw;
-	for ( i = 0, sumsize = 0; i <= Nw+1; i++ ) sumsize += (Nw-i+8*nt)/(8*nt)+1;
-	fullsize = (N+2)*sizeof(mpf_t)+sumsize*nt;
 	totnum = AM.totalnumberofthreads;
     for ( id = 0; id < totnum; id++ ) {
-	  if ( AB[id]->T.mpf_tab1 ) M_free(AB[id]->T.mpf_tab1,"mpftab1");
-	  AB[id]->T.mpf_tab1 = (void *)Malloc1(fullsize,"mpftab1");
-	  d = (mp_limb_t *)(((mpf_t *)(AB[id]->T.mpf_tab1))+N+2);
-	  for ( j = 0; j < sumsize; j++ ) d[j] = 0;
-	  for ( i = 0; i <= Nw; i++ ) {
-		((mpf_t *)(AB[id]->T.mpf_tab1))[i]->_mp_prec = (Nw-i+8*nt)/(8*nt);
-		((mpf_t *)(AB[id]->T.mpf_tab1))[i]->_mp_size = 0;
-		((mpf_t *)(AB[id]->T.mpf_tab1))[i]->_mp_exp = 0;
-		((mpf_t *)(AB[id]->T.mpf_tab1))[i]->_mp_d = d;
-		d += (Nw-i+8*nt)/(8*nt)+1;
-	  }
-	  if ( AB[id]->T.mpf_tab2 ) M_free(AB[id]->T.mpf_tab2,"mpftab2");
-	  AB[id]->T.mpf_tab2 = (void *)Malloc1(fullsize,"mpftab2");
-	  d = (mp_limb_t *)(((mpf_t *)(AB[id]->T.mpf_tab2))+N+1);
-	  for ( j = 0; j < sumsize; j++ ) d[j] = 0;
-	  for ( i = 0; i <= Nw; i++ ) {
-		((mpf_t *)(AB[id]->T.mpf_tab2))[i]->_mp_prec = (Nw-i+8*nt)/(8*nt);
-		((mpf_t *)(AB[id]->T.mpf_tab2))[i]->_mp_size = 0;
-		((mpf_t *)(AB[id]->T.mpf_tab2))[i]->_mp_exp = 0;
-		((mpf_t *)(AB[id]->T.mpf_tab2))[i]->_mp_d = d;
-		d += (Nw-i+8*nt)/(8*nt)+1;
-	  }
+		AB[id]->T.mpf_tab1 = (void *)Malloc1((N+2)*sizeof(mpf_t),"mpftab1");
+		a = (mpf_t *)AB[id]->T.mpf_tab1;
+		for ( i = 0; i <=Nw; i++ ) {
+/*
+	As explained in the comment above, we could make this variable precision
+	using mpf_init2.
+*/
+			mpf_init(a[i]);
+		}
+		AB[id]->T.mpf_tab2 = (void *)Malloc1((N+2)*sizeof(mpf_t),"mpftab2");
+		a = (mpf_t *)AB[id]->T.mpf_tab2;
+		for ( i = 0; i <=Nw; i++ ) {
+			mpf_init(a[i]);
+		}
 	}
 #else
 	int i, Nw;
-	size_t fullsize, N, sumsize, j;
-	mp_limb_t *d;
-/*	Nw = AC.DefaultPrecision+AC.MaxWeight+sizeof(mp_limb_t); */
-	Nw = AC.DefaultPrecision+AC.MaxWeight+1;
-	SetFloatPrecision(Nw);
-/*	prec = (AC.DefaultPrecision + 8*nt-1)/(8*nt); */
+	size_t N;
+	Nw = AC.DefaultPrecision;
 	N = (size_t)Nw;
-	for ( i = 0, sumsize = 0; i <= Nw+1; i++ ) sumsize += (Nw-i+8*nt)/(8*nt)+1;
-	fullsize = (N+2)*sizeof(mpf_t)+sumsize*nt;
-	if ( mpftab1 ) M_free(mpftab1,"mpftab1");
-	AT.mpf_tab1 = (void *)Malloc1(fullsize,"mpftab1");
-	d = (mp_limb_t *)(((mpf_t *)(AT.mpf_tab1))+N+1);
-	for ( j = 0; j < sumsize; j++ ) d[j] = 0;
+	AT.mpf_tab1 = (void *)Malloc1((N+2)*sizeof(mpf_t),"mpftab1");
 	for ( i = 0; i <= Nw; i++ ) {
-		mpftab1[i]->_mp_prec = (Nw-i+8*nt)/(8*nt);
-		mpftab1[i]->_mp_size = 0;
-		mpftab1[i]->_mp_exp = 0;
-		mpftab1[i]->_mp_d = d;
-		d += (Nw-i+8*nt)/(8*nt)+1;
+/*
+	As explained in the comment above, we could make this variable precision
+	using mpf_init2.
+*/
+		mpf_init(mpftab1[i]);
 	}
-	if ( mpftab2 ) M_free(mpftab2,"mpftab2");
-	AT.mpf_tab2 = (void *)Malloc1(fullsize,"mpftab2");
-	d = (mp_limb_t *)(((mpf_t *)(AT.mpf_tab2))+N+1);
-	for ( j = 0; j < sumsize; j++ ) d[j] = 0;
+	AT.mpf_tab2 = (void *)Malloc1((N+2)*sizeof(mpf_t),"mpftab2");
 	for ( i = 0; i <= Nw; i++ ) {
-		mpftab2[i]->_mp_prec = (Nw-i+8*nt)/(8*nt);
-		mpftab2[i]->_mp_size = 0;
-		mpftab2[i]->_mp_exp = 0;
-		mpftab2[i]->_mp_d = d;
-		d += (Nw-i+8*nt)/(8*nt)+1;
+		mpf_init(mpftab2[i]);
 	}
 #endif
-	if ( AS.delta_1 ) M_free(AS.delta_1,"delta1");
-	prec = (AC.DefaultPrecision + 8*nt-1)/(8*nt);
-	AS.delta_1 = (void *)Malloc1((prec+1)*sizeof(mp_limb_t)+sizeof(mpf_t),"delta1");
-	d = (mp_limb_t *)(((mpf_t *)(AS.delta_1))+1);
-	mpfdelta1->_mp_prec = prec;
-	mpfdelta1->_mp_size = 0;
-	mpfdelta1->_mp_exp = 0;
-	mpfdelta1->_mp_d = d;
+	AS.delta_1 = (void *)Malloc1(sizeof(mpf_t),"delta1");
+	mpf_init(mpfdelta1);
 	SimpleDelta(mpfdelta1,1); /* this can speed up things. delta1 = ln(2) */
-/*
-	Finally the character buffer for printing
-	if ( AO.floatspace ) M_free(AO.floatspace,"floatspace");
-	AO.floatspace = (UBYTE *)Malloc1(((10*AC.DefaultPrecision)/33+40)*sizeof(UBYTE),"floatspace");
-*/
 }
 
 /*
  		#] SetupMZVTables : 
  		#[ SetupMPFTables :
+	
+		Allocates the aux variables
 */
 
-void SetupMPFTables(VOID)
+void SetupMPFTables(void)
 {
-	size_t nt = sizeof(mp_limb_t);
-	int prec, prec1, i;
 #ifdef WITHPTHREADS
-	int Nw, id, totnum;
-	size_t j;
-	mp_limb_t *d;
-	Nw = AC.DefaultPrecision+AC.MaxWeight+1;
-	SetFloatPrecision(Nw);
-	prec = (AC.DefaultPrecision + 8*nt-1)/(8*nt);
-	prec1 = prec+1;
-/*
-	Now the aux variables
-*/
+	int id, totnum;
+	mpf_t *a;
 #ifdef WITHSORTBOTS
 	totnum = MaX(2*AM.totalnumberofthreads-3,AM.totalnumberofthreads);
 #endif
     for ( id = 0; id < totnum; id++ ) {
-		if ( AB[id]->T.aux_ ) M_free(AB[id]->T.aux_,"aux_");
-		AB[id]->T.aux_ = (void *)Malloc1(8*(prec1*sizeof(mp_limb_t)+sizeof(mpf_t)),"aux-mp");
-		d = (mp_limb_t *)(((mpf_t *)(AB[id]->T.aux_))+8);
-		for ( j = 0; j < (size_t)(8*prec); j++ ) d[j] = 0;
-		for ( i = 0; i < 8; i++ ) {
-			((mpf_t *)(AB[id]->T.aux_))[i]->_mp_prec = prec;
-			((mpf_t *)(AB[id]->T.aux_))[i]->_mp_size = 0;
-			((mpf_t *)(AB[id]->T.aux_))[i]->_mp_exp = 0;
-			((mpf_t *)(AB[id]->T.aux_))[i]->_mp_d = d;
-			d += prec1;
-		}
+/*
+		We work here with a[0] etc because the aux1 etc contain B which
+		in the current routine would be AB[0] only
+*/
+		AB[id]->T.aux_ = (void *)Malloc1(sizeof(mpf_t)*8,"AB[id]->T.aux_");
+		a = (mpf_t *)AB[id]->T.aux_;
+		mpf_inits(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],(mpf_ptr)0);
 		if ( AB[id]->T.indi1 ) M_free(AB[id]->T.indi1,"indi1");
-		AB[id]->T.indi1 = (int *)Malloc1(sizeof(int)*AC.MaxWeight*2,"indi1");
+		AB[id]->T.indi1 = (WORD *)Malloc1(sizeof(WORD)*AC.MaxWeight*2,"indi1");
 		AB[id]->T.indi2 = AB[id]->T.indi1 + AC.MaxWeight;
 	}
 #else
-	int Nw;
-	size_t j;
-	mp_limb_t *d;
-/*	Nw = AC.DefaultPrecision+AC.MaxWeight+sizeof(mp_limb_t); */
-	Nw = AC.DefaultPrecision+AC.MaxWeight+1;
-	SetFloatPrecision(Nw);
-	prec = (AC.DefaultPrecision + 8*nt-1)/(8*nt);
-	prec1 = prec+1;
-/*
-	Now the aux variables
-*/
-	if ( mpfaux_ ) M_free(mpfaux_,"aux_");
-	AT.aux_ = (void *)Malloc1(8*(prec1*sizeof(mp_limb_t)+sizeof(mpf_t)),"aux_");
-	d = (mp_limb_t *)(((mpf_t *)(AT.aux_))+8);
-	for ( j = 0; j < (size_t)(8*prec); j++ ) d[j] = 0;
-	for ( i = 0; i < 8; i++ ) {
-		((mpf_t *)(AT.aux_))[i]->_mp_prec = prec;
-		((mpf_t *)(AT.aux_))[i]->_mp_size = 0;
-		((mpf_t *)(AT.aux_))[i]->_mp_exp = 0;
-		((mpf_t *)(AT.aux_))[i]->_mp_d = d;
-		d += prec1;
-	}
+	AT.aux_ = (void *)Malloc1(sizeof(mpf_t)*8,"AT.aux_");
+	mpf_inits(aux1,aux2,aux3,aux4,aux5,auxjm,auxjjm,auxsum,(mpf_ptr)0);
 	if ( AT.indi1 ) M_free(AT.indi1,"indi1");
-	AT.indi1 = (int *)Malloc1(sizeof(int)*AC.MaxWeight*2,"indi1");
+	AT.indi1 = (WORD *)Malloc1(sizeof(WORD)*AC.MaxWeight*2,"indi1");
 	AT.indi2 = AT.indi1 + AC.MaxWeight;
 #endif
-/*
-	Finally the character buffer for printing
-	if ( AO.floatspace ) M_free(AO.floatspace,"floatspace");
-	AO.floatspace = (UBYTE *)Malloc1(((10*AC.DefaultPrecision)/33+40)*sizeof(UBYTE),"floatspace");
-*/
 }
 
 /*
@@ -1234,31 +1176,76 @@ void SetupMPFTables(VOID)
  		#[ ClearMZVTables :
 */
 
-void ClearMZVTables(VOID)
+void ClearMZVTables(void)
 {
 #ifdef WITHPTHREADS
-	int id, totnum;
+	int i, id, totnum;
+	mpf_t *a;
 	totnum = AM.totalnumberofthreads;
     for ( id = 0; id < totnum; id++ ) {
-		if ( AB[id]->T.mpf_tab1 ) { M_free(AB[id]->T.mpf_tab1,"mpftab1"); AB[id]->T.mpf_tab1 = 0; }
-		if ( AB[id]->T.mpf_tab2 ) { M_free(AB[id]->T.mpf_tab2,"mpftab2"); AB[id]->T.mpf_tab2 = 0; }
+		if ( AB[id]->T.mpf_tab1 ) { 
+/*
+			We work here with a[0] etc because the aux1, mpftab1 etc contain B 
+			which in the current routine would be AB[0] only
+*/
+			a = (mpf_t *)AB[id]->T.mpf_tab1;
+			for ( i = 0; i <=AC.DefaultPrecision; i++ ) {
+				mpf_clear(a[i]);
+			}
+			M_free(AB[id]->T.mpf_tab1,"mpftab1"); 
+			AB[id]->T.mpf_tab1 = 0; 
+		}
+		if ( AB[id]->T.mpf_tab2 ) { 
+			a = (mpf_t *)AB[id]->T.mpf_tab2;
+			for ( i = 0; i <=AC.DefaultPrecision; i++ ) {
+				mpf_clear(a[i]);
+			}
+			M_free(AB[id]->T.mpf_tab2,"mpftab2"); 
+			AB[id]->T.mpf_tab2 = 0; 
+		}
 	}
 #ifdef WITHSORTBOTS
 	totnum = MaX(2*AM.totalnumberofthreads-3,AM.totalnumberofthreads);
 #endif
     for ( id = 0; id < totnum; id++ ) {
-		if ( AB[id]->T.aux_ ) { M_free(AB[id]->T.aux_,"aux-mp"); AB[id]->T.aux_ = 0; }
+		if ( AB[id]->T.aux_ ) { 
+			a = (mpf_t *)AB[id]->T.aux_;
+			mpf_clears(a[0],a[1],a[2],a[3],a[4],a[5],a[6],a[7],(mpf_ptr)0);
+			M_free(AB[id]->T.aux_,"AB[id]->T.aux_");
+			AB[id]->T.aux_ = 0; 
+		}
 		if ( AB[id]->T.indi1 ) { M_free(AB[id]->T.indi1,"indi1"); AB[id]->T.indi1 = 0; }
 	}
 #else
-	if ( AT.mpf_tab1 ) { M_free(AT.mpf_tab1,"mpftab1"); AT.mpf_tab1 = 0; }
-	if ( AT.mpf_tab2 ) { M_free(AT.mpf_tab2,"mpftab2"); AT.mpf_tab2 = 0; }
-	if ( AT.aux_ ) { M_free(AT.aux_,"aux-mp"); AT.aux_ = 0; }
+	int i;
+	if ( AT.mpf_tab1 ) { 
+		for ( i = 0; i <= AC.DefaultPrecision; i++ ) {
+			mpf_clear(mpftab1[i]);
+		}
+		M_free(AT.mpf_tab1,"mpftab1"); 
+		AT.mpf_tab1 = 0; 
+	}
+	if ( AT.mpf_tab2 ) { 
+		for ( i = 0; i <= AC.DefaultPrecision; i++ ) {
+			mpf_clear(mpftab2[i]);
+		}
+		M_free(AT.mpf_tab2,"mpftab2"); 
+		AT.mpf_tab2 = 0; 
+	}
+	if ( AT.aux_ ) { 
+		mpf_clears(aux1,aux2,aux3,aux4,aux5,auxjm,auxjjm,auxsum,(mpf_ptr)0);
+		M_free(AT.aux_,"AT.aux_"); 
+		AT.aux_ = 0; 
+	}
 	if ( AT.indi1 ) { M_free(AT.indi1,"indi1"); AT.indi1 = 0; }
 #endif
 	if ( AO.floatspace ) { M_free(AO.floatspace,"floatspace"); AO.floatspace = 0;
 		AO.floatsize = 0; }
-	if ( AS.delta_1 ) { mpfdelta1->_mp_d = 0; M_free(AS.delta_1,"delta1"); }
+	if ( AS.delta_1 ) { 
+		mpf_clear(mpfdelta1);
+		M_free(AS.delta_1,"delta1"); 
+		AS.delta_1 = 0; 
+	}
 }
 
 /*
@@ -1307,6 +1294,152 @@ int CoToRat(UBYTE *s)
 
 /*
  		#] CoToRat : 
+ 		#[ CoStrictRounding : 
+
+		Syntax: StrictRounding [precision][base]
+		- precision: number of digits to round to (optional)
+		- base: 'd' for decimal (base 10) or 'b' for binary (base 2)
+		
+		If no arguments are provided, uses default precision with binary base.
+*/
+int CoStrictRounding(UBYTE *s)
+{
+	GETIDENTITY
+	WORD x;
+	int base;
+	if ( AT.aux_ == 0 ) {
+		MesPrint("&Illegal attempt for strict rounding without activating floating point numbers.");
+		MesPrint("&Forgotten %#startfloat instruction?");
+		return(1);
+	}
+	while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+	if ( *s == 0 ) {
+		/* No subkey, which means round to default precision */
+		x = AC.DefaultPrecision - AC.MaxWeight - 1;
+		base = 2;
+	}
+	else if ( FG.cTable[*s] == 1 ) { /* number */
+		ParseNumber(x,s)
+		if ( tolower(*s) == 'd' ) { base = 10; s++; }      /* decimal base */
+		else if ( tolower(*s) == 'b' ){ base = 2; s++; }  /* binary base */
+		else goto IllPar;  /* invalid base specification */
+	}
+	else {
+		goto IllPar;
+	}
+	while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+	
+	/* Check for invalid arguments */
+	if ( *s ) {
+IllPar:
+		MesPrint("&Illegal argument(s) in StrictRounding statement: '%s'",s);
+		return(1);
+	}
+	Add4Com(TYPESTRICTROUNDING,x,base);
+	return(0);
+} 
+/*
+ 		#] CoStrictRounding : 
+ 		#[ CoChop :
+
+		LHS notation of the chop statement: 
+			TYPECHOP, length, FLOATFUN, ... 
+		where FLOATFUN, ... represents the threshold of the chop statement in 
+		the notation of a float_ function with its arguments. 
+
+*/
+
+int CoChop(UBYTE *s)
+{
+	GETIDENTITY
+	UBYTE *ss, c;
+	WORD *w, *OldWork;
+	int spec, pow = 1;
+	unsigned long x;
+	if ( AT.aux_ == 0 ) {
+		MesPrint("&Illegal attempt to chop a float_ without activating floating point numbers.");
+		MesPrint("&Forgotten %#startfloat instruction?");
+		return(1);
+	}
+	if ( *s == 0 ) {
+		MesPrint("&Chop needs a number (float, rational or power) as an argument.");
+		return(1);
+	}
+	/* Create TYPECHOP header */
+	w = OldWork = AT.WorkPointer;
+	*w++ = TYPECHOP; 
+	w++;
+
+	while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+	
+	/* 
+		The argument of chop can be 
+	 	1: a floating-point number
+	 	2: an integer, rational number or power
+	 */
+	if ( FG.cTable[*s] == 1 || *s == '.' ) { 
+		/* 1: Attempt to parse as floating-point number */
+		ss = CheckFloat(s, &spec);
+		if ( ss > s ) {
+			/* CheckFloat found a valid float */
+			AT.WorkPointer = w;
+			/* 
+				Reads the floating point number and outputs it at AT.WorkPointer as if it were a float_ 
+				function with its arguments.
+			 */
+			ReadFloat((SBYTE *)s); 
+			s = ss;
+			w += w[1];
+		}
+		else {
+			/* 2: CheckFloat didn't find a float, we now try for rationals and powers */
+			/* Parse the integer part (numerator for rationals) */
+			if ( FG.cTable[*s] == 1 ) {
+				ParseNumber(x,s)
+				mpf_set_ui(aux1,x);
+			}
+			while ( *s == ' ' || *s == '\t' ) s++;
+			/* Check for rational number or power*/
+			if ( *s == '/' || *s == '^' ) {
+				c = *s; s++; 
+				while ( *s == ' ' || *s == '\t' ) s++;
+				if ( *s == '-' ) { s++; pow = -1; } /* negative power */
+				/* Parse the denominator or power */
+				if ( FG.cTable[*s] == 1 ) {
+					ParseNumber(x,s)
+					if ( c == '/' ) { /* rational */
+						if ( x == 0 ) {
+							MesPrint("&Division by zero in chop statement.");
+							return(1);
+						}
+						/* Perform the division */
+						mpf_div_ui(aux1, aux1,x);
+					}
+					else { /* Power */
+						mpf_pow_ui(aux1,aux1,x);
+						if ( pow == -1 ) {
+							mpf_ui_div(aux1,(unsigned long) 1, aux1);
+						}
+					}
+				}
+			}
+			/* Put aux1 in the notation of a float_ function */
+			PackFloat(w, aux1);
+			w += w[1];
+		}
+	}
+	if ( *s ) {
+		MesPrint("&Illegal argument(s) in Chop statement: '%s'.",s);
+		return(1);
+	}
+	AT.WorkPointer = OldWork;
+	AT.WorkPointer[1] = w - AT.WorkPointer;  /* Set total length */
+	AddNtoL(AT.WorkPointer[1],AT.WorkPointer); /* Add the LHS to the compiler buffer */
+	return(0);
+}
+
+/*
+ 		#] CoChop : 
  		#[ ToFloat :
 
 		Converts the coefficient to floating point if it is still a rat.
@@ -1364,7 +1497,11 @@ int ToRat(PHEAD WORD *term, WORD level)
 		The result can go straight over the float_ function.
 */
 		UnpackFloat(aux4,t);
+		// If aux4 is zero, the term vanishes
+		if ( mpf_sgn(aux4) == 0 ) return(0);
 		if ( FloatToRat((UWORD *)t,&ncoef,aux4) == 0 ) {
+			// Check if the resulting rational is zero
+			if ( t[0] == 0 && t[1] == 1 && ncoef == 3 ) return(0);
 			t += ABS(ncoef);
 			t[-1] = ncoef*nsign;
 			*term = t - term;
@@ -1375,6 +1512,104 @@ int ToRat(PHEAD WORD *term, WORD level)
 
 /*
  		#] ToRat : 
+ 		#[ StrictRounding : 
+
+		Rounds floating point numbers to a specified precision
+		in a given base (decimal or binary).
+*/
+int StrictRounding(PHEAD WORD *term, WORD level, WORD prec, WORD base) {
+	WORD *t,*tstop;
+	int sign,size,maxprec = AC.DefaultPrecision-AC.MaxWeight-1;
+	/* maxprec is in bits */
+	if ( base == 2 && prec > maxprec ) {
+		prec = maxprec;
+	}
+	if ( base == 10 && prec > (int)(maxprec*log10(2.0)) ) {
+		prec = maxprec*log10(2.0);
+	}
+	/* Find the float which should be at the end. */
+	tstop = term + *term; size = ABS(tstop[-1]);
+	sign = tstop[-1] < 0 ? -1: 1; tstop -= size;
+	t = term+1;
+	while ( t < tstop ) {
+		if ( *t == FLOATFUN && t + t[1] == tstop && TestFloat(t) &&
+		size == 3 && tstop[0] == 1 && tstop[1] == 1) {
+			break;
+		}
+		t += t[1];
+	}
+	if ( t < tstop ) {
+/*
+		Now t points at the float_ function and everything is correct.
+		The result can go straight over the float_ function.
+*/
+		char *s;
+		mp_exp_t exp;
+		/* Extract the floating point value */
+		UnpackFloat(aux4,t);
+		/* Convert to string: 
+		   - Format as MeN with M the mantissa and N the exponent 
+		   - the generated string by mpf_get_str is the fraction/mantissa with 
+		   an implicit radix point immediately to the left of the first digit. 
+		   The applicable exponent is written in exp. */
+		s = (char *)AO.floatspace;
+		*s++ = '.';
+		mpf_get_str(s,&exp, base, prec, aux4);
+		while ( *s != 0 ) s++;
+		*s++ = 'e';
+		snprintf(s,AO.floatsize-(s-(char *)AO.floatspace),"%ld",exp);
+		/* Negative base values are used to specify that the exponent is in decimal */
+		mpf_set_str(aux4,(char *)AO.floatspace,-base);
+		/* Pack the rounded floating point value back into the term */
+		PackFloat(t,aux4);
+		t+=t[1];
+		*t++ = 1; *t++ = 1; *t++ = 3*sign;
+		*term = t - term;
+	}
+	return(Generator(BHEAD term,level));
+}
+/*
+ 		#] StrictRounding : 
+	 	#[ Chop :
+
+	Removes terms with a floating point number smaller than a given threshold. 
+ 
+	Search for a FLOATFUN and compares its absolute value against the threshold 
+	specified in the chop statement. This threshold can be obtained from the 
+	LHS of the chop statement in the compiler buffer.
+ 
+ */
+int Chop(PHEAD WORD *term, WORD level)
+{
+	WORD *tstop, *t, nsize, *threshold; 
+	CBUF *C = cbuf+AM.rbufnum;
+	/* Find the float which should be at the end. */
+	tstop = term + *term; 
+	nsize = ABS(tstop[-1]); tstop -= nsize;
+	t = term+1;
+	while ( t < tstop ) {
+		if ( *t == FLOATFUN && t + t[1] == tstop && TestFloat(t) &&
+		nsize == 3 && tstop[0] == 1 && tstop[1] == 1 ) break;
+		t += t[1];
+	}
+	if ( t < tstop ) {
+		/* Get threshold value from compiler buffer */
+		threshold = C->lhs[level];
+		threshold += 2;  /* Skip TYPECHOP header */
+		UnpackFloat(aux5, threshold); 
+		
+		/* Extract float and compute its absolute value */
+		UnpackFloat(aux4, t);
+		mpf_abs(aux4, aux4);
+		
+		/* Remove if < threshold */
+		if ( mpf_cmp(aux4, aux5) < 0 ) return(0);
+	}
+	return(Generator(BHEAD term,level));
+}
+
+/*
+ 		#] Chop : 
   	#] Float Routines : 
   	#[ Sorting :
 
@@ -1413,7 +1648,7 @@ int ToRat(PHEAD WORD *term, WORD level)
  		#[ AddWithFloat :
 */
 
-WORD AddWithFloat(PHEAD WORD **ps1, WORD **ps2)
+int AddWithFloat(PHEAD WORD **ps1, WORD **ps2)
 {
 	GETBIDENTITY
 	SORTING *S = AT.SS;
@@ -1454,9 +1689,6 @@ WORD AddWithFloat(PHEAD WORD **ps1, WORD **ps2)
 	}
 	mpf_add(aux3,aux1,aux2);
 	sign3 = mpf_sgn(aux3);
-	if ( sign3 == 0 ) {	/* May be rare! */
-		*ps1 = 0; *ps2 = 0; AT.SortFloatMode = 0; return(0);
-	}
 	if ( sign3 < 0 ) mpf_neg(aux3,aux3);
 	fun3 = TermMalloc("AddWithFloat");
 	PackFloat(fun3,aux3);
@@ -1534,11 +1766,12 @@ Finished:
 		does this as well.
 */
 
-WORD MergeWithFloat(PHEAD WORD **interm1, WORD **interm2)
+int MergeWithFloat(PHEAD WORD **interm1, WORD **interm2)
 {
 	GETBIDENTITY
 	WORD *coef1, *coef2, size1, size2, *fun1, *fun2, *fun3, *tt;
-	WORD sign3,j,jj, *t1, *t2, i, *term1 = *interm1, *term2 = *interm2, retval = 0;
+	WORD sign3,jj, *t1, *t2, i, *term1 = *interm1, *term2 = *interm2;
+	int retval = 0;
 	coef1 = term1+*term1; size1 = coef1[-1]; coef1 -= ABS(size1);
 	coef2 = term2+*term2; size2 = coef2[-1]; coef2 -= ABS(size2);
 	if ( AT.SortFloatMode == 3 ) {
@@ -1572,9 +1805,6 @@ WORD MergeWithFloat(PHEAD WORD **interm1, WORD **interm2)
 	}
 	mpf_add(aux3,aux1,aux2);
 	sign3 = mpf_sgn(aux3);
-	if ( sign3 == 0 ) {	/* May be very rare! */
-		AT.SortFloatMode = 0; return(0);
-	}
 /*
 	Now check whether we can park the result on top of one of the input terms.
 */
@@ -1598,8 +1828,8 @@ Shift1:		t2 = term1 + *term1; tt = t2;
 			retval = 1;
 		}
 		else { /* Here we have to move term1 to the left to make room. */
-Over1:		jj = fun3[1]-fun1[1]+3-ABS(size1); /* This is positive */
-			t2 = term1-jj; t1 = term1;
+			jj = fun3[1]-fun1[1]+3-ABS(size1); /* This is positive */
+Over1:		t2 = term1-jj; t1 = term1;
 			while ( t1 < fun1 ) *t2++ = *t1++;
 			term1 -= jj;
 			*term1 += jj;
@@ -1611,25 +1841,18 @@ Over1:		jj = fun3[1]-fun1[1]+3-ABS(size1); /* This is positive */
 	else if ( AT.SortFloatMode == 1 ) {
 		if ( fun1[1] + ABS(size1) == fun3[1] + 3 ) goto OnTopOf1;
 		else if ( fun1[1] + ABS(size1) > fun3[1] + 3 ) goto Shift1;
-		else goto Over1;
+		else {
+			jj = fun3[1]-fun1[1]+3-ABS(size1); /* This is positive */
+			goto Over1;
+		}
 	}
 	else { /* Can only be 2, based on previous tests */
-		if ( fun3[1] + 3 == ABS(size1) ) {
-			t2 = coef1; t1 = fun3;
-			for ( i = 0; i < fun3[1]; i++ ) *t2++ = *t1++;
-			*t2++ = 1; *t2++ = 1;  *t2++ = sign3 < 0 ? -3: 3;
-			retval = 1;
+		if ( fun3[1] + 3 == ABS(size1) ) goto OnTopOf1;
+		else if ( fun3[1] + 3 < ABS(size1) ) goto Shift1;
+		else {
+			jj = fun3[1]+3-ABS(size1); /* This is positive */
+			goto Over1;
 		}
-		else if ( fun3[1] + 3 < ABS(size1) ) {
-			j = ABS(size1) - fun3[1] - 3;
-			t2 = term1 + *term1; tt = t2;
-			*--t2 = sign3 < 0 ? -3: 3; *--t2 = 1; *--t2 = 1;
-			t2 -= fun3[1]; t1 = t2-j;
-			while ( t2 > term1 ) *--t2 = *--t1;
-			*t2 = tt-t2; term1 = t2;
-			retval = 1;
-		}
-		else goto Over1;
 	}
 	*interm1 = term1;
 	TermFree(fun3,"MergeWithFloat");
@@ -1668,15 +1891,31 @@ void SimpleDelta(mpf_t sum, int m)
 	We will loop until 1/2^j/j^m is smaller than the default precision.
 	Just running to prec is however overkill, specially when m is large.
 	We try to estimate a better value.
-	jmax = prec - ((2log(prec)-1)*m).
+	jmax = prec - ((log2(prec)-1)*m).
 	Hence we need the leading bit of prec.
 	We are still overshooting a bit.
 */
 	n = 0; x = xprec;
 	while ( x ) { x >>= 1; n++; }
-	jmax = (int)((int)xprec - n*m);
+/* 
+	We have now n = floor(log2(x))+1. 
+*/
+	n--;
+	jmax = (int)((int)xprec - (n-1)*m);
+/*
+	For small prec and large m, the estimate can be wrong and even be negative, 
+	so we increase jmax until jmax + m*log2(jmax) > prec
+*/
+	if ( jmax < 0 ) jmax = 1;
+	do {
+		n = 0;
+		x = (unsigned long)jmax;
+		while (x) { x >>= 1; n++; }
+		n--; // floor(log2(jmax))
+		jmax++; 
+	} while ( jmax + m * n <= prec );
 	mpf_set_ui(sum,0);
-	for ( j = 1; j < jmax; j++ ) {
+	for ( j = 1; j <= jmax; j++ ) {
 #ifdef WITHCUTOFF
 		xprec--;
 		mpf_set_prec_raw(jm,xprec);
@@ -1710,16 +1949,32 @@ void SimpleDeltaC(mpf_t sum, int m)
 	We will loop until 1/2^j/j^m is smaller than the default precision.
 	Just running to prec is however overkill, specially when m is large.
 	We try to estimate a better value.
-	jmax = prec - ((2log(prec)-1)*m).
+	jmax = prec - ((log2(prec)-1)*m).
 	Hence we need the leading bit of prec.
 	We are still overshooting a bit.
 */
 	n = 0; x = xprec;
 	while ( x ) { x >>= 1; n++; }
-	jmax = (int)((int)xprec - n*m);
+/* 
+	We have now n = floor(log2(x))+1. 
+*/
+	n--;
+	jmax = (int)((int)xprec - (n-1)*m);
+/*
+	For small prec and large m, the estimate can be wrong and even be negative, 
+	so we increase jmax until jmax + m*log2(jmax) > prec
+*/
+	if ( jmax < 0 ) jmax = 1;
+	do {
+		n = 0;
+		x = (unsigned long)jmax;
+		while (x) { x >>= 1; n++; }
+		n--; // floor(log2(jmax))
+		jmax++; 
+	} while ( jmax + m * n <= prec );
 	if ( s < 0 ) jmax /= 2;
 	mpf_set_si(sum,0L);
-	for ( j = 1; j < jmax; j++ ) {
+	for ( j = 1; j <= jmax; j++ ) {
 #ifdef WITHCUTOFF
 		xprec--;
 		mpf_set_prec_raw(jm,xprec);
@@ -1762,8 +2017,10 @@ void SingleTable(mpf_t *tabl, int N, int m, int pow)
 	mpf_t jm,jjm;
 	mpf_init(jm); mpf_init(jjm);
 	if ( pow < 1 || pow > 2 ) {
-		printf("Wrong parameter pow in SingleTable: %d\n",pow);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Wrong parameter pow in SingleTable: %d\n",pow);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	if ( m < 0 ) { m = -m; s = -1; }
 	mpf_set_si(auxsum,0L);
@@ -1803,8 +2060,10 @@ void DoubleTable(mpf_t *tabout, mpf_t *tabin, int N, int m, int pow)
 	mpf_t jm,jjm;
 	mpf_init(jm); mpf_init(jjm);
 	if ( pow < -1 || pow > 2 ) {
-		printf("Wrong parameter pow in SingleTable: %d\n",pow);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Wrong parameter pow in DoubleTable: %d\n",pow);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	if ( m < 0 ) { m = -m; s = -1; }
 	mpf_set_ui(auxsum,0L);
@@ -1853,8 +2112,10 @@ void EndTable(mpf_t sum, mpf_t *tabin, int N, int m, int pow)
 	mpf_t jm,jjm;
 	mpf_init(jm); mpf_init(jjm);
 	if ( pow < -1 || pow > 2 ) {
-		printf("Wrong parameter pow in SingleTable: %d\n",pow);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Wrong parameter pow in EndTable: %d\n",pow);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	if ( m < 0 ) { m = -m; s = -1; }
 	mpf_set_si(sum,0L);
@@ -1888,7 +2149,7 @@ void EndTable(mpf_t sum, mpf_t *tabin, int N, int m, int pow)
  		#[ deltaMZV :
 */
 
-void deltaMZV(mpf_t result, int *indexes, int depth)
+void deltaMZV(mpf_t result, WORD *indexes, int depth)
 {
 	GETIDENTITY
 /*
@@ -1955,7 +2216,7 @@ void deltaMZV(mpf_t result, int *indexes, int depth)
 		Regular Euler delta with - signs, but everywhere 1/2^j
 */
 
-void deltaEuler(mpf_t result, int *indexes, int depth)
+void deltaEuler(mpf_t result, WORD *indexes, int depth)
 {
 	GETIDENTITY
 	int m;
@@ -1974,7 +2235,7 @@ void deltaEuler(mpf_t result, int *indexes, int depth)
 	else if ( depth == 2 ) {
 		SingleTable(mpftab1,AC.DefaultPrecision-AC.MaxWeight+1,indexes[0],1);
 		m = indexes[1]; if ( indexes[0] < 0 ) m = -m;
-		EndTable(result,mpftab1,AC.DefaultPrecision,m,0);
+		EndTable(result,mpftab1,AC.DefaultPrecision-AC.MaxWeight,m,0);
 	}
 	else if ( depth > 2 ) {
 		int d;
@@ -2011,7 +2272,7 @@ void deltaEuler(mpf_t result, int *indexes, int depth)
 		When there is a - in the string we have 1/4.
 */
 
-void deltaEulerC(mpf_t result, int *indexes, int depth)
+void deltaEulerC(mpf_t result, WORD *indexes, int depth)
 {
 	GETIDENTITY
 	int m;
@@ -2027,7 +2288,10 @@ void deltaEulerC(mpf_t result, int *indexes, int depth)
 	mpf_set_ui(result,0);
 	if ( depth == 1 ) {
 		if ( indexes[0] == 0 ) {
-			printf("Illegal index in depth=1 deltaEulerC: %d\n",indexes[0]);
+			MLOCK(ErrorMessageLock);
+			MesPrint("Illegal index in depth=1 deltaEulerC: %d\n",indexes[0]);
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
 		}
 		if ( indexes[0] < 0 ) SimpleDeltaC(result,indexes[0]);
 		else                  SimpleDelta(result,indexes[0]);
@@ -2035,8 +2299,8 @@ void deltaEulerC(mpf_t result, int *indexes, int depth)
 	else if ( depth == 2 ) {
 		int par;
 		m = indexes[0];
-		if ( m < 0 ) SingleTable(mpftab1,AC.DefaultPrecision-AC.MaxWeight+depth+1,-m,2);
-		else         SingleTable(mpftab1,AC.DefaultPrecision-AC.MaxWeight+depth+1, m,1);
+		if ( m < 0 ) SingleTable(mpftab1,AC.DefaultPrecision-AC.MaxWeight+depth,-m,2);
+		else         SingleTable(mpftab1,AC.DefaultPrecision-AC.MaxWeight+depth, m,1);
 		m = indexes[1];
 		if ( m < 0 ) { m = -m; par = indexes[0] < 0 ? 0: 1; }
 		else { par = indexes[0] < 0 ? -1: 0; }
@@ -2084,17 +2348,21 @@ void deltaEulerC(mpf_t result, int *indexes, int depth)
 		MZV's have to be calculated at the same time.
 */
 
-void CalculateMZVhalf(mpf_t result, int *indexes, int depth)
+void CalculateMZVhalf(mpf_t result, WORD *indexes, int depth)
 {
 	int i;
 	if ( depth < 0 ) {
-		printf("Illegal depth in CalculateMZVhalf: %d\n",depth);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Illegal depth in CalculateMZVhalf: %d",depth);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	for ( i = 0; i < depth; i++ ) {
 		if ( indexes[i] <= 0 ) {
-			printf("Illegal index[%d] in CalculateMZVhalf: %d\n",i,indexes[i]);
-			exit(-1);
+			MLOCK(ErrorMessageLock);
+			MesPrint("Illegal index[%d] in CalculateMZVhalf: %d",i,indexes[i]);
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
 		}
 	}
 	deltaMZV(result,indexes,depth);
@@ -2105,23 +2373,29 @@ void CalculateMZVhalf(mpf_t result, int *indexes, int depth)
  		#[ CalculateMZV :
 */
 
-void CalculateMZV(mpf_t result, int *indexes, int depth)
+void CalculateMZV(mpf_t result, WORD *indexes, int depth)
 {
 	GETIDENTITY
 	int num1, num2 = 0, i, j = 0;
 	if ( depth < 0 ) {
-		printf("Illegal depth in CalculateMZV: %d\n",depth);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Illegal depth in CalculateMZV: %d",depth);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	if ( indexes[0] == 1 ) {
-		printf("Divergent MZV in CalculateMZV\n");
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Divergent MZV in CalculateMZV");
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 /*	MesPrint("calculateMZV(%a)",depth,indexes); */
 	for ( i = 0; i < depth; i++ ) {
 		if ( indexes[i] <= 0 ) {
-			printf("Illegal index[%d] in CalculateMZV: %d\n",i,indexes[i]);
-			exit(-1);
+			MLOCK(ErrorMessageLock);
+			MesPrint("Illegal index[%d] in CalculateMZV: %d",i,indexes[i]);
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
 		}
 		AT.indi1[i] = indexes[i];
 	}
@@ -2170,12 +2444,12 @@ void CalculateMZV(mpf_t result, int *indexes, int depth)
 		Hence we start with a conversion.
 */
 
-void CalculateEuler(mpf_t result, int *Zindexes, int depth)
+void CalculateEuler(mpf_t result, WORD *Zindexes, int depth)
 {
 	GETIDENTITY
 	int s1, num1, num2, i, j;
 
-	int *indexes = (int *)(AT.WorkPointer);
+	WORD *indexes = AT.WorkPointer;
 	for ( i = 0; i < depth; i++ ) indexes[i] = Zindexes[i];
 	for ( i = 0; i < depth-1; i++ ) {
 		if ( Zindexes[i] < 0 ) {
@@ -2184,17 +2458,23 @@ void CalculateEuler(mpf_t result, int *Zindexes, int depth)
 	}
 
 	if ( depth < 0 ) {
-		printf("Illegal depth in CalculateEuler: %d\n",depth);
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Illegal depth in CalculateEuler: %d\n",depth);
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	if ( indexes[0] == 1 ) {
-		printf("Divergent Euler sum in CalculateEuler\n");
-		exit(-1);
+		MLOCK(ErrorMessageLock);
+		MesPrint("Divergent Euler sum in CalculateEuler\n");
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 	for ( i = 0, j = 0; i < depth; i++ ) {
 		if ( indexes[i] == 0 ) {
-			printf("Illegal index[%d] in CalculateEuler: %d\n",i,indexes[i]);
-			exit(-1);
+			MLOCK(ErrorMessageLock);
+			MesPrint("Illegal index[%d] in CalculateEuler: %d\n",i,indexes[i]);
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
 		}
 		if ( indexes[i] < 0 ) j = 1;
 		AT.indi1[i] = indexes[i];
@@ -2311,9 +2591,13 @@ int EvaluateEuler(PHEAD WORD *term, WORD level, WORD par)
 				sumweight += ABS(tt[1]); depth++;
 				tt += 2;
 			}
+			/* euler sum without arguments, i.e. mzv_(), euler_() or mzvhalf_() */
+			if ( depth == 0) goto nextfun;
 			if ( sumweight > AC.MaxWeight ) {
-				MesPrint("Error: Weight of Euler/MZV sum greater than %d",sumweight);
-				MesPrint("Please increase MaxWeight in form.set.");
+				MLOCK(ErrorMessageLock);
+				MesPrint("Error: Weight of Euler/MZV sum greater than %d.",AC.MaxWeight);
+				MesPrint("Please increase the maximum weight in %#startfloat.");
+				MUNLOCK(ErrorMessageLock);
 				Terminate(-1);
 			}
 /*
@@ -2404,9 +2688,15 @@ nextfun:
 
 int CoEvaluate(UBYTE *s)
 {
+	GETIDENTITY
 	UBYTE *subkey, c;
 	WORD numfun, type;
 	int error = 0;
+	if ( AT.aux_ == 0 ) {
+		MesPrint("&Illegal attempt to evaluate a function without activating floating point numbers.");
+		MesPrint("&Forgotten %#startfloat instruction?");
+		return(1);
+	}
 	while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
 	if ( *s == 0 ) {
 /*
@@ -2422,29 +2712,36 @@ int CoEvaluate(UBYTE *s)
 	while ( *s ) {
 	subkey = s;
 	while ( FG.cTable[*s] == 0 ) s++;
+	  if ( *s == '2' ) s++; /* cases li2_ and atan2_ */
 	  if ( *s == '_' ) s++;
-	  c = *s; *s++ = 0;
+	  c = *s; *s = 0;
 /*
 		We still need provisions for pi_ and possibly other constants.
 */
 	  if ( ( ( type = GetName(AC.varnames,subkey,&numfun,NOAUTO) ) != CFUNCTION )
 			|| ( functions[numfun].spec != 0 ) ) {
+
+		if ( type == CSYMBOL ) {
+			Add4Com(TYPEEVALUATE,SYMBOL,numfun);
+			break;
+		}
 /*
 			This cannot work.
 */
 		MesPrint("&%s should be a built in function that can be evaluated numerically.",s);
-		error = 1;
+		return(1);
 	  }
 	  else {
 		switch ( numfun+FUNCTION ) {
 			case MZV:
 			case EULER:
 			case MZVHALF:
-			case SQRTFUNCTION:
 /*
 			The following functions are treated in evaluate.c
-
+*/
+			case SQRTFUNCTION:
 			case LNFUNCTION:
+			case EXPFUNCTION:
 			case SINFUNCTION:
 			case COSFUNCTION:
 			case TANFUNCTION:
@@ -2458,11 +2755,11 @@ int CoEvaluate(UBYTE *s)
 			case ASINHFUNCTION:
 			case ACOSHFUNCTION:
 			case ATANHFUNCTION:
-			case LI2HFUNCTION:
-			case LINHFUNCTION:
+			case LI2FUNCTION:
+			case LINFUNCTION:
 			case AGMFUNCTION:
 			case GAMMAFUN:
-
+/*
 			At a later stage we can add more functions from mpfr here
 				mpfr_(number,arg(s))
 */
@@ -2482,78 +2779,5 @@ int CoEvaluate(UBYTE *s)
 
 /*
  		#] CoEvaluate : 
- 		#[ GetPi :
-
-	We use the Chudkovsky formula to obtain 1/pi_. This costs one division at
-	the end but the convergence is extremely rapid. (Around k=100 more than
-	14 decimal digits per step).
-	1/pi_ = 1/426680/sqrt(10005)*sum_(k,0,inf,fac_(6*k)*invfac_(3*k)
-	        *invfac(k)^3*(13591409+545140134*k)/(-640320)^(3*k))
-	THIS IS NOT FOR TRYING EXTREMELY LARGE NUMBERS OF DIGITS!
-	FOR THOSE THERE ARE OTHER ALGORITHMS
-*/
-
-int GetPi(PHEAD mpf_t pi)
-{
-	unsigned long ninc,nincden,nnum;
-	int k, nterms;
-/*
-	Start with the k = 0 term.
-*/
-	mpf_set_ui(aux1,13591409);
-/*
-	How many terms do we need?
-	The combination of the factorials and the power gives <(12/640320)^3
-	which means that 40/(53360^(3*k)) should be a nice upperlimit for the
-	last term. Hence: precision(in bits) = 47.11*k-5.32
-*/
-	mpf_set_ui(aux2,1);
-	mpf_set_ui(aux4,80040); /* = 640320/8 */
-	mpf_pow_ui(aux4,aux4,3);
-	nterms = (AC.DefaultPrecision-AC.MaxWeight+1+6)/47;
-	for ( k = 1; k <= nterms; k++ ) {
-		ninc = (6*k-5)*(6*k-3)*(6*k-1);
-		nincden = k*k*k;
-		nnum = 13591409+545140134*k;
-		mpf_mul_ui(aux2,aux2,ninc);
-		mpf_div_ui(aux2,aux2,nincden);
-		mpf_mul(aux2,aux2,aux4);
-		mpf_mul_ui(aux3,aux2,nnum);
-		if ( k%2 == 1 ) mpf_sub(aux1,aux1,aux3);
-		else            mpf_add(aux1,aux1,aux3);
-	}
-	mpf_ui_div(aux1,426680,aux1);
-	mpf_sqrt_ui(aux2,10005);
-	mpf_mul(pi,aux1,aux2);
-	return(0);
-}
-/*
- 		#] GetPi : 
- 		#[ GetE :
-
-	Gets a value for e. (ee_ in Form notation)
-
-
-int GetE(PHEAD mpf_t E)
-{
-	DUMMYUSE(E)
-	return(0);
-}
-
-
- 		#] GetE : 
- 		#[ GetEMconst :
-
-	Gets the Euler-Mascheroni constant. (em_ in Form notation)
-
-
-int GetEMconst(PHEAD mpf_t EMconst)
-{
-	DUMMYUSE(EMconst)
-	return(0);
-}
-
-
- 		#] GetEMconst : 
   	#] Functions : 
 */

@@ -8,7 +8,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -554,7 +554,7 @@ int GetVar(UBYTE *name, WORD *type, WORD *number, int wantedtype, int par)
   	#[ EntVar :
 */
 
-WORD EntVar(WORD type, UBYTE *name, WORD x, WORD y, WORD z, WORD d)
+int EntVar(WORD type, UBYTE *name, WORD x, WORD y, WORD z, WORD d)
 {
 	switch ( type ) {
 		case CSYMBOL:
@@ -599,7 +599,7 @@ int GetDollar(UBYTE *name)
   	#[ DumpTree :
 */
 
-VOID DumpTree(NAMETREE *nametree)
+void DumpTree(NAMETREE *nametree)
 {
 	if ( nametree->headnode >= 0
 		&& nametree->namebuffer && nametree->namenode ) {
@@ -612,7 +612,7 @@ VOID DumpTree(NAMETREE *nametree)
   	#[ DumpNode :
 */
 
-VOID DumpNode(NAMETREE *nametree, WORD node, WORD depth)
+void DumpNode(NAMETREE *nametree, WORD node, WORD depth)
 {
 	NAMENODE *n;
 	int i;
@@ -693,7 +693,7 @@ int CompactifyTree(NAMETREE *nametree,WORD par)
   	#[ CopyTree :
 */
 
-VOID CopyTree(NAMETREE *newtree, NAMETREE *oldtree, WORD node, WORD par)
+void CopyTree(NAMETREE *newtree, NAMETREE *oldtree, WORD node, WORD par)
 {
 	NAMENODE *n, *m;
 	UBYTE *s, *t;
@@ -781,7 +781,7 @@ VOID CopyTree(NAMETREE *newtree, NAMETREE *oldtree, WORD node, WORD par)
   	#[ LinkTree :
 */
 
-VOID LinkTree(NAMETREE *tree, WORD offset, WORD numnodes)
+void LinkTree(NAMETREE *tree, WORD offset, WORD numnodes)
 {
 /*
 	Makes the tree into a binary tree
@@ -812,7 +812,7 @@ VOID LinkTree(NAMETREE *tree, WORD offset, WORD numnodes)
   	#[ MakeNameTree :
 */
 
-NAMETREE *MakeNameTree(VOID)
+NAMETREE *MakeNameTree(void)
 {
 	NAMETREE *n;
 	n = (NAMETREE *)Malloc1(sizeof(NAMETREE),"new nametree");
@@ -831,7 +831,7 @@ NAMETREE *MakeNameTree(VOID)
   	#[ FreeNameTree :
 */
 
-VOID FreeNameTree(NAMETREE *n)
+void FreeNameTree(NAMETREE *n)
 {
 	if ( n ) {
 		if ( n->namebuffer ) M_free(n->namebuffer,"nametree->namebuffer");
@@ -846,7 +846,7 @@ VOID FreeNameTree(NAMETREE *n)
   	#[ WildcardNames :
 */
 
-void ClearWildcardNames(VOID)
+void ClearWildcardNames(void)
 {
 	AC.NumWildcardNames = 0;
 }
@@ -1526,7 +1526,7 @@ illegsym:		*s = cc;
 			else goto illegsym;
 			*s = cc;
 			if ( *s != ')' || ( s[1] && s[1] != ',' && s[1] != '<' ) ) {
-				Warning("&Excess information in symmetric properties currently ignored");
+				Warning("Excess information in symmetric properties currently ignored");
 				s = SkipField(s,1);
 			}
 			else s++;
@@ -1547,8 +1547,7 @@ retry:;
 				if ( ( StrICont(par,(UBYTE *)"arguments") == 0 )
 				|| ( StrICont(par,(UBYTE *)"args") == 0 ) ) {}
 				else {
-					Warning("&Illegal information in number of arguments properties currently ignored");
-					error = 1;
+					Warning("Illegal information in number of arguments properties currently ignored");
 				}
 				*s = cc;
 			}
@@ -1571,8 +1570,7 @@ retry:;
 				if ( ( StrICont(par,(UBYTE *)"arguments") == 0 )
 				|| ( StrICont(par,(UBYTE *)"args") == 0 ) ) {}
 				else {
-					Warning("&Illegal information in number of arguments properties currently ignored");
-					error = 1;
+					Warning("Illegal information in number of arguments properties currently ignored");
 				}
 				*s = cc;
 			}
@@ -1601,6 +1599,10 @@ retry:;
 				}
 				else if ( istensor == 0 && fun->spec > 0 ) {
 					MesPrint("&Tensor %s changed to function",name);
+					error = 1;
+				}
+				else if ( fun->spec == VERTEXFUNCTION ) {
+					MesPrint("&Function or Tensor %s already declared as a Particle",name);
 					error = 1;
 				}
 				fun->spec = istensor;
@@ -3125,7 +3127,7 @@ void ResetVariables(int par)
   	#[ RemoveDollars :
 */
 
-void RemoveDollars(VOID)
+void RemoveDollars(void)
 {
 	DOLLARS d;
 	CBUF *C = cbuf + AM.dbufnum;

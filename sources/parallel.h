@@ -8,7 +8,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -101,9 +101,11 @@
       * (TU 7 Jun 2011)
       */
 }
+#    define OMPI_SKIP_MPICXX 1
 #    include <mpi.h>
 extern "C" {
 #  else
+#    define OMPI_SKIP_MPICXX 1
 #    include <mpi.h>
 #  endif
 
@@ -123,16 +125,15 @@ extern "C" {
 #  define PF_COMM MPI_COMM_WORLD
 #  define PF_BYTE MPI_BYTE
 #  define PF_INT  MPI_INT
-#  if defined(ILP32)
-#    define PF_WORD MPI_SHORT
-#    define PF_LONG MPI_LONG
-#  elif defined(LLP64)
-#    define PF_WORD MPI_INT
-#    define PF_LONG MPI_LONG_LONG_INT
-#  elif defined(LP64)
-#    define PF_WORD MPI_INT
-#    define PF_LONG MPI_LONG
-#  endif
+#if BITSINWORD == 32
+#  define PF_WORD MPI_INT32_T
+#  define PF_LONG MPI_INT64_T
+#elif BITSINWORD == 16
+#  define PF_WORD MPI_INT16_T
+#  define PF_LONG MPI_INT32_T
+#else
+#  error Can not detect if this is a 32-bit or 64-bit platform.
+#endif
 
 /*
   	#] macros & definitions : 
@@ -157,7 +158,6 @@ typedef struct {
 	int *from;
 	int numbufs;          /* number of cyclic buffers */
 	int active;           /* flag telling which buffer is active */
-	PADPOINTER(0,2,0,0);
 } PF_BUFFER;
 
 /*
@@ -181,7 +181,6 @@ typedef struct ParallelVars {
 	int         log;            /* flag for logging mode */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
-	PADPOSITION(2,0,8,2,0);
 } PARALLELVARS;
 
 extern PARALLELVARS PF;

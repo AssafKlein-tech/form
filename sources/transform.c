@@ -4,7 +4,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -118,7 +118,14 @@ int CoTransform(UBYTE *in)
 			if ( *in != ',' ) break;
 			c = *in; *in = 0;
 		    type = GetName(AC.varnames,s,&number,NOAUTO);
-			if ( type == CFUNCTION ) { number += MAXVARIABLES + FUNCTION; }
+			if ( type == CFUNCTION ) { 
+#ifdef WITHFLOAT
+				if ( (number+FUNCTION) == FLOATFUN ) {
+					MesPrint("&Illegal use of a transform statement and float_");
+					if ( error == 0 ) error = 1;
+				}
+#endif
+				number += MAXVARIABLES + FUNCTION; }
 			else if ( type != CSET ) {
 				MesPrint("& %s: A transform statement starts with sets of functions",s);
 				if ( error == 0 ) error = 1;
@@ -139,6 +146,17 @@ int CoTransform(UBYTE *in)
 				MesPrint("&A set in a transform statement should be a set of functions");
 				if ( error == 0 ) error = 1;
 			}
+#ifdef WITHFLOAT
+			WORD *r1, *r2;
+			r1 = SetElements + Sets[number].first;
+			r2 = SetElements + Sets[number].last;
+			while ( r1 < r2 ) {
+				if ( *r1++ == FLOATFUN ) {
+					MesPrint("&Illegal use of a transform statement and float_");
+					if ( error == 0 ) error = 1;
+				}
+			}
+#endif
 		  }
 		}
 		else if ( error == 0 ) error = 1;
@@ -163,7 +181,7 @@ int CoTransform(UBYTE *in)
 			return(error);
 		}
 		in = SkipAName(in);
-		if ( *in == '>' || *in == '<' ) in++;
+		if ( *in == '>' || *in == '<' || *in == '+' || *in == '-' ) in++;
 		ss = in;
 		c = *ss; *ss = 0;
 		if ( c != '(' ) {
@@ -548,7 +566,7 @@ illsize:					MesPrint("&Illegal value for base in encode/decode transformation")
 			type = ISLYNDON;
 			goto doreplace;
 		}
-		else if ( StrICmp(s,(UBYTE *)"islyndon+" ) == 0 ) {
+		else if ( StrICmp(s,(UBYTE *)"islyndon-" ) == 0 ) {
 			type = ISLYNDON;
 			goto doreplace;
 		}
@@ -556,7 +574,7 @@ illsize:					MesPrint("&Illegal value for base in encode/decode transformation")
 			type = ISLYNDONR;
 			goto doreplace;
 		}
-		else if ( StrICmp(s,(UBYTE *)"islyndon-" ) == 0 ) {
+		else if ( StrICmp(s,(UBYTE *)"islyndon+" ) == 0 ) {
 			type = ISLYNDONR;
 			goto doreplace;
 		}
@@ -568,7 +586,7 @@ illsize:					MesPrint("&Illegal value for base in encode/decode transformation")
 			type = TOLYNDON;
 			goto doreplace;
 		}
-		else if ( StrICmp(s,(UBYTE *)"tolyndon+" ) == 0 ) {
+		else if ( StrICmp(s,(UBYTE *)"tolyndon-" ) == 0 ) {
 			type = TOLYNDON;
 			goto doreplace;
 		}
@@ -576,7 +594,7 @@ illsize:					MesPrint("&Illegal value for base in encode/decode transformation")
 			type = TOLYNDONR;
 			goto doreplace;
 		}
-		else if ( StrICmp(s,(UBYTE *)"tolyndon-" ) == 0 ) {
+		else if ( StrICmp(s,(UBYTE *)"tolyndon+" ) == 0 ) {
 			type = TOLYNDONR;
 			goto doreplace;
 		}
@@ -729,7 +747,7 @@ illsize:					MesPrint("&Illegal value for base in encode/decode transformation")
 
 */
 
-WORD RunTransform(PHEAD WORD *term, WORD *params)
+int RunTransform(PHEAD WORD *term, WORD *params)
 {
 	WORD *t, *tstop, *w, *m, *out, *in, *tt, retval;
 	WORD *fun, *args, *info, *infoend, *onetransform, *funs, *endfun;
@@ -745,6 +763,9 @@ WORD RunTransform(PHEAD WORD *term, WORD *params)
 		if ( *t < FUNCTION ) {}
 		else if ( funs == endfun ) {  /* we do all functions */
 hit:;
+#ifdef WITHFLOAT
+			if ( *t == FLOATFUN ) goto next;
+#endif
 			while ( in < t ) *out++ = *in++;
 			tt = t + t[1]; fun = out;
 			while ( in < tt ) *out++ = *in++;
@@ -950,6 +971,9 @@ abortlyndon:;
 			funs++;
 		  }
 		}
+#ifdef WITHFLOAT
+next:
+#endif
 		t += t[1];
 	}
 	tt = term + *term; while ( in < tt ) *out++ = *in++;
@@ -979,7 +1003,7 @@ abo:
 		first or work with an array of pointers.
 */
 
-WORD RunEncode(PHEAD WORD *fun, WORD *args, WORD *info)
+int RunEncode(PHEAD WORD *fun, WORD *args, WORD *info)
 {
 	WORD base, *f, *funstop, *fun1, *t, size1, size2, size3, *arg;
 	int num, num1, num2, n, i, i1, i2;
@@ -1166,7 +1190,7 @@ CalledFrom:
  		#[ RunDecode :
 */
 
-WORD RunDecode(PHEAD WORD *fun, WORD *args, WORD *info)
+int RunDecode(PHEAD WORD *fun, WORD *args, WORD *info)
 {
 	WORD base, num, num1, num2, n, *f, *funstop, *fun1, size1, size2, size3, *t;
 	WORD i1, i2, i, sig;
@@ -1336,7 +1360,7 @@ CalledFrom:
 		The output is at first written after fun and in the end overwrites fun.
 */
 
-WORD RunReplace(PHEAD WORD *fun, WORD *args, WORD *info)
+int RunReplace(PHEAD WORD *fun, WORD *args, WORD *info)
 {
 	int n = 0, i, dirty = 0, totarg, nfix, nwild, ngeneral;
 	WORD *t, *tt, *u, *tstop, *info1, *infoend, *oldwork = AT.WorkPointer;
@@ -1814,7 +1838,7 @@ nextt:;
 		Note that we restrict ourselves to short integers and/or single symbols
 */
 
-WORD RunImplode(WORD *fun, WORD *args)
+int RunImplode(WORD *fun, WORD *args)
 {
 	GETIDENTITY
 	WORD *tt, *tstop, totarg, arg1, arg2, num1, num2, i1, n;
@@ -2015,7 +2039,7 @@ moveinto:
  		#[ RunExplode :
 */
 
-WORD RunExplode(PHEAD WORD *fun, WORD *args)
+int RunExplode(PHEAD WORD *fun, WORD *args)
 {
 	WORD arg1, arg2, num1, num2, *tt, *tstop, totarg, *tonew, *newfun;
 	WORD *ff, *f;
@@ -2129,7 +2153,7 @@ OverWork:;
  		#[ RunPermute :
 */
 
-WORD RunPermute(PHEAD WORD *fun, WORD *args, WORD *info)
+int RunPermute(PHEAD WORD *fun, WORD *args, WORD *info)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, n, num, i, *f, *f1, *f2, *infostop;
 	WORD *in, *iw, withdollar;
@@ -2356,7 +2380,7 @@ OverWork:;
  		#[ RunReverse :
 */
 
-WORD RunReverse(PHEAD WORD *fun, WORD *args)
+int RunReverse(PHEAD WORD *fun, WORD *args)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, n, num, i, *f, *f1, *f2, i1, i2;
 	if ( *args != ARGRANGE ) {
@@ -2443,7 +2467,7 @@ OverWork:;
  		#[ RunDedup :
 */
 
-WORD RunDedup(PHEAD WORD *fun, WORD *args)
+int RunDedup(PHEAD WORD *fun, WORD *args)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, n, i, j,k, *f, *f1, *f2, *fd, *fstart;
 	if ( *args != ARGRANGE ) {
@@ -2532,7 +2556,7 @@ WORD RunDedup(PHEAD WORD *fun, WORD *args)
  		#[ RunCycle :
 */
 
-WORD RunCycle(PHEAD WORD *fun, WORD *args, WORD *info)
+int RunCycle(PHEAD WORD *fun, WORD *args, WORD *info)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, n, num, i, j, *f, *f1, *f2, x, ncyc, cc;
 	if ( *args != ARGRANGE ) {
@@ -2684,7 +2708,7 @@ OverWork:;
  		#[ RunAddArg :
 */
 
-WORD RunAddArg(PHEAD WORD *fun, WORD *args)
+int RunAddArg(PHEAD WORD *fun, WORD *args)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, n, num, *f, *f1, *f2;
 	WORD scribble[10+ARGHEAD];
@@ -2703,6 +2727,8 @@ WORD RunAddArg(PHEAD WORD *fun, WORD *args)
 	}
 	tt = fun+FUNHEAD; tstop = fun+fun[1]; totarg = 0;
 	while ( tt < tstop ) { totarg++; NEXTARG(tt); }
+	/* ignore functions with no arguments */
+	if ( totarg == 0 ) return(0);
 	if ( FindRange(BHEAD args,&arg1,&arg2,totarg) ) return(-1);
 /*
 	We need to:
@@ -2737,7 +2763,7 @@ WORD RunAddArg(PHEAD WORD *fun, WORD *args)
 		}
 		n++;
 	}
-	if ( EndSort(BHEAD tstop+ARGHEAD,1) ) return(-1);
+	if ( EndSort(BHEAD tstop+ARGHEAD,1) < 0 ) return(-1);
 	num = 0;
 	f2 = tstop+ARGHEAD;
 	while ( *f2 ) { f2 += *f2; num++; }
@@ -2771,7 +2797,7 @@ WORD RunAddArg(PHEAD WORD *fun, WORD *args)
  		#[ RunMulArg :
 */
 
-WORD RunMulArg(PHEAD WORD *fun, WORD *args)
+int RunMulArg(PHEAD WORD *fun, WORD *args)
 {
 	WORD *t, totarg, *tstop, arg1, arg2, n, *f, nb, *m, i, *w;
 	WORD *scratch, argbuf[20], argsize, *where, *newterm;
@@ -2791,6 +2817,8 @@ WORD RunMulArg(PHEAD WORD *fun, WORD *args)
 	}
 	t = fun+FUNHEAD; tstop = fun+fun[1]; totarg = 0;
 	while ( t < tstop ) { totarg++; NEXTARG(t); }
+	/* ignore functions with no arguments */
+	if ( totarg == 0 ) return(0);
 	if ( FindRange(BHEAD args,&arg1,&arg2,totarg) ) return(-1);
 	if ( arg2 < arg1 ) { n = arg1; arg1 = arg2; arg2 = n; }
 	if ( arg1 > totarg ) return(0);
@@ -2910,7 +2938,7 @@ WORD RunMulArg(PHEAD WORD *fun, WORD *args)
 		the numbers of the arguments in the range.
 */
 
-WORD RunIsLyndon(PHEAD WORD *fun, WORD *args, int par)
+int RunIsLyndon(PHEAD WORD *fun, WORD *args, int par)
 {
 	WORD *tt, totarg, *tstop, arg1, arg2, arg, num, *f, n, i;
 /*	WORD *f1; */
@@ -3100,7 +3128,7 @@ OverWork:;
  		#[ RunDropArg :
 */
 
-WORD RunDropArg(PHEAD WORD *fun, WORD *args)
+int RunDropArg(PHEAD WORD *fun, WORD *args)
 {
 	WORD *t, *tstop, *f, totarg, arg1, arg2, n;
 
@@ -3126,7 +3154,7 @@ WORD RunDropArg(PHEAD WORD *fun, WORD *args)
  		#[ RunSelectArg :
 */
 
-WORD RunSelectArg(PHEAD WORD *fun, WORD *args)
+int RunSelectArg(PHEAD WORD *fun, WORD *args)
 {
 	WORD *t, *tstop, *f, *tt, totarg, arg1, arg2, n;
 
@@ -3154,9 +3182,10 @@ WORD RunSelectArg(PHEAD WORD *fun, WORD *args)
  		#[ RunZtoHArg :
 */
 
-WORD RunZtoHArg(PHEAD WORD *fun, WORD *args)
+int RunZtoHArg(PHEAD WORD *fun, WORD *args)
 {
-	WORD *tt, totarg, *tstop, arg1, arg2, n, i, *f, *f1, sign = 0;
+	WORD *tt, totarg, *tstop, arg1, arg2, n, i, *f, *f1;
+	int sign = 0;
 	WORD *t, *t1, *t2, *t3;
 	if ( *args != ARGRANGE ) {
 		MLOCK(ErrorMessageLock);
@@ -3209,9 +3238,10 @@ WORD RunZtoHArg(PHEAD WORD *fun, WORD *args)
  		#[ RunHtoZArg :
 */
 
-WORD RunHtoZArg(PHEAD WORD *fun, WORD *args)
+int RunHtoZArg(PHEAD WORD *fun, WORD *args)
 {
-	WORD *tt, totarg, *tstop, arg1, arg2, n, i, *f, *f1, *f2, sign = 0;
+	WORD *tt, totarg, *tstop, arg1, arg2, n, i, *f, *f1, *f2;
+	int sign = 0;
 	WORD *t, *t1, *t2;
 	if ( *args != ARGRANGE ) {
 		MLOCK(ErrorMessageLock);
@@ -3552,20 +3582,25 @@ int FindRange(PHEAD WORD *args, WORD *arg1, WORD *arg2, WORD totarg)
 				n[i] -= MAXPOSITIVE4; /* Now we have the number of the dollar variable   */
 			}
 			n[i] = DolToNumber(BHEAD n[i]);
-			if ( AN.ErrorInDollar ) goto Error;
+			if ( AN.ErrorInDollar ) {
+				MLOCK(ErrorMessageLock);
+				MesPrint("Illegal $ value in range while executing transform statement.");
+				MUNLOCK(ErrorMessageLock);
+				return(-1);
+			}
 			if ( fromlast ) n[i] = totarg-n[i];
 		}
 		else if ( n[i] >= MAXPOSITIVE4 ) { n[i] = totarg-(n[i]-MAXPOSITIVE4); }
-		if ( n[i] <= 0 ) goto Error;
+		if ( n[i] <= 0 ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("Illegal non-positive value in range (%d) while executing transform statement.", i+1);
+			MUNLOCK(ErrorMessageLock);
+			return(-1);
+		}
 	}
 	*arg1 = n[0];
 	*arg2 = n[1];
 	return(0);
-Error:
-	MLOCK(ErrorMessageLock);
-	MesPrint("Illegal $ value in range while executing transform statement.");
-	MUNLOCK(ErrorMessageLock);
-	return(-1);
 }
 
 /*

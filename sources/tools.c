@@ -10,7 +10,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -736,6 +736,8 @@ STREAM *CloseStream(STREAM *stream)
 		if ( stream->afterwards == PRERAISEAFTER ) x = 1;
 		else x = -1;
 		DollarRaiseLow(stream->pname,x);
+		if ( stream->buffer ) M_free(stream->buffer,"stream->buffer");
+		stream->buffer = 0;
 	}
 	else if ( stream->type == PRECALCSTREAM || stream->type == DOLLARSTREAM ) {
 		if ( stream->buffer ) M_free(stream->buffer,"stream->buffer");
@@ -820,7 +822,7 @@ LONG GetStreamPosition(STREAM *stream)
  		#[ PositionStream :
 */
 
-VOID PositionStream(STREAM *stream, LONG position)
+void PositionStream(STREAM *stream, LONG position)
 {
 	POSITION scrpos;
 	if ( position >= stream->bufferposition
@@ -953,7 +955,7 @@ irrend:					MesPrint("@Irregular end of reverse include file.");
  		#[ StartFiles :
 */
 
-VOID StartFiles(VOID)
+void StartFiles(void)
 {
 	int i = CreateHandle();
 	filelist[i] = Ustdout;
@@ -1075,7 +1077,7 @@ int CreateLogFile(char *name)
  		#[ CloseFile :
 */
 
-VOID CloseFile(int handle)
+void CloseFile(int handle)
 {
 	if ( handle >= 0 ) {
 		FILES *f;	/* we need this variable to be thread-safe */
@@ -1159,7 +1161,7 @@ int CopyFile(char *source, char *dest)
 		Conclusion: MALLOCDEBUG will have to be a bit unsafe
 */
 
-int CreateHandle(VOID)
+int CreateHandle(void)
 {
 	int i, j;
 #ifndef MALLOCDEBUG
@@ -1173,9 +1175,9 @@ int CreateHandle(VOID)
         i = 0;
 	}
 	else if ( numinfilelist >= filelistsize ) {
-        VOID **fl = (VOID **)filelist;
+        void **fl = (void **)filelist;
         i = filelistsize;
-        if ( DoubleList((VOID ***)(&fl),&filelistsize,(int)sizeof(FILES *),
+        if ( DoubleList((void ***)(&fl),&filelistsize,(int)sizeof(FILES *),
 			"list of open files") != 0 ) Terminate(-1);
 		filelist = (FILES **)fl;
 		for ( j = i; j < filelistsize; j++ ) filelist[j] = 0;
@@ -1368,7 +1370,7 @@ WRITEFILE WriteFile = &PF_WriteFileToFile;
  		#[ SeekFile :
 */
 
-VOID SeekFile(int handle, POSITION *offset, int origin)
+void SeekFile(int handle, POSITION *offset, int origin)
 {
 	FILES *f;
 	RWLOCKR(AM.handlelock);
@@ -1403,7 +1405,7 @@ LONG TellFile(int handle)
 	return(BASEPOSITION(pos));
 }
 
-VOID TELLFILE(int handle, POSITION *position)
+void TELLFILE(int handle, POSITION *position)
 {
 	FILES *f;
 	RWLOCKR(AM.handlelock);
@@ -1465,7 +1467,7 @@ int SetPosFile(int handle, fpos_t *pospointer)
 		is very slow.
 */
 
-VOID SynchFile(int handle)
+void SynchFile(int handle)
 {
 	FILES *f;
 	if ( handle >= 0 ) {
@@ -1487,7 +1489,7 @@ VOID SynchFile(int handle)
 		is very slow.
 */
 
-VOID TruncateFile(int handle)
+void TruncateFile(int handle)
 {
 	FILES *f;
 	if ( handle >= 0 ) {
@@ -1607,7 +1609,7 @@ int CloseChannel(char *name)
 		currently ignored.
 */
 
-void UpdateMaxSize(VOID)
+void UpdateMaxSize(void)
 {
 	POSITION position, sumsize;
 	int i;
@@ -1780,7 +1782,7 @@ int StrLen(UBYTE *s)
  		#[ NumToStr :
 */
 
-VOID NumToStr(UBYTE *s, LONG x)
+void NumToStr(UBYTE *s, LONG x)
 {
 	UBYTE *t, str[24];
 	ULONG xx;
@@ -1804,7 +1806,7 @@ VOID NumToStr(UBYTE *s, LONG x)
 		The type of output is given by type, the string by str and the
 		number of characters in it by num
 */
-VOID WriteString(int type, UBYTE *str, int num)
+void WriteString(int type, UBYTE *str, int num)
 {
 	int error = 0;
 
@@ -1838,7 +1840,7 @@ VOID WriteString(int type, UBYTE *str, int num)
 		number of characters in it by num
 */
 
-VOID WriteUnfinString(int type, UBYTE *str, int num)
+void WriteUnfinString(int type, UBYTE *str, int num)
 {
 	int error = 0;
 
@@ -1916,6 +1918,17 @@ UBYTE *strDup1(UBYTE *instring, char *ifwrong)
  		#[ EndOfToken :
 */
 
+/**
+ * Skips over alphanumeric characters to find the end of the token.
+ *
+ * @note This function does not handle formal names (e.g., `[x+a]`).
+ * To handle them, use `SkipAName` instead.
+ *
+ * @param[in]  s  Pointer to a null-terminated input buffer.
+ * @return        Pointer to the first non-alphanumeric character (i.e., the
+ *                character immediately after the token), or the null
+ *                terminator if the token reaches the end of the string.
+ */
 UBYTE *EndOfToken(UBYTE *s)
 {
 	UBYTE c;
@@ -1928,6 +1941,17 @@ UBYTE *EndOfToken(UBYTE *s)
  		#[ ToToken :
 */
 
+/**
+ * Skips over non-alphanumeric characters to find the start of a token.
+ *
+ * @note This function does not handle formal names (e.g., `[x+a]`).
+ * To handle them, consider simply skipping whitespace, e.g., by using
+ * `SkipSpaces`.
+ *
+ * @param[in]  s  Pointer to a null-terminated input buffer.
+ * @return        Pointer to the first alphanumeric character (i.e., the start
+ *                of the token), or the null terminator if none is found.
+ */
 UBYTE *ToToken(UBYTE *s)
 {
 	UBYTE c;
@@ -1938,11 +1962,17 @@ UBYTE *ToToken(UBYTE *s)
 /*
  		#] ToToken : 
  		#[ SkipField :
-
-	Skips from s to the end of a declaration field.
-	par is the number of parentheses that still has to be closed.
 */
- 
+
+/**
+ * Skips from `s` to the end of a declaration field
+ * (e.g., `x`, `1+2*[x+a]`, or `f({x,[x+a]},1)`).
+ *
+ * @param[in]  s      Pointer to a null-terminated input buffer.
+ * @param[in]  level  Number of parentheses that still have to be closed.
+ * @return            Pointer to the character after the field, which is either
+ *                    a comma at level 0 or the null terminator.
+ */
 UBYTE *SkipField(UBYTE *s, int level)
 {
 	while ( *s ) {
@@ -2079,28 +2109,19 @@ char *LongLongCopy(off_t *y, char *to)
 		Routine produces a string with the date and time of the run
 */
 
-#ifdef ANSI
-#else
-#ifdef mBSD
+#if defined(ANSI) || defined(mBSD)
 #else
 static char notime[] = "";
 #endif
-#endif
 
-UBYTE *MakeDate(VOID)
+UBYTE *MakeDate(void)
 {
-#ifdef ANSI
-	time_t tp;
-	time(&tp);
-	return((UBYTE *)ctime(&tp));
-#else
-#ifdef mBSD
+#if defined(ANSI) || defined(mBSD)
 	time_t tp;
 	time(&tp);
 	return((UBYTE *)ctime(&tp));
 #else
 	return((UBYTE *)notime);
-#endif
 #endif
 }
 
@@ -2198,7 +2219,7 @@ one_byte set_sub(set_of_char set, set_of_char set1, set_of_char set2)
  		#[ iniTools :
 */
 
-VOID iniTools(VOID)
+void iniTools(void)
 {
 #ifdef MALLOCPROTECT
 	if ( mprotectInit() ) exit(0);
@@ -2208,106 +2229,24 @@ VOID iniTools(VOID)
 
 /*
  		#] iniTools : 
- 		#[ Malloc :
-
-		Malloc routine with built in error checking.
-		This saves lots of messages.
-*/
-#ifdef MALLOCDEBUG
-char *dummymessage = "Malloc";
-INILOCK(MallocLock)
-#endif
- 
-VOID *Malloc(LONG size)
-{
-	VOID *mem;
-#ifdef MALLOCDEBUG
-	char *t, *u;
-	int i;
-	LOCK(MallocLock);
-/*	MLOCK(ErrorMessageLock); */
-	if ( size == 0 ) {
-		MesPrint("Asking for 0 bytes in Malloc");
-	}
-#endif
-	if ( ( size & 7 ) != 0 ) { size = size - ( size&7 ) + 8; }
-#ifdef MALLOCDEBUG
-	size += 2*BANNER;
-#endif
-	mem = (VOID *)M_alloc(size);
-	if ( mem == 0 ) {
-#ifndef MALLOCDEBUG
-		MLOCK(ErrorMessageLock);
-#endif
-		Error0("No memory!");
-#ifndef MALLOCDEBUG
-		MUNLOCK(ErrorMessageLock);
-#else
-/*		MUNLOCK(ErrorMessageLock); */
-#endif
-#ifdef MALLOCDEBUG
-		UNLOCK(MallocLock);
-#endif
-		Terminate(-1);
-	}
-#ifdef MALLOCDEBUG
-	mallocsizes[nummalloclist] = size;
-	mallocstrings[nummalloclist] = dummymessage;
-	malloclist[nummalloclist++] = mem;
-	if ( filelist ) MesPrint("Mem0 at 0x%x, %l bytes",mem,size);
-	{
-		int i = nummalloclist-1;
-		while ( --i >= 0 ) {
-			if ( (char *)mem < (((char *)malloclist[i]) + mallocsizes[i])
-			&& (char *)(malloclist[i]) < ((char *)mem + size) ) {
-				if ( filelist ) MesPrint("This memory overlaps with the block at 0x%x"
-					,malloclist[i]);
-			}
-		}
-	}
-	t = (char *)mem;
-	u = t + size;
-	for ( i = 0; i < (int)BANNER; i++ ) { *t++ = FILLVALUE; *--u = FILLVALUE; }
-	mem = (void *)t;
-	{
-		int j = nummalloclist-1, i;
-		while ( --j >= 0 ) {
-			t = (char *)(malloclist[j]);
-			u = t + mallocsizes[j];
-			for ( i = 0; i < (int)BANNER; i++ ) {
-				u--;
-				if ( *t != FILLVALUE || *u != FILLVALUE ) {
-					MesPrint("Writing outside memory for %s",malloclist[i]);
-/*					MUNLOCK(ErrorMessageLock); */
-					UNLOCK(MallocLock);
-					Terminate(-1);
-				}
-				t--;
-			}
-		}
-	}
-/*	MUNLOCK(ErrorMessageLock); */
-	UNLOCK(MallocLock);
-#endif
-	return(mem);
-}
-
-/*
- 		#] Malloc : 
  		#[ Malloc1 :
 
-		Malloc with more detailed error message.
+		Malloc routine with built in error checking,
+		and a more detailed error message.
 		Gives the user some idea of what is happening.
 */
 
-VOID *Malloc1(LONG size, const char *messageifwrong)
+#ifdef MALLOCDEBUG
+INILOCK(MallocLock)
+#endif
+
+void *Malloc1(LONG size, const char *messageifwrong)
 {
-	VOID *mem;
+	void *mem;
 #ifdef MALLOCDEBUG
 	char *t, *u;
 	int i;
 	LOCK(MallocLock);
-/*	MLOCK(ErrorMessageLock); */
 	if ( size == 0 ) {
 		MesPrint("%wAsking for 0 bytes in Malloc1");
 	}
@@ -2319,18 +2258,16 @@ VOID *Malloc1(LONG size, const char *messageifwrong)
 #ifdef MALLOCDEBUG
 	size += 2*BANNER;
 #endif
-	mem = (VOID *)M_alloc(size);
+	mem = (void *)M_alloc(size);
 	if ( mem == 0 ) {
 #ifndef MALLOCDEBUG
 		MLOCK(ErrorMessageLock);
 #endif
-		Error1("No memory while allocating ",(UBYTE *)messageifwrong);
+		MesPrint("Attempted to allocate %l bytes.", size);
+		MesPrint("@No memory while allocating %s", (UBYTE *)messageifwrong);
 #ifndef MALLOCDEBUG
 		MUNLOCK(ErrorMessageLock);
 #else
-/*		MUNLOCK(ErrorMessageLock); */
-#endif
-#ifdef MALLOCDEBUG
 		UNLOCK(MallocLock);
 #endif
 		Terminate(-1);
@@ -2379,7 +2316,7 @@ VOID *Malloc1(LONG size, const char *messageifwrong)
  		#[ M_free :
 */
 
-void M_free(VOID *x, const char *where)
+void M_free(void *x, const char *where)
 {
 #ifdef MALLOCDEBUG
 	char *t = (char *)x;
@@ -2512,8 +2449,8 @@ void M_print()
 
 #else
 
-void M_check1(VOID) {}
-void M_print(VOID) {}
+void M_check1(void) {}
+void M_print(void) {}
 
 #endif
 
@@ -2546,7 +2483,7 @@ void M_print(VOID) {}
 #define TERMMEMSTARTNUM 16
 #define TERMEXTRAWORDS 10
 
-VOID TermMallocAddMemory(PHEAD0)
+void TermMallocAddMemory(PHEAD0)
 {
 	WORD *newbufs;
 	int i, extra;
@@ -2592,7 +2529,7 @@ WORD *TermMalloc2(PHEAD char *text)
 	return(AT.TermMemHeap[--AT.TermMemTop]);
 }
  
-VOID TermFree2(PHEAD WORD *TermMem, char *text)
+void TermFree2(PHEAD WORD *TermMem, char *text)
 {
 #ifdef TERMMALLOCDEBUG
 
@@ -2650,7 +2587,7 @@ VOID TermFree2(PHEAD WORD *TermMem, char *text)
 UWORD **DebugHeap3, **DebugHeap4;
 #endif
 
-VOID NumberMallocAddMemory(PHEAD0)
+void NumberMallocAddMemory(PHEAD0)
 {
 	UWORD *newbufs;
 	WORD extra;
@@ -2694,7 +2631,7 @@ UWORD *NumberMalloc2(PHEAD char *text)
 	return(AT.NumberMemHeap[--AT.NumberMemTop]);
 }
  
-VOID NumberFree2(PHEAD UWORD *NumberMem, char *text)
+void NumberFree2(PHEAD UWORD *NumberMem, char *text)
 {
 #ifdef TERMMALLOCDEBUG
 	int i;
@@ -2724,7 +2661,7 @@ VOID NumberFree2(PHEAD UWORD *NumberMem, char *text)
 	Similar to NumberMalloc
  */
 
-VOID CacheNumberMallocAddMemory(PHEAD0)
+void CacheNumberMallocAddMemory(PHEAD0)
 {
 	UWORD *newbufs;
 	WORD extra;
@@ -2755,7 +2692,7 @@ UWORD *CacheNumberMalloc2(PHEAD char *text)
 	return(AT.CacheNumberMemHeap[--AT.CacheNumberMemTop]);
 }
  
-VOID CacheNumberFree2(PHEAD UWORD *NumberMem, char *text)
+void CacheNumberFree2(PHEAD UWORD *NumberMem, char *text)
 {
 	DUMMYUSE(text);
 	AT.CacheNumberMemHeap[AT.CacheNumberMemTop++] = NumberMem;
@@ -2776,7 +2713,7 @@ VOID CacheNumberFree2(PHEAD UWORD *NumberMem, char *text)
 	If the list has not been initialized yet we start with 12 elements.
 */
 
-VOID *FromList(LIST *L)
+void *FromList(LIST *L)
 {
 	void *newlist;
 	int i, *old, *newL;
@@ -2802,7 +2739,7 @@ VOID *FromList(LIST *L)
 		Same as FromList, but we zero excess variables.
 */
 
-VOID *From0List(LIST *L)
+void *From0List(LIST *L)
 {
 	void *newlist;
 	int i, *old, *newL;
@@ -2831,7 +2768,7 @@ VOID *From0List(LIST *L)
 	We allow at most MAXVARIABLES elements!
 */
 
-VOID *FromVarList(LIST *L)
+void *FromVarList(LIST *L)
 {
 	void *newlist;
 	int i, *old, *newL;
@@ -2873,11 +2810,11 @@ VOID *FromVarList(LIST *L)
  		#[ DoubleList :
 */
 
-int DoubleList(VOID ***lijst, int *oldsize, int objectsize, char *nameoftype)
+int DoubleList(void ***lijst, int *oldsize, int objectsize, char *nameoftype)
 {
-	VOID **newlist;
+	void **newlist;
 	LONG i, newsize, fullsize;
-	VOID **to, **from;
+	void **to, **from;
 	static LONG maxlistsize = (LONG)(MAXPOSITIVE);
 	if ( *lijst == 0 ) {
 		if ( *oldsize > 0 ) newsize = *oldsize;
@@ -2891,10 +2828,10 @@ int DoubleList(VOID ***lijst, int *oldsize, int objectsize, char *nameoftype)
 		}
 		newsize = maxlistsize;
 	}
-	fullsize = ( newsize * objectsize + sizeof(VOID *)-1 ) & (-sizeof(VOID *));
-	newlist = (VOID **)Malloc1(fullsize,nameoftype);
+	fullsize = ( newsize * objectsize + sizeof(void *)-1 ) & (-sizeof(void *));
+	newlist = (void **)Malloc1(fullsize,nameoftype);
 	if ( *lijst ) {	/* Now some punning. DANGEROUS CODE in principle */
-		to = newlist; from = *lijst; i = (*oldsize * objectsize)/sizeof(VOID *);
+		to = newlist; from = *lijst; i = (*oldsize * objectsize)/sizeof(void *);
 /*
 #ifdef MALLOCDEBUG
 if ( filelist ) MesPrint("    oldsize: %l, objectsize: %d, fullsize: %l"
@@ -2925,11 +2862,11 @@ if ( filelist ) MesPrint("    oldsize: %l, objectsize: %d, fullsize: %l"
  		#[ DoubleLList :
 */
 
-int DoubleLList(VOID ***lijst, LONG *oldsize, int objectsize, char *nameoftype)
+int DoubleLList(void ***lijst, LONG *oldsize, int objectsize, char *nameoftype)
 {
-	VOID **newlist;
+	void **newlist;
 	LONG i, newsize, fullsize;
-	VOID **to, **from;
+	void **to, **from;
 	static LONG maxlistsize = (LONG)(MAXLONG);
 	if ( *lijst == 0 ) {
 		if ( *oldsize > 0 ) newsize = *oldsize;
@@ -2943,10 +2880,10 @@ int DoubleLList(VOID ***lijst, LONG *oldsize, int objectsize, char *nameoftype)
 		}
 		newsize = maxlistsize;
 	}
-	fullsize = ( newsize * objectsize + sizeof(VOID *)-1 ) & (-sizeof(VOID *));
-	newlist = (VOID **)Malloc1(fullsize,nameoftype);
+	fullsize = ( newsize * objectsize + sizeof(void *)-1 ) & (-sizeof(void *));
+	newlist = (void **)Malloc1(fullsize,nameoftype);
 	if ( *lijst ) {	/* Now some punning. DANGEROUS CODE in principle */
-		to = newlist; from = *lijst; i = (*oldsize * objectsize)/sizeof(VOID *);
+		to = newlist; from = *lijst; i = (*oldsize * objectsize)/sizeof(void *);
 /*
 #ifdef MALLOCDEBUG
 if ( filelist ) MesPrint("    oldsize: %l, objectsize: %d, fullsize: %l"
@@ -2969,7 +2906,7 @@ if ( filelist ) MesPrint("    oldsize: %l, objectsize: %d, fullsize: %l"
 #define DODOUBLE(x) { x *s, *t, *u; if ( *start ) { \
 	oldsize = *(x **)stop - *(x **)start; newsize = 2*oldsize; \
 	t = u = (x *)Malloc1(newsize*sizeof(x),text); s = *(x **)start; \
-	for ( i = 0; i < oldsize; i++ ) *t++ = *s++; M_free(*start,"double"); } \
+	for ( i = 0; i < oldsize; i++ ) {*t++ = *s++;} M_free(*start,"double"); } \
 	else { newsize = 100; u = (x *)Malloc1(newsize*sizeof(x),text); } \
 	*start = (void *)u; *stop = (void *)(u+newsize); }
 
@@ -2995,7 +2932,7 @@ void DoubleBuffer(void **start, void **stop, int size, char *text)
 #define DOEXPAND(x) { x *newbuffer, *t, *m;                             \
 	t = newbuffer = (x *)Malloc1((newsize+2)*type,"ExpandBuffer");      \
 	if ( *buffer ) { m = (x *)*buffer; i = *oldsize;                    \
-		while ( --i >= 0 ) *t++ = *m++; M_free(*buffer,"ExpandBuffer"); \
+		while ( --i >= 0 ) {*t++ = *m++;} M_free(*buffer,"ExpandBuffer"); \
 	} *buffer = newbuffer; *oldsize = newsize; }
 
 void ExpandBuffer(void **buffer, LONG *oldsize, int type)
@@ -3830,7 +3767,7 @@ LONG Timer(int par)
 		Routine for debugging purposes
 */
 
-int Crash(VOID)
+int Crash(void)
 {
 	int retval;
 #ifdef DEBUGGING

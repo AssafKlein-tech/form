@@ -4,7 +4,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -32,6 +32,10 @@
   	#[ Includes :
 */
 #include "form3.h"
+#include "comtool.h"
+#ifdef WITHFLOAT
+#include "math.h"
+#endif
 
 static UBYTE pushbackchar = 0;
 static int oldmode = 0;
@@ -39,6 +43,8 @@ static int stopdelay = 0;
 static STREAM *oldstream = 0;
 static UBYTE underscore[2] = {'_',0};
 static PREVAR *ThePreVar = 0;
+
+static int ExitDoLoops(int, const char *);
 
 static KEYWORD precommands[] = {
 	 {"add"          , DoPreAdd       , 0, 0}
@@ -129,7 +135,7 @@ static KEYWORD precommands[] = {
 		If there are no more streams we let this be known.
 */
 
-UBYTE GetInput(VOID)
+UBYTE GetInput(void)
 {
 	UBYTE c;
 	while ( AC.CurrentStream ) {
@@ -158,7 +164,7 @@ UBYTE GetInput(VOID)
  		#[ ClearPushback :
 */
 
-VOID ClearPushback(VOID)
+void ClearPushback(void)
 {
 	pushbackchar = 0;
 }
@@ -328,20 +334,20 @@ higherlevel:
 					if ( StrICmp(namebuf,(UBYTE *)"random_") == 0 ) {
 						UBYTE *ranvalue;
 						ranvalue = PreRandom(s);
-						PutPreVar(namebuf,ranvalue,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,ranvalue,0,1);
 						M_free(ranvalue,"PreRandom");
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"tolower_") == 0 ) {
 						UBYTE *ss = s;
 						while ( *ss ) { *ss = (UBYTE)(tolower(*ss)); ss++; }
-						PutPreVar(namebuf,s,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s,0,1);
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"toupper_") == 0 ) {
 						UBYTE *ss = s;
 						while ( *ss ) { *ss = (UBYTE)(toupper(*ss)); ss++; }
-						PutPreVar(namebuf,s,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s,0,1);
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"takeleft_") == 0 ) {
@@ -355,7 +361,7 @@ higherlevel:
 							if ( x > nsize ) x = nsize;
 						}
 						else x = 0;
-						PutPreVar(namebuf,s+x,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s+x,0,1);
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"takeright_") == 0 ) {
@@ -371,7 +377,7 @@ higherlevel:
 						else x = 0;
 						x = nsize - x;
 						s[x] = 0;
-						PutPreVar(namebuf,s,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s,0,1);
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"keepleft_") == 0 ) {
@@ -386,7 +392,7 @@ higherlevel:
 						}
 						else x = nsize;
 						s[x] = 0;
-						PutPreVar(namebuf,s,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s,0,1);
 						goto dostream;
 					}
 					else if ( StrICmp(namebuf,(UBYTE *)"keepright_") == 0 ) {
@@ -401,7 +407,7 @@ higherlevel:
 						}
 						else x = nsize;
 						x = nsize-x;
-						PutPreVar(namebuf,s+x,(UBYTE *)"?a",1);
+						PutPreVar(namebuf,s+x,0,1);
 						goto dostream;
 					}
 					while ( *s ) {
@@ -486,7 +492,7 @@ endofloop:;
  		#[ CharOut :
 */
 
-VOID CharOut(UBYTE c)
+void CharOut(UBYTE c)
 {
 	if ( c == LINEFEED ) {
 		AM.OutBuffer[AP.InOutBuf++] = c;
@@ -507,7 +513,7 @@ VOID CharOut(UBYTE c)
  		#[ UnsetAllowDelay :
 */
 
-VOID UnsetAllowDelay(VOID)
+void UnsetAllowDelay(void)
 {
 	if ( ThePreVar != 0 ) {
 		if ( ThePreVar->nargs > 0 ) AP.AllowDelay = 0;
@@ -565,7 +571,7 @@ UBYTE *GetPreVar(UBYTE *name, int flag)
 	else if ( ( StrICmp(name,(UBYTE *)"timer_") == 0 )
 	       || ( StrICmp(name,(UBYTE *)"stopwatch_") == 0 ) ) {
 		static char timestring[40];
-    	snprintf(timestring,40,"%ld",(GetRunningTime() - AP.StopWatchZero));
+    	snprintf(timestring,40,"%ld",(long int)(GetRunningTime() - AP.StopWatchZero));
 		return((UBYTE *)timestring);
 	}
 	else if ( StrICmp(name, (UBYTE *)"numactiveexprs_") == 0 ) {
@@ -817,7 +823,7 @@ int PutPreVar(UBYTE *name, UBYTE *value, UBYTE *args, int mode)
  		#[ PopPreVars :
 */
 
-VOID PopPreVars(int tonumber)
+void PopPreVars(int tonumber)
 {
 	PREVAR *p = &(PreVar[NumPre]);
 	while ( NumPre > tonumber ) {
@@ -832,7 +838,7 @@ VOID PopPreVars(int tonumber)
  		#[ IniModule :
 */
 
-VOID IniModule(int type)
+void IniModule(int type)
 {
 	GETIDENTITY
 	WORD **w, i;
@@ -934,7 +940,7 @@ VOID IniModule(int type)
  		#[ IniSpecialModule :
 */
 
-VOID IniSpecialModule(int type)
+void IniSpecialModule(int type)
 {
 	DUMMYUSE(type);
 }
@@ -944,7 +950,7 @@ VOID IniSpecialModule(int type)
  		#[ PreProcessor :
 */
 
-VOID PreProcessor(VOID)
+void PreProcessor(void)
 {
 	int moduletype = FIRSTMODULE;
 	int specialtype = 0;
@@ -1163,7 +1169,7 @@ endmodule:			if ( error2 == 0 && AM.qError == 0 ) {
  		#[ PreProInstruction :
 */
 
-int PreProInstruction(VOID)
+int PreProInstruction(void)
 {
 	UBYTE *s, *t;
 	KEYWORD *key;
@@ -1424,7 +1430,7 @@ dodollar:		s = sstart;
 			position = s - AP.preStart;
 			if ( AP.preFill ) fillpos = AP.preFill - AP.preStart;
 			ppp = &(AP.preStart); /* to avoid a compiler warning */
-			if ( DoubleLList((VOID ***)ppp,&AP.pSize,sizeof(UBYTE),
+			if ( DoubleLList((void ***)ppp,&AP.pSize,sizeof(UBYTE),
 			"instruction buffer") ) { *s = 0; oldmode = mode; return(-1); }
 			AP.preStop = AP.preStart + AP.pSize-3;
 			s = AP.preStart + position;
@@ -1529,7 +1535,7 @@ doall:;			if ( AP.eat < 0 ) {
 				LONG position = s - AC.iBuffer;
 				LONG position2 = AC.iPointer - AC.iBuffer;
 				UBYTE **ppp = &(AC.iBuffer); /* to avoid a compiler warning */
-				if ( DoubleLList((VOID ***)ppp,&AC.iBufferSize
+				if ( DoubleLList((void ***)ppp,&AC.iBufferSize
 				,sizeof(UBYTE),"statement buffer") ) {
 					*s = 0; retval = -1; AP.iBufError = 1;
 				}
@@ -1701,7 +1707,7 @@ int ExpandTripleDots(int par)
 				if ( par == 0 ) {
 					LONG position2 = AC.iPointer - AC.iBuffer;
 					ppp = &(AC.iBuffer); /* to avoid a compiler warning */
-					if ( DoubleLList((VOID ***)ppp,&AC.iBufferSize
+					if ( DoubleLList((void ***)ppp,&AC.iBufferSize
 						,sizeof(UBYTE),"statement buffer") ) {
 							Terminate(-1);
 					}
@@ -1713,7 +1719,7 @@ int ExpandTripleDots(int par)
 					LONG fillpos = 0;
 					if ( AP.preFill ) fillpos = AP.preFill - AP.preStart;
 					ppp = &(AP.preStart); /* to avoid a compiler warning */
-					if ( DoubleLList((VOID ***)ppp,&AP.pSize,sizeof(UBYTE),
+					if ( DoubleLList((void ***)ppp,&AP.pSize,sizeof(UBYTE),
 						"instruction buffer") ) {
 							Terminate(-1);
 					}
@@ -1921,7 +1927,7 @@ theend:			M_free(nums,"Expand ...");
 					LONG position2 = AC.iPointer - AC.iBuffer;
 					UBYTE **ppp;
 					ppp = &(AC.iBuffer); /* to avoid a compiler warning */
-					if ( DoubleLList((VOID ***)ppp,&AC.iBufferSize
+					if ( DoubleLList((void ***)ppp,&AC.iBufferSize
 						,sizeof(UBYTE),"statement buffer") ) {
 							Terminate(-1);
 					}
@@ -2566,6 +2572,7 @@ int DoCall(UBYTE *s)
 	for ( i = NumProcedures-1; i >= 0; i-- ) {
 		if ( StrCmp(Procedures[i].name,name) == 0 ) break;
 	}
+	// AP.ProcList.num = NumProcedures is incremented inside FromList
 	p = (PROCEDURE *)FromList(&AP.ProcList);
 	if ( i < 0 ) {	/* Try to find a file */
 		namesize = 0;
@@ -2581,6 +2588,7 @@ int DoCall(UBYTE *s)
 		while ( *v ) *t++ = *v++;
 		*t = 0;
 		p->loadmode = 0;	/* buffer should be freed at end */
+		p->mustfree = 1;
 		p->p.buffer = LoadInputFile(p->name,PROCEDUREFILE);
 		if ( p->p.buffer == 0 ) return(-1);
 		t[-4] = 0;
@@ -2589,6 +2597,7 @@ int DoCall(UBYTE *s)
 		p->p.buffer = Procedures[i].p.buffer;
 		p->name = Procedures[i].name;
 		p->loadmode = 1;
+		p->mustfree = 0; // this is just a copy of pointers to a permanently stored procedure
 	}
 	t = p->p.buffer;
 	SKIPBLANKS(t)
@@ -2777,9 +2786,22 @@ nonumber:
  		#[ DoContinueDo :
 */
 
+/**
+ * Jumps forward to the corresponding `#enddo` of the specified number of outer `#do` loops.
+ *
+ * @par Syntax:
+ * @code
+ *   #continuedo [<number>=1]
+ * @endcode
+ *
+ * If `number` is omitted, it defaults to 1.
+ * If `number` is zero then the instruction has no effect.
+ */
 int DoContinueDo(UBYTE *s)
 {
 	DOLOOP *loop;
+	WORD levels;
+	int result;
 
 	if ( AP.PreSwitchModes[AP.PreSwitchLevel] != EXECUTINGPRESWITCH ) return(0);
 	if ( AP.PreIfStack[AP.PreIfLevel] != EXECUTINGIF ) return(0);
@@ -2788,6 +2810,37 @@ int DoContinueDo(UBYTE *s)
 		MesPrint("@%#continuedo without %#do");
 		return(1);
 	}
+
+	SkipSpaces(&s);
+	if ( *s == 0 ) {
+		levels = 1;
+	}
+	else if ( FG.cTable[*s] == 1 ) {
+		ParseNumber(levels,s);
+		SkipSpaces(&s);
+		if ( *s != 0 ) goto improper;
+	}
+	else {
+improper:
+		MesPrint("@Improper syntax of %#continuedo instruction");
+		return(1);
+	}
+
+	if ( levels > NumDoLoops ) {
+		MesPrint("@Too many loop levels requested in %#continuedo instruction");
+		return(1);
+	}
+
+	result = ExitDoLoops(levels-1,"continuedo");
+	if ( result != 0 ) return(result);
+
+	if ( levels <= 0 ) return(0);
+
+	if ( AC.CurrentStream->type == PREREADSTREAM3
+		|| AP.PreTypes[AP.NumPreTypes] == PRETYPEPROCEDURE ) {
+			MesPrint("@Trying to jump out of a procedure with a %#continuedo instruction");
+			return(1);
+		}
 
 	loop = &(DoLoops[NumDoLoops-1]);
 	AP.NumPreTypes = loop->NumPreTypes+1;
@@ -3025,7 +3078,6 @@ illdo:;
 
 int DoBreakDo(UBYTE *s)
 {
-	DOLOOP *loop;
 	WORD levels;
 
 	if ( AP.PreSwitchModes[AP.PreSwitchLevel] != EXECUTINGPRESWITCH ) return(0);
@@ -3056,6 +3108,19 @@ improper:
 		MesPrint("@Too many loop levels requested in %#breakdo instruction");
 		Terminate(-1);
 	}
+	return(ExitDoLoops(levels,"breakdo"));
+}
+
+/**
+ * Exits the specified number of nested `#do` loops.
+ *
+ * @param levels The number of loops to exit.
+ * @param instruction The instruction name used for error reporting.
+ * @return 0 on success, nonzero on error.
+ */
+static int ExitDoLoops(int levels, const char *instruction)
+{
+	DOLOOP *loop;
 	while ( levels > 0 ) {
 		while ( AC.CurrentStream->type != PREREADSTREAM
 		  && AC.CurrentStream->type != PREREADSTREAM2
@@ -3066,16 +3131,13 @@ improper:
 		&& AP.PreTypes[AP.NumPreTypes] != PRETYPEPROCEDURE ) AP.NumPreTypes--;
 		if ( AC.CurrentStream->type == PREREADSTREAM3
 		|| AP.PreTypes[AP.NumPreTypes] == PRETYPEPROCEDURE ) {
-			MesPrint("@Trying to jump out of a procedure with a %#breakdo instruction");
-			Terminate(-1);
+			MesPrint("@Trying to jump out of a procedure with a %#%s instruction",instruction);
+			return(1);
 		}
 		loop = &(DoLoops[NumDoLoops-1]);
 		AP.NumPreTypes = loop->NumPreTypes;
 		AP.PreIfLevel = loop->PreIfLevel;
 		AP.PreSwitchLevel = loop->PreSwitchLevel;
-/*
-		AP.NumPreTypes--;
-*/
 		NumDoLoops--;
 		DoUndefine(loop->name);
 		M_free(loop->p.buffer,"loop->p.buffer");
@@ -3349,9 +3411,10 @@ int DoEndprocedure(UBYTE *s)
 	if ( AP.PreSwitchModes[AP.PreSwitchLevel] != EXECUTINGPRESWITCH ) return(0);
 	if ( AP.PreIfStack[AP.PreIfLevel] != EXECUTINGIF ) return(0);
 	AC.CurrentStream = CloseStream(AC.CurrentStream);
+
 	do {
 		NumProcedures--;
-		if ( Procedures[NumProcedures].loadmode == 0 ) {
+		if ( Procedures[NumProcedures].mustfree == 1 ) {
 			M_free(Procedures[NumProcedures].p.buffer,"procedures buffer");
 			M_free(Procedures[NumProcedures].name,"procedures name");
 		}
@@ -3376,7 +3439,7 @@ int DoIf(UBYTE *s)
 	else condition = LOOKINGFORENDIF;
 	if ( AP.PreIfLevel+1 >= AP.MaxPreIfLevel ) {
 		int **ppp = &AP.PreIfStack; /* To avoid a compiler warning */
-		if ( DoubleList((VOID ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
+		if ( DoubleList((void ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
 			"PreIfLevels") ) return(-1);
 	}
 	AP.PreIfStack[++AP.PreIfLevel] = condition;
@@ -3401,7 +3464,7 @@ int DoIfdef(UBYTE *s, int par)
 	else condition = LOOKINGFORENDIF;
 	if ( AP.PreIfLevel+1 >= AP.MaxPreIfLevel ) {
 		int **ppp = &AP.PreIfStack; /* to avoid a compiler warning */
-		if ( DoubleList((VOID ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
+		if ( DoubleList((void ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
 			"PreIfLevels") ) return(-1);
 	}
 	AP.PreIfStack[++AP.PreIfLevel] = condition;
@@ -3613,7 +3676,7 @@ int DoEndInside(UBYTE *s)
 			AT.WorkPointer = oldworkpointer;
 			CleanDollarFactors(d);
 			if ( d->where ) { M_free(d->where,"dollar contents"); d->where = 0; }
-			EndSort(BHEAD (WORD *)((VOID *)(&(d->where))),2);
+			EndSort(BHEAD (WORD *)((void *)(&(d->where))),2);
 			LowerSortLevel();
 			term = d->where; while ( *term ) term += *term;
 			d->size = term - d->where;
@@ -4012,9 +4075,24 @@ int DoProcedure(UBYTE *s)
 		if ( PreSkip((UBYTE *)"procedure",(UBYTE *)"endprocedure",1) ) return(-1);
 		return(0);
 	}
+	// AP.ProcList.num = NumProcedures is incremented inside FromList
 	p = (PROCEDURE *)FromList(&AP.ProcList);
 	if ( PreLoad(&(p->p),(UBYTE *)"procedure",(UBYTE *)"endprocedure"
 		,1,(char *)"procedure") ) return(-1);
+
+	// If the procedure below is not local (loadmode 0) or has been called (loadmode 1), this is a
+	// nested procedure definition. We must free its allocations when we hit its DoEndprocedure.
+	// If it seems local (loadmode 2) but is tagged as "mustfree", it is multiply nested and we
+	// similarly must free its allocations.
+	if ( NumProcedures >= 2 &&
+		( Procedures[NumProcedures-2].loadmode != 2 || Procedures[NumProcedures-2].mustfree ) ) {
+		p->mustfree = 1;
+	}
+	// Otherwise, we are defining a local procedure at "ground level", and we keep the definition
+	// on the procedure stack until FORM terminates.
+	else {
+		p->mustfree = 0;
+	}
 
 	p->loadmode = 2;
 	s = p->p.buffer + 10;
@@ -4429,12 +4507,12 @@ int PreSkip(UBYTE *start, UBYTE *stop, int mode)
  		#[ StartPrepro :
 */
 
-VOID StartPrepro(VOID)
+void StartPrepro(void)
 {
 	int **ppp;
 	AP.MaxPreIfLevel = 2;
 	ppp = &AP.PreIfStack;
-	if ( DoubleList((VOID ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
+	if ( DoubleList((void ***)ppp,&AP.MaxPreIfLevel,sizeof(int),
 			"PreIfLevels") ) Terminate(-1);
 	AP.PreIfLevel = 0; AP.PreIfStack[0] = EXECUTINGIF;
 
@@ -5110,7 +5188,7 @@ flagerror:
 		a stream.
 */
 
-UBYTE *PreCalc(VOID)
+UBYTE *PreCalc(void)
 {
 	UBYTE *buff, *s = 0, *t, *newb, c;
 	int size, i, n, parlevel = 0, bralevel = 0;
@@ -5679,14 +5757,15 @@ int DoSetExternalAttr(UBYTE *s)
 			}
 		}else	if(strINCmp((UBYTE *)KILL,nam,lnam)==0){
 			int i,n=0;
-			for(i=0;i<lval;i++)
+			for(i=0;i<lval;i++) {
 				if( *val>='0' && *val<= '9' )
 					n = 10*n + *val++  - '0';
 				else{
 					MesPrint("@External channel: number expected for %s",KILL);
 					return(-1);
 				}
-				AX.killSignal=n;
+			}
+			AX.killSignal=n;
 		}else	if(strINCmp((UBYTE *)STDERR,nam,lnam)==0){
 			if( AX.stderrname != NULL ) {
 				M_free(AX.stderrname,"external channel stderrname");
@@ -7679,6 +7758,7 @@ int DoStartFloat(UBYTE *s)
 	GETIDENTITY
 	int error = 0;
 	LONG x;
+	UBYTE *ss;
 	if ( AP.PreSwitchModes[AP.PreSwitchLevel] != EXECUTINGPRESWITCH ) return(0);
 	if ( AP.PreIfStack[AP.PreIfLevel] != EXECUTINGIF ) return(0);
 	if ( AR.PolyFun != 0 ) {
@@ -7689,21 +7769,47 @@ int DoStartFloat(UBYTE *s)
 		MesPrint("@Simultaneous use of floating point and modulus arithmetic makes no sense.");
 		error = 1;
 	}
+	if ( AT.aux_ ) { // First, we clean up any previous floating point system. 
+		ClearfFloat();
+		ClearMZVTables();
+	}
 	while ( *s == ',' || *s == ' ' || *s == '\t' ) s++;
+/*
+	The first parameter is the float precision
+*/
+	ss = s;
 	if ( *s >= '0' && *s <= '9' ) {
 		x = 0;
 		do {
 			x = 10*x + (*s++-'0');
 		} while ( *s >= '0' && *s <= '9' );
-		AC.tDefaultPrecision = x;
+/*
+		The precision can either be in digits or bits. 
+		AC.DefaultPrecision is always in bits. 
+*/
+		if ( tolower(*s) == 'd' ) { AC.tDefaultPrecision = (LONG)ceil(x*log2(10.0)); s++; }
+		else if ( tolower(*s) == 'b' ) { AC.tDefaultPrecision = x; s++; }
+		else goto IllPar;
 		while ( *s == ',' || *s == ' ' || *s == '\t' ) s++;
-		if ( *s >= '0' && *s <= '9' ) {
-			x = 0;
-			do {
-				x = 10*x + (*s++ - '0');
-			} while ( *s >= '0' && *s <= '9' );
-			AC.tMaxWeight = x;
-			while ( *s == ',' || *s == ' ' || *s == '\t' ) s++;
+/*
+		The second parameter is either absent, which implies zero MZV weight, 
+		or of the form MZV = <weight>
+*/
+		if ( tolower(*s) == 'm' && tolower(s[1]) == 'z' && tolower(s[2]) == 'v') {
+			s+=3;
+			while ( *s == ' ' || *s == '\t' ) s++;
+			if ( *s != '=') goto IllPar;
+			s++;
+			while ( *s == ' ' || *s == '\t' ) s++;
+			if ( *s >= '0' && *s <= '9' ) {
+				x = 0;
+				do {
+					x = 10*x + (*s++ - '0');
+				} while ( *s >= '0' && *s <= '9' );
+				AC.tMaxWeight = x;
+				while ( *s == ',' || *s == ' ' || *s == '\t' ) s++;
+			}
+			else goto IllPar;
 		}
 		else {
 			AC.tMaxWeight = 0;
@@ -7712,7 +7818,7 @@ int DoStartFloat(UBYTE *s)
 	}
 	else if ( *s != 0 ) {
 IllPar:
-		MesPrint("@Illegal parameter in %#StartFloat instruction: %s ",s);
+		MesPrint("@Illegal parameter in %#StartFloat: %s ",ss);
 		error = 1;
 	}
 	if ( error == 0 ) {
@@ -7726,6 +7832,7 @@ IllPar:
 			AC.MaxWeight = AC.tMaxWeight;
 			AC.tMaxWeight = 0;
 		}
+		SetFloatPrecision(AC.DefaultPrecision+AC.MaxWeight+1);
 		SetupMPFTables();
 		if ( AC.MaxWeight > 0 ) SetupMZVTables();
 		SetfFloatPrecision(AC.DefaultPrecision);

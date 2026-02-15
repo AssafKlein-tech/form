@@ -16,7 +16,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -59,18 +59,20 @@
 typedef long MLONG;
 */
 
-#define MAXBASES 16 
-#ifdef WORDSIZE32
-#define NUMOBJECTS 1024
-#define MAXINDEXSIZE 1000000000L
-#define NAMETABLESIZE 1008
-#define ELEMENTSIZE 256
+#if BITSINWORD == 32
+	#define NUMOBJECTS 1024
+	#define MAXINDEXSIZE 1000000000L
+	#define NAMETABLESIZE 1008
+	#define ELEMENTSIZE 256
+#elif BITSINWORD == 16
+	#define NUMOBJECTS 100
+	#define MAXINDEXSIZE 33000000L
+	#define NAMETABLESIZE 1008
+	#define ELEMENTSIZE 128
 #else
-#define NUMOBJECTS 100
-#define MAXINDEXSIZE 33000000L
-#define NAMETABLESIZE 1008
-#define ELEMENTSIZE 128
+	#error Only 64-bit and 32-bit platforms are supported.
 #endif
+
 
 int minosread(FILE *f,char *buffer,MLONG size);
 int minoswrite(FILE *f,char *buffer,MLONG size);
@@ -124,6 +126,7 @@ typedef struct dbase {
 	MLONG		tablenamessize;
 	MLONG		topnumber;
 	MLONG		tablenamefill;
+	MLONG		rwmode;
 	INDEXBLOCK	**iblocks;
 	NAMESBLOCK  **nblocks;
 	FILE		*handle;

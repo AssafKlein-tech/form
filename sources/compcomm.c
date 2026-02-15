@@ -9,7 +9,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -41,6 +41,7 @@
 #include "comtool.h"
 #ifdef WITHFLOAT
 #include <gmp.h>
+#include <math.h>
 #endif
 
 static KEYWORD formatoptions[] = {
@@ -137,6 +138,11 @@ static KEYWORDV onoffoptions[] = {
 	,{"innertest",      &(AC.InnerTest),  1,  0}
 	,{"wtimestats",     &(AC.WTimeStatsFlag),  1,  0}
 	,{"sortreallocate",	&(AC.SortReallocateFlag), 1, 0}
+	,{"backtrace",		&(AC.PrintBacktraceFlag), 1, 0}
+	,{"flint",			&(AC.FlintPolyFlag), 1, 0}
+	,{"humanstats",	&(AC.HumanStatsFlag), 1, 0}
+	,{"humanstatistics",	&(AC.HumanStatsFlag), 1, 0}
+	,{"grccverbose", &(AC.GrccVerbose), 1, 0}
 };
 
 static WORD one = 1;
@@ -368,7 +374,7 @@ int CoFormat(UBYTE *s)
 #ifdef WITHFLOAT
 			else if ( key->flags == 5 ) {
 /*
-				Syntax: Format FloatPrecision number;
+				Syntax: Format FloatPrecision [precision];
 				        Format FloatPrecision off;
 */
 				while ( FG.cTable[*s] == 0 ) s++;
@@ -386,9 +392,14 @@ int CoFormat(UBYTE *s)
 				}
 				else if ( FG.cTable[*s] == 1 ) {
 					ss = s;
-					AO.FloatPrec = 0;
-					while ( *s <= '9' && *s >= '0' )
-						AO.FloatPrec = 10*AO.FloatPrec + (*s++ - '0');
+					ParseNumber(AO.FloatPrec,s)
+/*
+					The precision can either be in digits or bits. 
+					AO.FloatPrec is in digits. 
+*/
+					if ( tolower(*s) == 'd' ) { s++; }
+					else if ( tolower(*s) == 'b' ) { AO.FloatPrec = AO.FloatPrec*log10(2.0); s++; }
+					else { s = ss; goto WrongOption; }
 					while ( *s == ' ' || *s == '\t' || *s == ',' ) s++;
 					if ( *s ) { s = ss; goto WrongOption; }
 				}
@@ -671,39 +682,57 @@ int CoOn(UBYTE *s)
 			MesPrint("&Unrecognized option in ON statement: %s",t);
 			*s = c; return(-1);
 		}
-		if ( StrICont(t,(UBYTE *)"compress") == 0 ) {
+		if ( StrICont(t,(UBYTE *)"backtrace") == 0 ) {
+#ifndef ENABLE_BACKTRACE
+			Warning("backtrace not supported on this platform");
+#endif
+		}
+		else if ( StrICont(t,(UBYTE *)"compress") == 0 ) {
 			AR.gzipCompress = 0;
 			*s = c;
 			while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
 			if ( *s ) {
-			  t = s;
-			  while ( FG.cTable[*s] <= 1 ) s++;
-			  c = *s; *s = 0;
-			  if ( StrICmp(t,(UBYTE *)"gzip") == 0 ) {}
-			  else {
-				MesPrint("&Unrecognized option in ON compress statement: %s",t);
-				return(-1);
-			  }
-			  *s = c;
-			  while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+				t = s;
+				while ( FG.cTable[*s] <= 1 ) s++;
+				c = *s; *s = 0;
+				if ( StrICmp(t,(UBYTE *)"gzip") == 0 ) {
 #ifndef WITHZLIB
-			  Warning("gzip compression not supported on this platform");
+					Warning("gzip compression not supported on this platform");
 #endif
-			  if ( FG.cTable[*s] == 1 ) {
-				AR.gzipCompress = *s++ - '0';
-				while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
-				if ( *s ) {
-					MesPrint("&Unrecognized option in ON compress gzip statement: %s",t);
+#ifdef WITHZSTD
+					/* If gzip is specified, turn off zstd compression. zlib still goes via the wrapper. */
+					ZWRAP_useZSTDcompression(0);
+#endif
+				}
+				else if ( StrICmp(t,(UBYTE *)"zstd") == 0 ) {
+#ifdef WITHZSTD
+					ZWRAP_useZSTDcompression(1);
+#else
+					Warning("zstd compression not supported on this platform");
+#endif
+				}
+				else {
+					MesPrint("&Unrecognized option in ON compress statement: %s",t);
 					return(-1);
 				}
-			  }
-			  else if ( *s == 0 ) {
-				AR.gzipCompress = GZIPDEFAULT;
-			  }
-			  else {
-				MesPrint("&Unrecognized option in ON compress gzip statement: %s, single digit expected",t);
-				return(-1);
-			  }
+				/* Whether we are using zlib or zstd, accept and use a compression level. */
+				*s = c;
+				while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+				if ( FG.cTable[*s] == 1 ) {
+					AR.gzipCompress = *s++ - '0';
+					while ( *s == ' ' || *s == ',' || *s == '\t' ) s++;
+					if ( *s ) {
+						MesPrint("&Unrecognized option in ON compress gzip/zstd statement: %s",t);
+						return(-1);
+					}
+				}
+				else if ( *s == 0 ) {
+					AR.gzipCompress = GZIPDEFAULT;
+				}
+				else {
+					MesPrint("&Unrecognized option in ON compress gzip/zstd statement: %s, single digit expected",t);
+					return(-1);
+				}
 			}
 		}
 		else if ( StrICont(t,(UBYTE *)"checkpoint") == 0 ) {
@@ -885,8 +914,14 @@ int CoOn(UBYTE *s)
 				}
 			}
 		}
+		else if ( StrICont(t,(UBYTE *)"flint") == 0 ) {
+#ifndef WITHFLINT
+			MesPrint("&Warning: FORM was not built with FLINT support.");
+			MesPrint("Statement has no effect.");
+#endif
+		}
 		else { *s = c; }
-	 	*onoffoptions[i].var = onoffoptions[i].type; 
+		*onoffoptions[i].var = onoffoptions[i].type;
 		AR.SortType = AC.SortType;
 		AC.mparallelflag = AC.parallelflag | AM.hparallelflag;
 	}
@@ -1331,134 +1366,143 @@ int SetExprCases(int par, int setunset, int val)
 	switch ( par ) {
 		case SKIP:
 			switch ( val ) {
-		        case SKIPLEXPRESSION:
+				case SKIPLEXPRESSION:
 					if ( !setunset ) val = LOCALEXPRESSION;
-		            break;
-		        case SKIPGEXPRESSION:
+					break;
+				case SKIPGEXPRESSION:
 					if ( !setunset ) val = GLOBALEXPRESSION;
-		            break;
-		        case LOCALEXPRESSION:
+					break;
+				case LOCALEXPRESSION:
 					if ( setunset ) val = SKIPLEXPRESSION;
-		            break;
-		        case GLOBALEXPRESSION:
+					break;
+				case GLOBALEXPRESSION:
 					if ( setunset ) val = SKIPGEXPRESSION;
-		            break;
-		        case INTOHIDEGEXPRESSION:
-		        case INTOHIDELEXPRESSION:
-		        default:
-		            break;
+					break;
+				case INTOHIDEGEXPRESSION:
+				case INTOHIDELEXPRESSION:
+				default:
+					break;
 			}
 			break;
 		case DROP:
 			switch ( val ) {
-		        case SKIPLEXPRESSION:
-		        case LOCALEXPRESSION:
-		        case HIDELEXPRESSION:
+				case SKIPLEXPRESSION:
+				case LOCALEXPRESSION:
+				case HIDELEXPRESSION:
 					if ( setunset ) val = DROPLEXPRESSION;
-		            break;
-		        case DROPLEXPRESSION:
+					break;
+				case DROPLEXPRESSION:
 					if ( !setunset ) val = LOCALEXPRESSION;
-		            break;
-		        case SKIPGEXPRESSION:
-		        case GLOBALEXPRESSION:
-		        case HIDEGEXPRESSION:
+					break;
+				case SKIPGEXPRESSION:
+				case GLOBALEXPRESSION:
+				case HIDEGEXPRESSION:
 					if ( setunset ) val = DROPGEXPRESSION;
-		            break;
-		        case DROPGEXPRESSION:
+					break;
+				case DROPGEXPRESSION:
 					if ( !setunset ) val = GLOBALEXPRESSION;
-		            break;
-		        case HIDDENLEXPRESSION:
+					break;
+				case HIDDENLEXPRESSION:
 				case UNHIDELEXPRESSION:
 					if ( setunset ) val = DROPHLEXPRESSION;
-		            break;
-		        case HIDDENGEXPRESSION:
+					break;
+				case HIDDENGEXPRESSION:
 				case UNHIDEGEXPRESSION:
 					if ( setunset ) val = DROPHGEXPRESSION;
-		            break;
-		        case DROPHLEXPRESSION:
+					break;
+				case DROPHLEXPRESSION:
 					if ( !setunset ) val = HIDDENLEXPRESSION;
-		            break;
-		        case DROPHGEXPRESSION:
+					break;
+				case DROPHGEXPRESSION:
 					if ( !setunset ) val = HIDDENGEXPRESSION;
-		            break;
-		        case INTOHIDEGEXPRESSION:
-		        case INTOHIDELEXPRESSION:
-		        default:
-		            break;
+					break;
+				case INTOHIDEGEXPRESSION:
+				case INTOHIDELEXPRESSION:
+				default:
+					break;
 			}
 			break;
 		case HIDE:
 			switch ( val ) {
 				case DROPLEXPRESSION:
-		        case SKIPLEXPRESSION:
-		        case LOCALEXPRESSION:
+				case SKIPLEXPRESSION:
+				case LOCALEXPRESSION:
 					if ( setunset ) val = HIDELEXPRESSION;
-		            break;
-		        case HIDELEXPRESSION:
+					break;
+				case HIDELEXPRESSION:
 					if ( !setunset ) val = LOCALEXPRESSION;
-		            break;
+					break;
 				case DROPGEXPRESSION:
-		        case SKIPGEXPRESSION:
-		        case GLOBALEXPRESSION:
+				case SKIPGEXPRESSION:
+				case GLOBALEXPRESSION:
 					if ( setunset ) val = HIDEGEXPRESSION;
-		            break;
-		        case HIDEGEXPRESSION:
+					break;
+				case HIDEGEXPRESSION:
 					if ( !setunset ) val = GLOBALEXPRESSION;
-		            break;
-		        case INTOHIDEGEXPRESSION:
-		        case INTOHIDELEXPRESSION:
-		        default:
-		            break;
+					break;
+				case INTOHIDEGEXPRESSION:
+				case INTOHIDELEXPRESSION:
+				default:
+					break;
 			}
 			break;
 		case UNHIDE:
 			switch ( val ) {
-		        case HIDDENLEXPRESSION:
-		        case DROPHLEXPRESSION:
+				case HIDDENLEXPRESSION:
+				case DROPHLEXPRESSION:
 					if ( setunset ) val = UNHIDELEXPRESSION;
-		            break;
+					break;
 				case UNHIDELEXPRESSION:
 					if ( !setunset ) val = HIDDENLEXPRESSION;
-		            break;
-		        case HIDDENGEXPRESSION:
-		        case DROPHGEXPRESSION:
+					break;
+				case HIDDENGEXPRESSION:
+				case DROPHGEXPRESSION:
 					if ( setunset ) val = UNHIDEGEXPRESSION;
-		            break;
+					break;
 				case UNHIDEGEXPRESSION:
 					if ( !setunset ) val = HIDDENGEXPRESSION;
-		            break;
-		        case INTOHIDEGEXPRESSION:
-		        case INTOHIDELEXPRESSION:
-		        default:
-		            break;
+					break;
+				case INTOHIDEGEXPRESSION:
+				case INTOHIDELEXPRESSION:
+				default:
+					break;
 			}
 			break;
 		case INTOHIDE:
 			switch ( val ) {
-		        case HIDDENLEXPRESSION:
-		        case HIDDENGEXPRESSION:
+				case HIDDENLEXPRESSION:
+				case HIDDENGEXPRESSION:
 					MesPrint("&Expression is already hidden");
 					return(-1);
-		        case DROPHLEXPRESSION:
-		        case DROPHGEXPRESSION:
+				case DROPHLEXPRESSION:
+				case DROPHGEXPRESSION:
 				case UNHIDELEXPRESSION:
 				case UNHIDEGEXPRESSION:
-					MesPrint("&Cannot unhide and put intohide expression in the same module");
-					return(-1);
+					if ( setunset ) {
+						MesPrint("&Cannot unhide/drop and put intohide expression in the same module");
+						return(-1);
+					}
+					break;
 				case LOCALEXPRESSION:
 				case DROPLEXPRESSION:
-		        case SKIPLEXPRESSION:
+				case SKIPLEXPRESSION:
 				case HIDELEXPRESSION:
 					if ( setunset ) val = INTOHIDELEXPRESSION;
 					break;
 				case GLOBALEXPRESSION:
 				case DROPGEXPRESSION:
-		        case SKIPGEXPRESSION:
+				case SKIPGEXPRESSION:
 				case HIDEGEXPRESSION:
 					if ( setunset ) val = INTOHIDEGEXPRESSION;
 					break;
-		        default:
-		            break;
+				case INTOHIDELEXPRESSION:
+					if ( !setunset ) val = LOCALEXPRESSION;
+					break;
+				case INTOHIDEGEXPRESSION:
+					if ( !setunset ) val = GLOBALEXPRESSION;
+					break;
+				default:
+					break;
 			}
 			break;
 		default:
@@ -1477,12 +1521,12 @@ int SetExpr(UBYTE *s, int setunset, int par)
 	WORD *w, numexpr;
 	int error = 0, i;
 	UBYTE *name, c;
-	if ( *s == 0 && ( par != INTOHIDE ) ) {
+	if ( *s == 0 ) {
 		for ( i = 0; i < NumExpressions; i++ ) {
 			w = &(Expressions[i].status);
 			*w = SetExprCases(par,setunset,*w);
 			if ( *w < 0 ) error = 1;
-			if ( par == HIDE && setunset == 1 )
+			if ( ( par == HIDE || par == INTOHIDE ) && setunset == 1 )
 				Expressions[i].hidelevel = AC.HideLevel;
 		}
 		return(0);
@@ -1578,6 +1622,13 @@ int CoIntoHide(UBYTE *inp) {
 
 /*
   	#] CoIntoHide : 
+  	#[ CoNoIntoHide :
+*/
+
+int CoNoIntoHide(UBYTE *inp) { return(SetExpr(inp,0,INTOHIDE)); }
+
+/*
+  	#] CoNoIntoHide : 
   	#[ CoNoHide :
 */
 
@@ -2004,9 +2055,26 @@ skipbracks:
 					c = *s; *s = 0;
 					if ( ( type = GetName(AC.varnames,name,&number,WITHAUTO) ) == CSET ) {
 doset:					if ( Sets[number].type != CFUNCTION ) goto nofun;
+#ifdef WITHFLOAT
+						WORD *r1, *r2;
+						r1 = SetElements + Sets[number].first;
+						r2 = SetElements + Sets[number].last;
+						while ( r1 < r2 ) {
+							if ( *r1++ == FLOATFUN ) {
+								MesPrint("&Illegal use of argument environment and float_.");
+								error = 1;
+							}
+						}
+#endif
 						*w++ = CSET; *w++ = number;
 					}
 					else if ( type == CFUNCTION ) {
+#ifdef WITHFLOAT
+						if ( (number + FUNCTION) == FLOATFUN ) {
+							MesPrint("&Illegal use of argument environment and float_.");
+							error = 1;
+						}
+#endif
 						*w++ = CFUNCTION; *w++ = number + FUNCTION;
 					}
 					else {
@@ -3294,7 +3362,7 @@ int DoInParallel(UBYTE *s, int par)
 				*s = c;
 			}
 			else {
-				MesPrint("&Illegal object in InExpression statement");
+				MesPrint("&Illegal object in InParallel statement");
 				error = 1;
 				while ( *s && *s != ',' ) s++;
 				if ( *s == 0 ) break;
@@ -4218,19 +4286,17 @@ ReDo:
 			pp = CheckFloat(p,&spec);
 			if ( pp > p ) {	/* Got one */
 HaveFloat:
-				if ( spec == 1 ) { /* is zero */
-					*w++ = LONGNUMBER; *w++ = 3; *w++ = 0;
-				}
-				else if ( spec == -1 ) {
+				if ( spec == -1 ) {
 					MesPrint("&The floating point system has not been started: %s",p);
                     if ( !error ) error = 1;
 				}
 				else {
 					WORD *ow = AT.WorkPointer;
 					AT.WorkPointer = w;
-					c = *pp; c = 0;
+					c = *pp; *pp = 0;
 					ReadFloat((SBYTE *)p);	/* Is now at AT.WorkPointer */
 					*pp = c;
+					p = pp;
 					AT.WorkPointer[0] = IFFLOATNUMBER;
 					w = AT.WorkPointer + AT.WorkPointer[1];
 					AT.WorkPointer = ow;
@@ -4421,7 +4487,7 @@ NoGood:			MesPrint("&Unrecognized word: %s",inp);
 				inp = p;
 				SKIPBRA4(p);
 				c = *++p; *p = 0; *inp = ',';
-				if ( CoFindLoop(inp) ) goto endofif;
+				if ( CoFindLoop(inp) ) { error = 1; goto endofif; }
 				s = u = C->lhs[C->numlhs];
 				while ( u < C->Pointer ) *w++ = *u++;
 				C->numlhs--; C->Pointer = s;
@@ -4970,7 +5036,8 @@ int DoFindLoop(UBYTE *inp, int mode)
 	int type, aflag, lflag, indflag, outflag, error = 0, sym;
 	while ( *inp == ',' ) inp++;
 	if ( ( s = SkipAName(inp) ) == 0 ) {
-syntax:	MesPrint("&Proper syntax is:");
+syntax:
+		MesPrint("&Proper syntax is:");
 		MesPrint("%s",messfind[mode]);
 		return(1);
 	}
@@ -4979,6 +5046,7 @@ syntax:	MesPrint("&Proper syntax is:");
 		|| type != CFUNCTION || ( ( sym = (functions[funnum].symmetric) & ~REVERSEORDER )
 		!= SYMMETRIC && sym != ANTISYMMETRIC ) ) {
 		MesPrint("&%s should be a (anti)symmetric function or tensor",inp);
+		error = 1;
 	}
 	funnum += FUNCTION;
 	*s = c; inp = s;
@@ -5047,6 +5115,7 @@ syntax:	MesPrint("&Proper syntax is:");
 		}
 		else {
 			MesPrint("&Unrecognized option in FindLoop or ReplaceLoop: %s",inp);
+			error = 1;
 			*s = c; inp = s;
 			while ( *inp && *inp != ',' ) inp++;
 		}
@@ -5086,7 +5155,13 @@ int CoFindLoop(UBYTE *inp)
 */
 
 int CoReplaceLoop(UBYTE *inp)
-{ return(DoFindLoop(inp,REPLACELOOP)); }
+{
+	int error = DoFindLoop(inp,REPLACELOOP);
+	if ( error ) {
+		Terminate(-1);
+	}
+	return(error);
+}
 
 /*
   	#] CoReplaceLoop : 

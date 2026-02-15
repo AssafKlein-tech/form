@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -36,6 +36,7 @@
 #include "poly.h"
 #include "polygcd.h"
 
+#include <cassert>
 #include <cctype>
 #include <cmath>
 #include <algorithm>
@@ -110,6 +111,9 @@ poly::poly (PHEAD const UWORD *a, WORD na, WORD modp, WORD modn):
 poly::poly (const poly &a, WORD modp, WORD modn):
 	size_of_terms(AM.MaxTer/(LONG)sizeof(WORD))	
 {
+#ifdef POLY_MOVE_DEBUG
+	std::cout << "poly copy ctor" << std::endl;
+#endif
 	POLY_GETIDENTITY(a);
 	POLY_STOREIDENTITY;
 	
@@ -1933,7 +1937,9 @@ void poly::mod (const poly &a, const poly &b, poly &c) {
 
 // copy operator
 poly & poly::operator= (const poly &a) {
-
+#ifdef POLY_MOVE_DEBUG
+	std::cout << "poly copy assign" << std::endl;
+#endif
 	if (&a != this) {
 		modp = a.modp;
 		modn = a.modn;
@@ -2386,7 +2392,8 @@ const poly poly::simple_poly (PHEAD int x, const poly &a, int b, int p, int n) {
 
 // gets all variables in the expressions and stores them in AN.poly_vars
 // (it is assumed that AN.poly_vars=NULL)
-void poly::get_variables (PHEAD vector<WORD *> es, bool with_arghead, bool sort_vars) {
+void poly::get_variables (PHEAD const vector<WORD *> &es, bool with_arghead, bool sort_vars) {
+	assert(AN.poly_vars == NULL);
 
 	AN.poly_num_vars = 0;
 
@@ -2396,7 +2403,7 @@ void poly::get_variables (PHEAD vector<WORD *> es, bool with_arghead, bool sort_
 	
 	// extract all variables
 	for (int ei=0; ei<(int)es.size(); ei++) {
-		WORD *e = es[ei];
+		const WORD *e = es[ei];
 
 		// fast notation
 		if (*e == -SNUMBER) {

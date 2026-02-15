@@ -6,7 +6,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -53,14 +53,15 @@
 	need to insert a different value (C->lhs[level][2]).
 */
 
-WORD execarg(PHEAD WORD *term, WORD level)
+int execarg(PHEAD WORD *term, WORD level)
 {
 	GETBIDENTITY
 	WORD *t, *r, *m, *v;
 	WORD *start, *stop, *rstop, *r1, *r2 = 0, *r3 = 0, *r4, *r5, *r6, *r7, *r8, *r9;
 	WORD *mm, *mstop, *rnext, *rr, *factor, type, ngcd, nq;
 	CBUF *C = cbuf+AM.rbufnum, *CC = cbuf+AT.ebufnum;
-	WORD i, j, k, oldnumlhs = AR.Cnumlhs, count, action = 0, olddefer = AR.DeferFlag;
+	WORD i, j, k, oldnumlhs = AR.Cnumlhs, count, olddefer = AR.DeferFlag;
+	int action = 0;
 	WORD oldnumrhs = CC->numrhs, size, pow, jj;
 	LONG oldcpointer = CC->Pointer - CC->Buffer, oldppointer = AT.pWorkPointer, lp;
 	WORD *oldwork = AT.WorkPointer, *oldwork2, scale, renorm;
@@ -169,13 +170,18 @@ WORD execarg(PHEAD WORD *term, WORD level)
 RightNum:
 					if ( m[1] == 2 ) {
 #ifdef WITHFLOAT
-						if ( *t != FLOATFUN || AT.aux_ == 0 || TestFloat(t) == 0 )
+						if ( *t != FLOATFUN || TestFloat(t) == 0 )
 #endif
 						{
 							m += 2;
 							m += *m;
 							goto HaveTodo;
 						}
+#ifdef WITHFLOAT
+						else {
+							m += 2;
+						}
+#endif
 					}
 					else {
 						r = m + m[1];
@@ -1043,9 +1049,15 @@ do_shift:
 							continue;
 						}
 						else if ( *t == -MINVECTOR ) {
-							*r1++ = -VECTOR; t++; *r1++ = *t++;
-							*r1++ = -SNUMBER; *r1++ = -1;
-							*r1++ = -SNUMBER; *r1++ = 1;
+							if ( AC.OldFactArgFlag == NEWFACTARG ) {
+								*r1++ = -SNUMBER; *r1++ = -1;
+								*r1++ = -VECTOR; t++; *r1++ = *t++;
+							}
+							else {
+								*r1++ = -VECTOR; t++; *r1++ = *t++;
+								*r1++ = -SNUMBER; *r1++ = -1;
+								*r1++ = -SNUMBER; *r1++ = 1;
+							}
 							continue;
 						}
 					}
@@ -1760,7 +1772,7 @@ execargerr:
   	#[ execterm :
 */
 
-WORD execterm(PHEAD WORD *term, WORD level)
+int execterm(PHEAD WORD *term, WORD level)
 {
 	GETBIDENTITY
 	CBUF *C = cbuf+AM.rbufnum;
@@ -1804,7 +1816,7 @@ WORD execterm(PHEAD WORD *term, WORD level)
 			buffer1 = 0;
 		}
 		AN.tryterm = 1;
-		if ( EndSort(BHEAD (WORD *)((VOID *)(&buffer1)),2) < 0 ) goto exectermerr;
+		if ( EndSort(BHEAD (WORD *)((void *)(&buffer1)),2) < 0 ) goto exectermerr;
 		tryterm = AN.tryterm; AN.tryterm = 0;
 		level = AR.Cnumlhs;
 	} while ( AR.Cnumlhs < maxisat );
@@ -2250,7 +2262,7 @@ getout:
 			t += *t; argextra += *argextra;
 		}
 		/* par = 1, in case the arg has more than SubTermsInSmall terms */
-		if ( EndSort(BHEAD argfree+ARGHEAD,1) ) { error = -2; goto getout; }
+		if ( EndSort(BHEAD argfree+ARGHEAD,1) < 0 ) { error = -2; goto getout; }
 		t = argfree + ARGHEAD;
 		while ( *t > 0 ) t += *t;
 		*argfree = t - argfree;
@@ -2312,7 +2324,7 @@ getout:
 				}
 				AT.WorkPointer = oldworkpointer;
 				/* par = 1, in case the factor has more than SubTermsInSmall terms */
-				if ( EndSort(BHEAD a2+ARGHEAD,1) ) { error = -5; goto getout; }
+				if ( EndSort(BHEAD a2+ARGHEAD,1) < 0 ) { error = -5; goto getout; }
 				t = a2+ARGHEAD; while ( *t ) t += *t;
 				*a2 = t - a2; a2[1] = 0; ZEROARG(a2);
 				ToFast(a2,a2); NEXTARG(a2);
@@ -2528,7 +2540,7 @@ WORD FindArg(PHEAD WORD *a)
  *	If par == 1 it inserts in the cache defined with the FactorCache statement
  */
 
-WORD InsertArg(PHEAD WORD *argin, WORD *argout,int par)
+int InsertArg(PHEAD WORD *argin, WORD *argout,int par)
 {
 	CBUF *C;
 	WORD *a, i, bufnum;

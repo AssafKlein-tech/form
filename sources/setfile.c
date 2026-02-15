@@ -4,7 +4,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -129,7 +129,7 @@ SETUPPARAMETERS setupparameters[] =
  		#[ DoSetups :
 */
 
-int DoSetups(VOID)
+int DoSetups(void)
 {
 	UBYTE *setbuffer, *s, *t, *u /*, c */;
 	int errors = 0;
@@ -271,7 +271,7 @@ restart:;
 				}
 				*t = 0;
 				if ( sp->flags == USEDFLAG && sp->value != 0 )
-						M_free((VOID *)(sp->value),"Process option");
+						M_free((void *)(sp->value),"Process option");
 				sp->value = (LONG)strDup1(s2,"Process option");
 				sp->flags = USEDFLAG;
 				break;
@@ -289,7 +289,7 @@ restart:;
 					break;
 				}
 				if ( sp->flags == USEDFLAG && sp->value != 0 )
-					M_free((VOID *)(sp->value),"Process option");
+					M_free((void *)(sp->value),"Process option");
 				sp->value = (LONG)strDup1(s2,"Process option");
 				sp->flags = USEDFLAG;
 				break;
@@ -338,7 +338,8 @@ SETUPPARAMETERS *GetSetupPar(UBYTE *s)
 {
 	int hi, med, lo, i;
 	lo = 0;
-	hi = sizeof(setupparameters)/sizeof(SETUPPARAMETERS);
+	// -1: remove possibility of out-of-bounds read in StrICmp
+	hi = sizeof(setupparameters)/sizeof(SETUPPARAMETERS) - 1;
 	do {
 		med = ( hi + lo ) / 2;
 		i = StrICmp(s,(UBYTE *)setupparameters[med].parameter);
@@ -354,7 +355,7 @@ SETUPPARAMETERS *GetSetupPar(UBYTE *s)
  		#[ RecalcSetups :
 */
 
-int RecalcSetups(VOID)
+int RecalcSetups(void)
 {
 	SETUPPARAMETERS *sp, *sp1;
 
@@ -401,7 +402,7 @@ int RecalcSetups(VOID)
  		#[ AllocSetups :
 */
 
-int AllocSetups(VOID)
+int AllocSetups(void)
 {
 	SETUPPARAMETERS *sp;
 	LONG LargeSize, SmallSize, SmallEsize, TermsInSmall, IOsize;
@@ -745,7 +746,7 @@ int AllocSetups(VOID)
 		AT.StoreCache = AT.StoreCacheAlloc;
 		sa = AT.StoreCache;
 		for ( j = 0; j < AM.NumStoreCaches; j++ ) {
-			sb = (STORECACHE)(VOID *)((UBYTE *)sa+size);
+			sb = (STORECACHE)(void *)((UBYTE *)sa+size);
 			if ( j == AM.NumStoreCaches-1 ) {
 				sa->next = 0;
 			}
@@ -796,7 +797,7 @@ int AllocSetups(VOID)
 	and have that included into the LaTeX file.
 */
 
-VOID WriteSetup(VOID)
+void WriteSetup(void)
 {
 	int n = sizeof(setupparameters)/sizeof(SETUPPARAMETERS);
 	SETUPPARAMETERS *sp;
@@ -857,6 +858,7 @@ VOID WriteSetup(VOID)
 SORTING *AllocSort(LONG inLargeSize, LONG inSmallSize, LONG inSmallEsize, LONG inTermsInSmall,
                    int inMaxPatches, int inMaxFpatches, LONG inIOsize, int level)
 {
+	DUMMYUSE(level); /* This is only used in DEBUGGING mode */
 	LONG LargeSize = inLargeSize;
 	LONG SmallSize = inSmallSize;
 	LONG SmallEsize = inSmallEsize;
@@ -1003,7 +1005,7 @@ SORTING *AllocSort(LONG inLargeSize, LONG inSmallSize, LONG inSmallEsize, LONG i
  		#[ AllocSortFileName :
 */
 
-VOID AllocSortFileName(SORTING *sort)
+void AllocSortFileName(SORTING *sort)
 {
 	GETIDENTITY
 	char *s, *t;
@@ -1015,10 +1017,10 @@ VOID AllocSortFileName(SORTING *sort)
 	while ( *s ) *t++ = *s++;
 #ifdef WITHPTHREADS
 	t[-2] = 'F';
-	snprintf(t-1,FG.fname2size-(t-1-FG.fname2),"%d.%d",identity,AN.filenum);
+	snprintf(t-1,FG.fname2size-(t-1-sort->file.name),"%d.%d",identity,AN.filenum);
 #else
 	t[-2] = 'f';
-	snprintf(t-1,FG.fname2size-(t-1-FG.fname2),"%d",AN.filenum);
+	snprintf(t-1,FG.fname2size-(t-1-sort->file.name),"%d",AN.filenum);
 #endif
 	AN.filenum++;
 }
@@ -1061,10 +1063,10 @@ FILEHANDLE *AllocFileHandle(WORD par,char *name)
 		while ( *s ) *t++ = *s++;
 #ifdef WITHPTHREADS
 		t[-2] = 'F';
-		snprintf(t-1,20,"%d-%d",identity,AN.filenum);
+		snprintf(t-1,FG.fname2size-(t-1-fh->name),"%d-%d",identity,AN.filenum);
 #else
 		t[-2] = 'f';
-		snprintf(t-1,20,"%d",AN.filenum);
+		snprintf(t-1,FG.fname2size-(t-1-fh->name),"%d",AN.filenum);
 #endif
 		AN.filenum++;
 	  }
@@ -1106,7 +1108,7 @@ void DeAllocFileHandle(FILEHANDLE *fh)
  		#[ MakeSetupAllocs :
 */
 
-int MakeSetupAllocs(VOID)
+int MakeSetupAllocs(void)
 {
 	if ( RecalcSetups() || AllocSetups() ) return(1);
 	else return(0);
@@ -1126,7 +1128,7 @@ int MakeSetupAllocs(VOID)
 
 #define SETBUFSIZE 257
 
-int TryFileSetups(VOID)
+int TryFileSetups(void)
 {
 	LONG oldstreamposition;
 	int oldstream;
@@ -1165,7 +1167,7 @@ int TryFileSetups(VOID)
 		if ( c == ENDOFINPUT ) break;
 		if ( c == LINEFEED ) continue;
 		if ( c == 0 || c == ENDOFINPUT ) break;
-		while ( c != LINEFEED ) {
+		while ( c != LINEFEED && c != ENDOFINPUT ) {
 			*s++ = c;
 			c = GetInput();
 			if ( c != LINEFEED && c != '\r' ) continue;
@@ -1212,7 +1214,7 @@ eoi:
  		#[ TryEnvironment :
 */
 
-int TryEnvironment(VOID)
+int TryEnvironment(void)
 {
 	char *s, *t, *u, varname[100];
 	int i,imax = sizeof(setupparameters)/sizeof(SETUPPARAMETERS);

@@ -4,7 +4,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -44,7 +44,7 @@
  *
  * @return  The ID number for the new compiler buffer.
  */
-int inicbufs(VOID)
+int inicbufs(void)
 {
 	int i, num = AC.cbufList.num;
 	CBUF *C = cbuf;
@@ -191,7 +191,7 @@ WORD *AddLHS(int num)
 	C->numlhs++;
 	if ( C->numlhs >= (C->maxlhs-2) ) {
 		WORD ***ppp = &(C->lhs);	/* to avoid compiler warning */
-		if ( DoubleList((VOID ***)ppp,&(C->maxlhs),sizeof(WORD *),
+		if ( DoubleList((void ***)ppp,&(C->maxlhs),sizeof(WORD *),
 		"statement lists") ) Terminate(-1);
 	}
 	C->lhs[C->numlhs] = C->Pointer;

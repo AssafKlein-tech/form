@@ -8,7 +8,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -161,42 +161,26 @@
 #define STATEMENT     4
 #define TOOUTPUT      5
 #define ATENDOFMODULE 6
-#define MIXED2        8
+#define MIXED2        8  /* unused */
 #define MIXED         9
 
 /*
 	The typedefs are to allow the compilers to do better error checking.
 */
 
-/*
-	icc doesn't like the typedef void VOID; Neither does g++ on the apple
-	Hence we work the old fashioned way:
-*/
-#define VOID void
-
-#ifdef ANSI
-typedef VOID (*PVFUNWP)(WORD *);
-#ifdef INTELCOMPILER
-typedef VOID (*PVFUNV)();
-typedef int (*CFUN)();
-#else
-typedef VOID (*PVFUNV)(VOID);
-typedef int (*CFUN)(VOID);
-#endif
+typedef void (*PVFUNWP)(WORD *);
+typedef void (*PVFUNV)(void);
+typedef int (*CFUN)(void);
 typedef int (*TFUN)(UBYTE *);
 typedef int (*TFUN1)(UBYTE *,int);
-#else
-typedef VOID (*PVFUNWP)();
-typedef VOID (*PVFUNV)();
-typedef int (*CFUN)();
-typedef int (*TFUN)();
-typedef int (*TFUN1)();
-#endif
 
+/*
+	Flags used in the compiler's KEYWORD tables.
+*/
 
 #define NOAUTO 0
-#define PARTEST 1
-#define WITHAUTO 2
+#define PARTEST 1	/* parentheses test */
+#define WITHAUTO 2	/* auto-declaration */
 
 #define ALLVARIABLES -1
 #define SYMBOLONLY 1
@@ -474,7 +458,6 @@ typedef int (*TFUN1)();
 #define BLOCK 113
 #define ONEPI 114
 #define PHI 115
-#ifdef WITHFLOAT
 #define FLOATFUN 116
 #define TOFLOAT 117
 #define TORAT 118
@@ -483,10 +466,10 @@ typedef int (*TFUN1)();
 #define MZVHALF 121
 #define AGMFUNCTION 122
 #define GAMMAFUN 123
-#define MAXBUILTINFUNCTION 123
-#else
-#define MAXBUILTINFUNCTION 115
-#endif
+#define EXPFUNCTION 124
+#define HPLFUNCTION 125
+#define MPLFUNCTION 126
+#define MAXBUILTINFUNCTION 126
 
 #define FIRSTUSERFUNCTION 150
 
@@ -508,8 +491,10 @@ typedef int (*TFUN1)();
 #define DIMENSIONSYMBOL 6
 #define FACTORSYMBOL 7
 #define SEPARATESYMBOL 8
+#define EESYMBOL 9
+#define EMSYMBOL 10
 
-#define BUILTINSYMBOLS 9
+#define BUILTINSYMBOLS 11
 #define FIRSTUSERSYMBOL 20
 
 #define BUILTININDICES 1
@@ -609,6 +594,8 @@ typedef int (*TFUN1)();
 #define TYPEEXPAND 88
 #define TYPETOFLOAT 89
 #define TYPETORAT 90
+#define TYPESTRICTROUNDING 91
+#define TYPECHOP 92
 #endif
 
 /*
@@ -1104,16 +1091,36 @@ typedef int (*TFUN1)();
 #define DENSETABLE 1
 #define SPARSETABLE 0
 
-#define ONEPARTICLEIRREDUCIBLE 1
-#define WITHINSERTIONS         2
-#define NOTADPOLES             4
-#define WITHSYMMETRIZE         8
-#define TOPOLOGIESONLY        16
-#define NONODES               32
-#define WITHEDGES             64
-#define CHECKEXTERN          128
-#define WITHBLOCKS           256
-#define WITHONEPI            512
-#define NOSNAILS            1024
-#define NOEXTSELF           2048
+// Diagram generator flags. They should be powers of two, since they are added
+// to pass to diagrams and masked in diawrap.cc to check the flags.
+// We use a "stringified" version of these when defining the FORM preprocessor
+// variables, so can't neatly use "1<<10" etc here.
+#define TOPOLOGIESONLY  1
+#define WITHOUTNODES    2
+#define WITHEDGES       4
+#define WITHBLOCKS      8
+#define WITHONEPISETS   16
+#define WITHSYMMETRIZEI 32
+#define WITHSYMMETRIZEF 64
+// This is not an "option" preprocessor var but is set by "external" particle definitions
+#define CHECKEXTERN     128
+// The "qgraf compatible" filtering flags:
+#define ONEPARTI        256
+#define ONEPARTR        512
+#define ONSHELL         1024
+#define OFFSHELL        2048
+#define NOSIGMA         4096
+#define SIGMA           8192
+#define NOSNAIL         16384
+#define SNAIL           32768
+#define NOTADPOLE       65536
+#define TADPOLE         131072
+#define SIMPLE          262144
+#define NOTSIMPLE       524288
+#define BIPART          1048576
+#define NONBIPART       2097152
+#define CYCLI           4194304
+#define CYCLR           8388608
+#define FLOOP           16777216
+#define NOTFLOOP        33554432
 

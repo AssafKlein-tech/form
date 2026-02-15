@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -35,24 +35,6 @@
 
 #include "form3.h"
 
-#ifdef ANSI
-#include <stdarg.h>
-#else
-#ifdef mBSD
-#include <varargs.h>
-#else
-#ifdef VMS
-#include <varargs.h>
-#else
-typedef UBYTE *va_list;
-#define va_dcl int va_alist;
-#define va_start(list) list = (UBYTE *) &va_alist
-#define va_end(list)
-#define va_arg(list,mode) (((mode *)(list += sizeof(mode)))[-1])
-#endif
-#endif
-#endif
-
 static int startinline = 0;
 static char fcontchar = '&';
 static int noextralinefeed = 0;
@@ -72,14 +54,14 @@ UBYTE *StrCopy(UBYTE *from, UBYTE *to)
 
 /*
  		#] StrCopy : 
- 		#[ AddToLine :			VOID AddToLine(s)
+ 		#[ AddToLine :			void AddToLine(s)
 
 	Puts the characters of s in the outputline. If the line becomes
 	filled it is written.
 
 */
 
-VOID AddToLine(UBYTE *s)
+void AddToLine(UBYTE *s)
 {
 	UBYTE *Out;
 	LONG num;
@@ -176,10 +158,10 @@ VOID AddToLine(UBYTE *s)
 
 /*
  		#] AddToLine : 
- 		#[ FiniLine :			VOID FiniLine()
+ 		#[ FiniLine :			void FiniLine()
 */
 
-VOID FiniLine(VOID)
+void FiniLine(void)
 {
 	UBYTE *Out;
 	WORD i;
@@ -258,13 +240,13 @@ VOID FiniLine(VOID)
 
 /*
  		#] FiniLine : 
- 		#[ IniLine :			VOID IniLine(extrablank)
+ 		#[ IniLine :			void IniLine(extrablank)
 
 	Initializes the output line for the type of output
 
 */
 
-VOID IniLine(WORD extrablank)
+void IniLine(WORD extrablank)
 {
 	UBYTE *Out;
 	Out = AO.OutputLine;
@@ -290,7 +272,7 @@ VOID IniLine(WORD extrablank)
 
 /*
  		#] IniLine : 
- 		#[ LongToLine :			VOID LongToLine(a,na)
+ 		#[ LongToLine :			void LongToLine(a,na)
 
 	Puts a Long integer in the output line. If it is only a single
 	word long it is put in the line as a single token.
@@ -300,7 +282,7 @@ VOID IniLine(WORD extrablank)
 
 static UBYTE *LLscratch = 0;
 
-VOID LongToLine(UWORD *a, WORD na)
+void LongToLine(UWORD *a, WORD na)
 {
 	UBYTE *OutScratch;
 	if ( LLscratch == 0 ) {
@@ -325,7 +307,7 @@ VOID LongToLine(UWORD *a, WORD na)
 
 /*
  		#] LongToLine : 
- 		#[ RatToLine :			VOID RatToLine(a,na)
+ 		#[ RatToLine :			void RatToLine(a,na)
 
 	Puts a rational number in the output line. The sign is ignored.
 
@@ -334,11 +316,11 @@ VOID LongToLine(UWORD *a, WORD na)
 static UBYTE *RLscratch = 0;
 static UWORD *RLscratE = 0;
 
-VOID RatToLine(UWORD *a, WORD na)
+void RatToLine(UWORD *a, WORD na)
 {
 	GETIDENTITY
 	WORD adenom, anumer;
-	UWORD maxInt;
+	ULONG maxInt;
 
 	if ( AC.OutputMode == CMODE ) {
 		// In C, integer literals over 2^32-1 are automatically promoted to longer types up to
@@ -511,7 +493,7 @@ VOID RatToLine(UWORD *a, WORD na)
 
 /*
  		#] RatToLine : 
- 		#[ TalToLine :			VOID TalToLine(x)
+ 		#[ TalToLine :			void TalToLine(x)
 
 	Writes the unsigned number x to the output as a single token.
 	Par indicates the number of leading blanks in the line.
@@ -519,7 +501,7 @@ VOID RatToLine(UWORD *a, WORD na)
 
 */
 
-VOID TalToLine(UWORD x)
+void TalToLine(UWORD x)
 {
 	UBYTE t[BITSINWORD/3+1];
 	UBYTE *s;
@@ -536,7 +518,7 @@ VOID TalToLine(UWORD x)
 
 /*
  		#] TalToLine : 
- 		#[ TokenToLine :		VOID TokenToLine(s)
+ 		#[ TokenToLine :		void TokenToLine(s)
 
 	Puts s in the output buffer. If it doesn't fit the buffer is
 	flushed first. This routine keeps tokens as one unit.
@@ -548,7 +530,7 @@ VOID TalToLine(UWORD x)
 	digits!
 */
 
-VOID TokenToLine(UBYTE *s)
+void TokenToLine(UBYTE *s)
 {
 	UBYTE *t, *Out;
 	LONG num, i = 0, j;
@@ -649,7 +631,7 @@ VOID TokenToLine(UBYTE *s)
 
 /*
  		#] TokenToLine : 
- 		#[ CodeToLine :			VOID CodeToLine(name,number,mode)
+ 		#[ CodeToLine :			void CodeToLine(name,number,mode)
 
 	Writes a name and possibly its number to output as a single token.
 
@@ -668,7 +650,7 @@ UBYTE *CodeToLine(WORD number, UBYTE *Out)
  		#[ MultiplyToLine :
 */
 
-void MultiplyToLine(VOID)
+void MultiplyToLine(void)
 {
 	int i;
 	if ( AO.CurrentDictionary > 0 && AO.CurDictSpecials > 0
@@ -710,10 +692,10 @@ UBYTE *AddArrayIndex(WORD num,UBYTE *out)
 
 /*
  		#] AddArrayIndex : 
- 		#[ PrtTerms :			VOID PrtTerms()
+ 		#[ PrtTerms :			void PrtTerms()
 */
 
-VOID PrtTerms(VOID)
+void PrtTerms(void)
 {
 	UWORD a[2];
 	WORD na;
@@ -794,7 +776,7 @@ void PrintTime(UBYTE *mess)
  		#] PrintTime : 
   	#] schryf-Utilities : 
  	#[ schryf-Writes :
- 		#[ WriteLists :			VOID WriteLists()
+ 		#[ WriteLists :			void WriteLists()
 
 	Writes the namelists. If mode > 0 also the internal codes are given.
 
@@ -807,7 +789,7 @@ static UBYTE *rsymname[] = {
 	 (UBYTE *)"(-cyclic)",(UBYTE *)"(-reversecyclic)"
 	,(UBYTE *)"(-symmetric)",(UBYTE *)"(-antisymmetric)" };
 
-VOID WriteLists(VOID)
+void WriteLists(void)
 {
 	GETIDENTITY
 	WORD i, j, k, *skip;
@@ -1415,13 +1397,13 @@ void WriteDictionary(DICTIONARY *dict)
 
 /*
  		#] WriteDictionary : 
- 		#[ WriteArgument :		VOID WriteArgument(WORD *t)
+ 		#[ WriteArgument :		void WriteArgument(WORD *t)
 
 		Write a single argument field. The general field goes to
 		WriteExpression and the fast field is dealt with here.
 */
 
-VOID WriteArgument(WORD *t)
+void WriteArgument(WORD *t)
 {
 	UBYTE buffer[180];
 	UBYTE *Out;
@@ -1539,7 +1521,7 @@ UBYTE *specfunnames[NUMSPECS] = {
 	, (UBYTE *)"invfac" };
 */
 
-WORD WriteSubTerm(WORD *sterm, WORD first)
+int WriteSubTerm(WORD *sterm, WORD first)
 {
 	UBYTE buffer[80];
 	UBYTE *Out, closepar[2] = { (UBYTE)')', 0};
@@ -1948,7 +1930,7 @@ WORD WriteSubTerm(WORD *sterm, WORD first)
 
 */
 
-WORD WriteInnerTerm(WORD *term, WORD first)
+int WriteInnerTerm(WORD *term, WORD first)
 {
 	WORD *t, *s, *s1, *s2, n, i, pow;
 #ifdef WITHFLOAT
@@ -2019,6 +2001,9 @@ WORD WriteInnerTerm(WORD *term, WORD first)
 			if ( *ss == FLOATFUN ) {
 				if ( ( FloatChars = PrintFloat(ss,AO.FloatPrec) ) != 0 ) {
 					TokenToLine(AO.floatspace);
+					if ( AC.IsFortran90 == ISFORTRAN90 && AC.Fortran90Kind ) { 
+						AddToLine(AC.Fortran90Kind);
+					}
 					first = 0;
 				}
 				break;
@@ -2145,7 +2130,7 @@ WORD WriteInnerTerm(WORD *term, WORD first)
 
 */
 
-WORD WriteTerm(WORD *term, WORD *lbrac, WORD first, WORD prtf, WORD br)
+int WriteTerm(WORD *term, WORD *lbrac, WORD first, WORD prtf, WORD br)
 {
 	WORD *t, *stopper, *b, n;
 	int oldIsFortran90 = AC.IsFortran90, i;
@@ -2467,7 +2452,7 @@ WrtTmes:				t = term;
 
 */
 
-WORD WriteExpression(WORD *terms, LONG ltot)
+int WriteExpression(WORD *terms, LONG ltot)
 {
 	WORD *stopper;
 	WORD first, btot;
@@ -2498,7 +2483,7 @@ WORD WriteExpression(WORD *terms, LONG ltot)
 		Writes all expressions that should be written
 */
 
-WORD WriteAll(VOID)
+int WriteAll(void)
 {
 	GETIDENTITY
 	WORD lbrac, first;
@@ -2516,7 +2501,7 @@ WORD WriteAll(VOID)
 		 */
 		for ( n = 0; n < NumExpressions; n++ ) {
 			e = &Expressions[n];
-			if ( !e->printflag & PRINTON ) continue;
+			if ( (!e->printflag) & PRINTON ) continue;
 			switch ( e->status ) {
 				case LOCALEXPRESSION:
 				case GLOBALEXPRESSION:
@@ -2724,7 +2709,7 @@ AboWrite:
 		Writes one expression from the preprocessor
 */
 
-WORD WriteOne(UBYTE *name, int alreadyinline, int nosemi, WORD plus)
+int WriteOne(UBYTE *name, int alreadyinline, int nosemi, WORD plus)
 {
 	GETIDENTITY
 	WORD number;

@@ -11,7 +11,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -94,11 +94,12 @@
 	  are errors that occur in TFORM only and that may indicate problems.
 */
 
-WORD TestMatch(PHEAD WORD *term, WORD *level)
+int TestMatch(PHEAD WORD *term, WORD *level)
 {
 	GETBIDENTITY
 	WORD *ll, *m, *w, *llf, *OldWork, *StartWork, *ww, *mm, *t, *OldTermBuffer = 0;
-	WORD power = 0, match = 0, i, msign = 0, ll2;
+	WORD power = 0, i, msign = 0, ll2;
+	int match = 0;
 	int numdollars = 0, protosize, oldallnumrhs;
 	CBUF *C = cbuf+AM.rbufnum, *CC;
 	AT.idallflag = 0;
@@ -634,10 +635,10 @@ nextlevel:;
 
 /*
  		#] TestMatch : 
- 		#[ Substitute :			VOID Substitute(term,pattern,power)
+ 		#[ Substitute :			void Substitute(term,pattern,power)
 */
 
-VOID Substitute(PHEAD WORD *term, WORD *pattern, WORD power)
+void Substitute(PHEAD WORD *term, WORD *pattern, WORD power)
 {
 	GETBIDENTITY
 	WORD *TemTerm;
@@ -1166,7 +1167,7 @@ SubCoef:
 	exponent, denominator.
 
 
-WORD FindSpecial(WORD *term)
+void FindSpecial(WORD *term)
 {
 	WORD *t;
 	WORD *tstop;
@@ -1187,14 +1188,13 @@ WORD FindSpecial(WORD *term)
 		}
 		t += *t;
 	} while ( t < tstop ); }
-	return(0);
 }
 
  		#] FindSpecial : 
  		#[ FindAll :			WORD FindAll(term,pattern,level,par)
 */
 
-WORD FindAll(PHEAD WORD *term, WORD *pattern, WORD level, WORD *par)
+int FindAll(PHEAD WORD *term, WORD *pattern, WORD level, WORD *par)
 {
 	GETBIDENTITY
 	WORD *t, *m, *r, *mm, rnum;
@@ -1965,7 +1965,7 @@ dotensor:
 
 /*
  		#] TestSelect : 
- 		#[ SubsInAll :			VOID SubsInAll()
+ 		#[ SubsInAll :			void SubsInAll()
 
 		This routine takes a match in id,all and stores it away in
 		the AT.allbufnum 'compiler' buffer, after taking out the pattern.
@@ -1979,7 +1979,7 @@ dotensor:
 		(to be done later).
 */
 
-VOID SubsInAll(PHEAD0)
+void SubsInAll(PHEAD0)
 {
 	GETBIDENTITY
 	WORD *TemTerm;
@@ -2140,7 +2140,7 @@ VOID SubsInAll(PHEAD0)
 		wildcard resolutions adapted by an offset.
 */
 
-VOID TransferBuffer(int from,int to,int spectator)
+void TransferBuffer(int from,int to,int spectator)
 {
 	CBUF *C  = cbuf + spectator;
 	CBUF *Cf = cbuf + from;

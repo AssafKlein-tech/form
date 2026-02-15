@@ -14,7 +14,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -43,6 +43,7 @@
 */
 
 #include "form3.h"
+#include "comtool.h"
 
 /*
 	com1commands are the commands of which only part of the word has to
@@ -117,8 +118,11 @@ static KEYWORD com2commands[] = {
 	,{"chainin",        (TFUN)CoChainin,          STATEMENT,    PARTEST}
 	,{"chainout",       (TFUN)CoChainout,         STATEMENT,    PARTEST}
 	,{"chisholm",       (TFUN)CoChisholm,         STATEMENT,    PARTEST}
-	,{"cleartable",     (TFUN)CoClearTable,       DECLARATION,  PARTEST}
+#ifdef WITHFLOAT
+	,{"chop",           (TFUN)CoChop,             STATEMENT,    PARTEST}
+#endif
 	,{"clearflag",      (TFUN)CoClearUserFlag,    STATEMENT,    PARTEST}
+	,{"cleartable",     (TFUN)CoClearTable,       DECLARATION,  PARTEST}
 	,{"collect",        (TFUN)CoCollect,          SPECIFICATION,PARTEST}
 	,{"commuteinset",   (TFUN)CoCommuteInSet,     DECLARATION,  PARTEST}
 	,{"contract",       (TFUN)CoContract,         STATEMENT,    PARTEST}
@@ -182,6 +186,7 @@ static KEYWORD com2commands[] = {
 	,{"ndrop",          (TFUN)CoNoDrop,           SPECIFICATION,PARTEST}
 	,{"nfactorize",     (TFUN)CoNFactorize,       TOOUTPUT,     PARTEST}
 	,{"nhide",          (TFUN)CoNoHide,           SPECIFICATION,PARTEST}
+	,{"nintohide",      (TFUN)CoNoIntoHide,       SPECIFICATION,PARTEST}
 	,{"normalize",      (TFUN)CoNormalize,        STATEMENT,    PARTEST}
 	,{"notinparallel",  (TFUN)CoNotInParallel,    SPECIFICATION,PARTEST}
 	,{"nskip",          (TFUN)CoNoSkip,           SPECIFICATION,PARTEST}
@@ -217,6 +222,9 @@ static KEYWORD com2commands[] = {
 	,{"splitarg",       (TFUN)CoSplitArg,         STATEMENT,    PARTEST}
 	,{"splitfirstarg",  (TFUN)CoSplitFirstArg,    STATEMENT,    PARTEST}
 	,{"splitlastarg",   (TFUN)CoSplitLastArg,     STATEMENT,    PARTEST}
+#ifdef WITHFLOAT
+	,{"strictrounding", (TFUN)CoStrictRounding,   STATEMENT,    PARTEST}
+#endif
 	,{"stuffle",        (TFUN)CoStuffle,          STATEMENT,    PARTEST}
 	,{"sum",            (TFUN)CoSum,              STATEMENT,    PARTEST}
 	,{"switch",         (TFUN)CoSwitch,           STATEMENT,    PARTEST}
@@ -267,32 +275,30 @@ LONG insubexpbuffers = 0;
 	subexpbuffers = (SUBBUF *)Malloc1(256*sizeof(SUBBUF),"subexpbuffers");\
 	topsubexpbuffers = subexpbuffers+256; } insubexpbuffers = 0; }
 
-#if defined(ILP32)
-
-#define PUTNUMBER128(t,n) { if ( n >= 16384 ) { \
-				*t++ = n/(128*128); *t++ = (n/128)%128; *t++ = n%128; } \
-			else if ( n >= 128 ) { *t++ = n/128; *t++ = n%128; }      \
-			else *t++ = n; }
-#define PUTNUMBER100(t,n) { if ( n >= 10000 ) { \
-				*t++ = n/10000; *t++ = (n/100)%100; *t++ = n%100; } \
-			else if ( n >= 100 ) { *t++ = n/100; *t++ = n%100; }   \
-			else *t++ = n; }
-
-#elif ( defined(LLP64) || defined(LP64) )
-
-#define PUTNUMBER128(t,n) { if ( n >= 2097152 ) { \
+#if BITSINWORD == 32
+	#define PUTNUMBER128(t,n) { if ( n >= 2097152 ) { \
 				*t++ = ((n/128)/128)/128; *t++ = ((n/128)/128)%128; *t++ = (n/128)%128; *t++ = n%128; } \
 			else if ( n >= 16384 ) { \
 				*t++ = n/(128*128); *t++ = (n/128)%128; *t++ = n%128; } \
 			else if ( n >= 128 ) { *t++ = n/128; *t++ = n%128; }      \
 			else *t++ = n; }
-#define PUTNUMBER100(t,n) { if ( n >= 1000000 ) { \
+	#define PUTNUMBER100(t,n) { if ( n >= 1000000 ) { \
 				*t++ = ((n/100)/100)/100; *t++ = ((n/100)/100)%100; *t++ = (n/100)%100; *t++ = n%100; } \
 			else if ( n >= 10000 ) { \
 				*t++ = n/10000; *t++ = (n/100)%100; *t++ = n%100; } \
 			else if ( n >= 100 ) { *t++ = n/100; *t++ = n%100; }   \
 			else *t++ = n; }
-
+#elif BITSINWORD == 16
+	#define PUTNUMBER128(t,n) { if ( n >= 16384 ) { \
+				*t++ = n/(128*128); *t++ = (n/128)%128; *t++ = n%128; } \
+			else if ( n >= 128 ) { *t++ = n/128; *t++ = n%128; }      \
+			else *t++ = n; }
+	#define PUTNUMBER100(t,n) { if ( n >= 10000 ) { \
+				*t++ = n/10000; *t++ = (n/100)%100; *t++ = n%100; } \
+			else if ( n >= 100 ) { *t++ = n/100; *t++ = n%100; }   \
+			else *t++ = n; }
+#else
+	#error Only 64-bit and 32-bit platforms are supported.
 #endif
 
 /*
@@ -306,7 +312,7 @@ LONG insubexpbuffers = 0;
 		Search in table 2 can be binary.
 */
 
-VOID inictable(VOID)
+void inictable(void)
 {
 	KEYWORD *k = com1commands;
 	int i, j, ksize;
@@ -418,19 +424,32 @@ int ParenthesesTest(UBYTE *sin)
 /*
  		#] ParenthesesTest : 
  		#[ SkipAName :
-
-		Skips a name and gives a pointer to the object after the name.
-		If there is not a proper name, it returns a zero pointer.
-		In principle the brackets match already, so the `if ( *s == 0 )'
-		code is not really needed, but you never know how the program
-		is extended later.
 */
 
+/**
+ * Skips a name and gives a pointer to the character after the name.
+ * If there is not a proper name, it emits a compiler message and then returns
+ * a null pointer.
+ * This function supports formal names (e.g., `[x+a]`) and $-variables
+ * in addition to ordinary identifiers.
+ *
+ * @note The brackets are assumed to be matched already.
+ *
+ * @param[in]  s  Pointer to a null-terminated input string that starts
+ *                with a name.
+ * @return        Pointer to the character after the name, or a null pointer
+ *                if the name is invalid.
+ */
 UBYTE *SkipAName(UBYTE *s)
 {
 	UBYTE *t = s;
 	if ( *s == '[' ) {
 		SKIPBRA1(s)
+/*
+		In principle the brackets match already, so the `if ( *s == 0 )'
+		code is not really needed, but you never know how the program
+		is extended later.
+*/
 		if ( *s == 0 ) {
 			MesPrint("&Illegal name: '%s'",t);
 			return(0);
@@ -610,10 +629,29 @@ int CompileStatement(UBYTE *in)
 			AC.compiletype = STATEMENT;
 		}
 	  }
-	  else if ( k->type == MIXED2 ) {}
 	  else if ( k->type > AC.compiletype ) {
-		if ( StrCmp((UBYTE *)(k->name),(UBYTE *)"format") != 0 )
-			AC.compiletype = k->type;
+		/*
+		 * We intentionally do NOT update "compiletype" for:
+		 * - Format statements (type = TOOUTPUT)
+		 * - ModuleOption statements (type = ATENDOFMODULE)
+		 *   with sum/maximum/minimum/local (i.e., $-variable-related options)
+		 *
+		 * This relaxes the ordering constraint, allowing statements with
+		 * type >= the current "compiletype" to follow.
+		 */
+		if ( StrCmp((UBYTE *)(k->name),(UBYTE *)"format") == 0 )
+			goto NoUpdateCompileType;
+		if ( StrCmp((UBYTE *)(k->name),(UBYTE *)"moduleoption") == 0 ) {
+			UBYTE *ss = s;
+			SkipSpaces(&ss);
+			if ( ConsumeOption(&ss,"sum")
+			|| ConsumeOption(&ss,"maximum")
+			|| ConsumeOption(&ss,"minimum")
+			|| ConsumeOption(&ss,"local") ) goto NoUpdateCompileType;
+		}
+		AC.compiletype = k->type;
+NoUpdateCompileType:
+		;
 	  }
 	  else if ( k->type < AC.compiletype ) {
 		switch ( k->type ) {
@@ -665,7 +703,7 @@ int CompileStatement(UBYTE *in)
  		#[ TestTables :
 */
 
-int TestTables(VOID)
+int TestTables(void)
 {
 	FUNCTIONS f = functions;
 	TABLES t;
@@ -788,8 +826,8 @@ int CompileSubExpressions(SBYTE *tokens)
 				Terminate(-1);
 			}
 			if ( subexpbuffers+insubexpbuffers >= topsubexpbuffers ) {
-				DoubleBuffer((void **)((VOID *)(&subexpbuffers))
-				,(void **)((VOID *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
+				DoubleBuffer((void **)((void *)(&subexpbuffers))
+				,(void **)((void *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
 			}
 			subexpbuffers[insubexpbuffers].subexpnum = num;
 			subexpbuffers[insubexpbuffers].buffernum = AC.cbufnum;
@@ -1977,8 +2015,8 @@ int CodeFactors(SBYTE *tokens)
 					Terminate(-1);
 				}
 				if ( subexpbuffers+insubexpbuffers >= topsubexpbuffers ) {
-					DoubleBuffer((void **)((VOID *)(&subexpbuffers))
-					,(void **)((VOID *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
+					DoubleBuffer((void **)((void *)(&subexpbuffers))
+					,(void **)((void *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
 				}
 				subexpbuffers[insubexpbuffers].subexpnum = subexp;
 				subexpbuffers[insubexpbuffers].buffernum = AC.cbufnum;
@@ -2218,8 +2256,8 @@ dopowerd:
 		Terminate(-1);
 	}
 	if ( subexpbuffers+insubexpbuffers >= topsubexpbuffers ) {
-		DoubleBuffer((void **)((VOID *)(&subexpbuffers))
-		,(void **)((VOID *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
+		DoubleBuffer((void **)((void *)(&subexpbuffers))
+		,(void **)((void *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
 	}
 	subexpbuffers[insubexpbuffers].subexpnum = subexp;
 	subexpbuffers[insubexpbuffers].buffernum = AC.cbufnum;
@@ -2243,7 +2281,7 @@ dopowerd:
 
 WORD GenerateFactors(WORD n,WORD inc)
 {
-	WORD subexp;
+	int subexp;
 	int i, error = 0;
 	SBYTE *s;
 	SBYTE *tokenbuffer = (SBYTE *)Malloc1(8*n*sizeof(SBYTE),"GenerateFactors");
@@ -2265,8 +2303,8 @@ WORD GenerateFactors(WORD n,WORD inc)
 		Terminate(-1);
 	}
 	if ( subexpbuffers+insubexpbuffers >= topsubexpbuffers ) {
-		DoubleBuffer((void **)((VOID *)(&subexpbuffers))
-		,(void **)((VOID *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
+		DoubleBuffer((void **)((void *)(&subexpbuffers))
+		,(void **)((void *)(&topsubexpbuffers)),sizeof(SUBBUF),"subexpbuffers");
 	}
 	subexpbuffers[insubexpbuffers].subexpnum = subexp;
 	subexpbuffers[insubexpbuffers].buffernum = AC.cbufnum;
