@@ -170,7 +170,6 @@ typedef struct {
 */
 typedef struct {
     MPI_Request *reqs;  // flat array of persistent requests
-	PADPOSITION(1,0,0,0,0);
 } PF_Dispatch;
 
 typedef struct ParallelVars {
@@ -193,7 +192,6 @@ typedef struct ParallelVars {
 	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
-	PADPOSITION(3,0,10,2,0);
 } PARALLELVARS;
 
 extern PARALLELVARS PF;

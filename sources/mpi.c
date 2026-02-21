@@ -266,7 +266,7 @@ int PF_Probe(int *src)
 int PF_WISendSbuf(int tag, int dest)
 {
     if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
-        return PF_ISendSbuf(MASTER, tag);
+       {return PF_ISendSbuf(MASTER, tag);}
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
 	AR.CompressBuffers[dest][0] = 0;
