@@ -7,7 +7,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -46,21 +46,20 @@
 
 #define MAJORVERSION 5
 #define MINORVERSION 0
+#define PATCHVERSION 0
 
 #ifdef __DATE__
 #define PRODUCTIONDATE __DATE__
 #else
-#define PRODUCTIONDATE "8-nov-2022"
+#define PRODUCTIONDATE "27-jan-2026"
 #endif
 
-/*#undef BETAVERSION */
-#define BETAVERSION
+#undef BETAVERSION
+/*#define BETAVERSION*/
 
 #ifdef LINUX32
 #define UNIX
 #define LINUX
-#define ILP32
-#define SIZEOF_LONG_LONG 8
 #define _FILE_OFFSET_BITS 64
 #define WITHZLIB
 #define WITHGMP
@@ -70,7 +69,6 @@
 #ifdef LINUX64
 #define UNIX
 #define LINUX
-#define LP64
 #define WITHZLIB
 #define WITHGMP
 #define WITHPOSIXCLOCK
@@ -79,15 +77,12 @@
 
 #ifdef APPLE32
 #define UNIX
-#define ILP32
-#define SIZEOF_LONG_LONG 8
 #define _FILE_OFFSET_BITS 64
 #define WITHZLIB
 #endif
 
 #ifdef APPLE64
 #define UNIX
-#define LP64
 #define WITHZLIB
 #define WITHGMP
 #define WITHPOSIXCLOCK
@@ -98,19 +93,11 @@
 
 #ifdef CYGWIN32
 #define UNIX
-#define ILP32
-#define SIZEOF_LONG_LONG 8
 #endif
 
 #ifdef _MSC_VER
 #define WINDOWS
 #define _CRT_SECURE_NO_WARNINGS
-#if defined(_WIN64)
-#define LLP64
-#elif defined(_WIN32)
-#define ILP32
-#define SIZEOF_LONG_LONG 8
-#endif
 #endif
 
 /*
@@ -139,15 +126,6 @@
 
 /* Workaround for MSVC. */
 #if defined(_MSC_VER)
-/*
- * Recent versions of MSVC++ (>= 2012) don't like reserved keywords being
- * macroized even when they are not available. This is problematic for
- * `alignof`, which is used in legacy `PADXXX` macros. We disable tests in
- * xkeycheck.h.
- */
-#if _MSC_VER >= 1700
-#define _ALLOW_KEYWORD_MACROS
-#endif
 /*
  * Old versions of MSVC didn't support C99 function `snprintf`, which is used
  * in poly.cc. On the other hand, macroizing `snprintf` gives a fatal error
@@ -197,7 +175,6 @@
 #include <io.h>
 #include <fcntl.h>
 /* Undefine/rename conflicted symbols. */
-#undef VOID  /* WinNT.h */
 #undef MAXLONG  /* WinNT.h */
 #define WORD FORM_WORD  /* WinDef.h */
 #define LONG FORM_LONG /* WinNT.h */
@@ -214,107 +191,52 @@
 #error UNIX or WINDOWS must be defined!
 #endif
 
-/*
- * Data model. ILP32 or LLP64 or LP64 must be defined.
- *
- * Here we define basic types WORD, LONG and their unsigned versions
- * UWORD and ULONG. LONG must be double size of WORD. Their actual types
- * are system-dependent. BITSINWORD and BITSINLONG are also defined.
- * INT16, INT32 (also INT64 and INT128 if available) are used for
- * system independent saved expressions (store.c).
- */
-#if defined(ILP32)
+#include <stdint.h>
 
-typedef short WORD;
-typedef long LONG;
-typedef unsigned short UWORD;
-typedef unsigned long ULONG;
-#define BITSINWORD 16
-#define BITSINLONG 32
-#define INT16 short
-#define INT32 int
-#undef INT64
-#undef INT128
-
-#ifdef SIZEOF_LONG_LONG
-#if SIZEOF_LONG_LONG == 8
-#define INT64 long long
-#endif
-#endif
-
-#ifndef INT64
-#error INT64 is not available!
-#endif
-
-#define WORD_MIN_VALUE SHRT_MIN
-#define WORD_MAX_VALUE SHRT_MAX
-#define LONG_MIN_VALUE LONG_MIN
-#define LONG_MAX_VALUE LONG_MAX
-
-#elif defined(LLP64)
-
-typedef int WORD;
-typedef long long LONG;
-typedef unsigned int UWORD;
-typedef unsigned long long ULONG;
-#define BITSINWORD 32
-#define BITSINLONG 64
-#define INT16 short
-#define INT32 int
-#define INT64 long long
-#undef INT128
-
-#define WORD_MIN_VALUE INT_MIN
-#define WORD_MAX_VALUE INT_MAX
-#define LONG_MIN_VALUE LLONG_MIN
-#define LONG_MAX_VALUE LLONG_MAX
-
-#elif defined(LP64)
-
-typedef int WORD;
-typedef long LONG;
-typedef unsigned int UWORD;
-typedef unsigned long ULONG;
-#define BITSINWORD 32
-#define BITSINLONG 64
-#define INT16 short
-#define INT32 int
-#define INT64 long
-#undef INT128
-
-#define WORD_MIN_VALUE INT_MIN
-#define WORD_MAX_VALUE INT_MAX
-#define LONG_MIN_VALUE LONG_MIN
-#define LONG_MAX_VALUE LONG_MAX
-
+#if UINTPTR_MAX == UINT64_MAX
+	typedef int32_t WORD;
+	typedef int64_t LONG;
+	typedef uint32_t UWORD;
+	typedef uint64_t ULONG;
+	#define BITSINWORD 32
+	#define BITSINLONG 64
+	#define WORD_MIN_VALUE INT32_MIN
+	#define WORD_MAX_VALUE INT32_MAX
+	#define LONG_MIN_VALUE INT64_MIN
+	#define LONG_MAX_VALUE INT64_MAX
+#elif UINTPTR_MAX == UINT32_MAX
+	typedef int16_t WORD;
+	typedef int32_t LONG;
+	typedef uint16_t UWORD;
+	typedef uint32_t ULONG;
+	#define BITSINWORD 16
+	#define BITSINLONG 32
+	#define WORD_MIN_VALUE INT16_MIN
+	#define WORD_MAX_VALUE INT16_MAX
+	#define LONG_MIN_VALUE INT32_MIN
+	#define LONG_MAX_VALUE INT32_MAX
 #else
-#error ILP32 or LLP64 or LP64 must be defined!
+	#error Can not detect if this is a 32-bit or 64-bit platform.
 #endif
 
 STATIC_ASSERT(sizeof(WORD) * 8 == BITSINWORD);
 STATIC_ASSERT(sizeof(LONG) * 8 == BITSINLONG);
 STATIC_ASSERT(sizeof(WORD) * 2 == sizeof(LONG));
 STATIC_ASSERT(sizeof(LONG) >= sizeof(int *));
-STATIC_ASSERT(sizeof(INT16) == 2);
-STATIC_ASSERT(sizeof(INT32) == 4);
-STATIC_ASSERT(sizeof(INT64) == 8);
-#ifdef INT128
-STATIC_ASSERT(sizeof(INT128) == 16);
-#endif
+STATIC_ASSERT(sizeof(LONG) >= sizeof(int *));
+STATIC_ASSERT(sizeof(int *) >= sizeof(int));
+STATIC_ASSERT(sizeof(int) >= sizeof(WORD));
+STATIC_ASSERT(sizeof(WORD) >= sizeof(char));
+STATIC_ASSERT(sizeof(char) == 1);
 
-#if BITSINWORD == 32
-#define WORDSIZE32 1
-#endif
-
-typedef void VOID;
 typedef signed char SBYTE;
 typedef unsigned char UBYTE;
 typedef unsigned int UINT;
 typedef ULONG RLONG;  /* Used in reken.c. */
-typedef INT64 MLONG;  /* See commentary in minos.h. */
+typedef int64_t MLONG;  /* See commentary in minos.h. */
 /*
  * NOTE: we don't use the standard _Bool (or C++ bool) because its size is
- * implementation-dependent and messes up the traditional PADXXX macros.
+ * implementation-dependent.
  */
 typedef char BOOL;
                                                        /* E.g. in 32-bits */
@@ -331,20 +253,20 @@ typedef char BOOL;
 #define MAXPOSITIVE4   (MAXPOSITIVE / 4)               /* 0x00001FFFL  */
 
 /*
- * alignof(type) returns the number of bytes used in the alignment of
+ * form_alignof(type) returns the number of bytes used in the alignment of
  * the type.
  */
-#if !defined(alignof)
+#if !defined(form_alignof)
 #if defined(__GNUC__)
 /* GNU C compiler has "__alignof__". */
-#define alignof(type) __alignof__(type)
+#define form_alignof(type) __alignof__(type)
 #elif defined(_MSC_VER)
 /* Microsoft C compiler has "__alignof". */
-#define alignof(type) __alignof(type)
+#define form_alignof(type) __alignof(type)
 #elif !defined(__cplusplus)
 /* Generic case in C. */
 #include <stddef.h>
-#define alignof(type) offsetof(struct { char c_; type x_; }, x_)
+#define form_alignof(type) offsetof(struct { char c_; type x_; }, x_)
 #else
 /* Generic case in C++, at least works with a POD struct. */
 #include <cstddef>
@@ -354,83 +276,10 @@ template<typename T> struct calc {
 	enum { value = offsetof(X, x_) };
 };
 }
-#define alignof(type) alignof_impl_::calc<type>::value
+#define form_alignof(type) alignof_impl_::calc<type>::value
 #endif
 #endif
 
-/*
- * Macros to be inserted at the end of a structure to align the whole structure.
- *
- * In the currently available systems,
- *   sizeof(POSITION) >= sizeof(pointers) == sizeof(LONG) >= sizeof(int)
- *                    >= sizeof(WORD) >= sizeof(UBYTE) = 1.
- * (POSITION is defined in struct.h and contains only an off_t variable.)
- * Thus, if we put members of a structure in this order and use those macros,
- * then we can align the data without relying on extra paddings added by
- * the compiler. For example,
- *   typedef struct {
- *     int *a;
- *     LONG b;
- *     WORD c[2];
- *     UBYTE d;
- *     PADPOINTER(1,0,2,1);
- *   } A;
- *   typedef struct {
- *     POSITION p;
- *     A a;  // aligned same as pointers
- *     int *b;
- *     LONG c;
- *     UBYTE d;
- *     PADPOSITION(1,1,0,0,1+sizeof(A));
- *   } B;
- * The cost for the use of those PADXXX macros is a padding (>= 1 byte) will
- * be always inserted even in the case that no padding is actually needed.
- *
- * Numbers for the arguments have to be calculated manually and so very
- * error-prone. Be careful!
- *
- * Note that there is a 32-bit system in which off_t is aligned on 8-byte
- * boundary, (e.g., Cygwin with large file support), but still the above
- * inequalities are satisfied.
- *
- * The legendary story of these macros--they fixed some problems in ancient
- * times when compilers were unreliable and didn't know how to correctly compute
- * structure paddings--has been handed down, though nowadays there are only
- * disadvantages for them in practice (ancient compilers most likely can't
- * compile C99 and C++98+TR1 sources anyway).
- */
-#define PADDUMMY(type, size) \
-	UBYTE d_u_m_m_y[alignof(type) - ((size) & (alignof(type) - 1))]
-#define PADPOSITION(ptr_,long_,int_,word_,byte_) \
-	PADDUMMY(off_t, \
-		+ sizeof(int *) * (ptr_) \
-		+ sizeof(LONG)  * (long_) \
-		+ sizeof(int)   * (int_) \
-		+ sizeof(WORD)  * (word_) \
-		+ sizeof(UBYTE) * (byte_) \
-	)
-#define PADPOINTER(long_,int_,word_,byte_) \
-	PADDUMMY(int *, \
-		+ sizeof(LONG)  * (long_) \
-		+ sizeof(int)   * (int_) \
-		+ sizeof(WORD)  * (word_) \
-		+ sizeof(UBYTE) * (byte_) \
-	)
-#define PADLONG(int_,word_,byte_) \
-	PADDUMMY(LONG, \
-		+ sizeof(int)   * (int_) \
-		+ sizeof(WORD)  * (word_) \
-		+ sizeof(UBYTE) * (byte_) \
-	)
-#define PADINT(word_,byte_) \
-	PADDUMMY(int, \
-		+ sizeof(WORD)  * (word_) \
-		+ sizeof(UBYTE) * (byte_) \
-	)
-#define PADWORD(byte_) \
-	PADDUMMY(WORD, \
-		+ sizeof(UBYTE) * (byte_) \
-	)
 
 /*
 #define WITHPCOUNTER
@@ -444,22 +293,23 @@ template<typename T> struct calc {
 #include <string.h>
 #include <ctype.h>
 #include <limits.h>
-#ifdef ANSI
 #include <stdarg.h>
 #include <time.h>
-#endif
 #ifdef WINDOWS
 #include "fwin.h"
 #endif
 #ifdef UNIX
 #include <unistd.h>
-#include <time.h>
 #include <fcntl.h>
 #include <sys/file.h>
 #include "unix.h"
 #endif
 #ifdef WITHZLIB
+#ifdef WITHZSTD
+#include <zstd_zlibwrapper.h>
+#else
 #include <zlib.h>
+#endif
 #endif
 #ifdef WITHPTHREADS
 #include <pthread.h>
@@ -479,6 +329,8 @@ template<typename T> struct calc {
 #include "structs.h"
 #include "declare.h"
 #include "variable.h"
+
+STATIC_ASSERT(sizeof(off_t) >= sizeof(LONG));
 
 /*
  * The interface to file routines for UNIX or non-UNIX (Windows).

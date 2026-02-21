@@ -8,7 +8,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -53,7 +53,7 @@ static char hex[] = {'0','1','2','3','4','5','6','7','8','9',
  		#[ Error0 :
 */
 
-VOID Error0(char *s)
+NORETURN void Error0(char *s)
 {
 	MesPrint("=== %s",s);
 	Terminate(-1);
@@ -64,7 +64,7 @@ VOID Error0(char *s)
  		#[ Error1 :
 */
 
-VOID Error1(char *s, UBYTE *t)
+NORETURN void Error1(char *s, UBYTE *t)
 {
 	MesPrint("@%s %s",s,t);
 	Terminate(-1);
@@ -75,7 +75,7 @@ VOID Error1(char *s, UBYTE *t)
  		#[ Error2 :
 */
 
-VOID Error2(char *s1, char *s2, UBYTE *t)
+NORETURN void Error2(char *s1, char *s2, UBYTE *t)
 {
 	MesPrint("@%s%s %s",s1,s2,t);
 	Terminate(-1);
@@ -86,12 +86,11 @@ VOID Error2(char *s1, char *s2, UBYTE *t)
  		#[ MesWork :
 */
 
-int MesWork(VOID)
+NORETURN void MesWork(void)
 {
 	MesPrint("=== Workspace overflow. %l bytes is not enough.",AM.WorkSize);
 	MesPrint("=== Change parameter WorkSpace in %s",setupfilename);
 	Terminate(-1);
-	return(-1);
 }
 
 /*
@@ -133,13 +132,7 @@ int MesWork(VOID)
 	the tabulator in the print "" statement.
 */
 
-int
-#ifdef ANSI
-MesPrint(const char *fmt, ... )
-#else
-MesPrint(va_alist)
-va_dcl
-#endif
+int MesPrint(const char *fmt, ... )
 {
 	GETIDENTITY
 	char Out[MAXLINELENGTH+14], *stopper, *t, *s, *u, c, *carray;
@@ -152,13 +145,8 @@ va_dcl
 	LONG (*OldWrite)(int handle, UBYTE *buffer, LONG size) = WriteFile;
 	/*:[19apr2004 mt]*/
 	va_list ap;
-#ifdef ANSI
 	va_start(ap,fmt);
 	s = (char *)fmt;
-#else
-	va_start(ap);
-	s = va_arg(ap,char *);
-#endif
 #ifdef WITHMPI
 	/*
 	 * On slaves, if AS.printflag is
@@ -787,7 +775,7 @@ dollarzero:				*t++ = '0'; *t = 0;
  		#[ Warning :
 */
 
-VOID Warning(char *s)
+void Warning(char *s)
 {
 	iswarning = 1;
 	if ( AC.WarnFlag ) MesPrint("&Warning: %s",s);
@@ -799,7 +787,7 @@ VOID Warning(char *s)
  		#[ HighWarning :
 */
 
-VOID HighWarning(char *s)
+void HighWarning(char *s)
 {
 	iswarning = 1;
 	if ( AC.WarnFlag >= 2 ) MesPrint("&Warning: %s",s);
@@ -826,7 +814,7 @@ int MesCall(char *s)
  		#[ MesCerr :
 */
 
-WORD MesCerr(char *s, UBYTE *t)
+int MesCerr(char *s, UBYTE *t)
 {
 	UBYTE *u, c;
 	WORD i = 11;
@@ -845,7 +833,7 @@ WORD MesCerr(char *s, UBYTE *t)
  		#[ MesComp :
 */
 
-WORD MesComp(char *s, UBYTE *p, UBYTE *q)
+int MesComp(char *s, UBYTE *p, UBYTE *q)
 {
 	UBYTE c;
 	c = *++q; *q = 0;
@@ -859,7 +847,7 @@ WORD MesComp(char *s, UBYTE *p, UBYTE *q)
  		#[ PrintTerm :
 */
 
-VOID PrintTerm(WORD *term, char *where)
+void PrintTerm(WORD *term, char *where)
 {
 	UBYTE OutBuf[140];
 	WORD *t, x;
@@ -889,7 +877,7 @@ VOID PrintTerm(WORD *term, char *where)
  		#[ PrintTermC :
 */
 
-VOID PrintTermC(WORD *term, char *where)
+void PrintTermC(WORD *term, char *where)
 {
 	UBYTE OutBuf[140];
 	WORD *t, x;
@@ -923,7 +911,7 @@ VOID PrintTermC(WORD *term, char *where)
  		#[ PrintSubTerm :
 */
 
-VOID PrintSubTerm(WORD *term, char *where)
+void PrintSubTerm(WORD *term, char *where)
 {
 	UBYTE OutBuf[140];
 	WORD *t;
@@ -945,7 +933,7 @@ VOID PrintSubTerm(WORD *term, char *where)
  		#[ PrintWords :
 */
 
-VOID PrintWords(WORD *buffer, LONG number)
+void PrintWords(WORD *buffer, LONG number)
 {
 	UBYTE OutBuf[140];
 	WORD *t;

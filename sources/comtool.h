@@ -4,7 +4,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -42,10 +42,15 @@
 */
 
 /**
- * Skips white-spaces in the buffer. Here the white-spaces includes commas,
- * which is treated as a space in FORM.
+ * Skips over whitespace characters in the buffer, including commas,
+ * which are treated as whitespace characters in the FORM compiler.
  *
- * @param[in,out]  s  The pointer to the buffer.
+ * @note To avoid skipping commas, use `SKIPBLANKS(s)` instead.
+ *
+ * @param[in,out]  s  Pointer to the current position in the buffer. The buffer
+ *                    must be null-terminated. On return, the pointer is
+ *                    advanced to the first non-whitespace character, or the
+ *                    null terminator if none is found.
  */
 static inline void SkipSpaces(UBYTE **s)
 {
@@ -55,13 +60,15 @@ static inline void SkipSpaces(UBYTE **s)
 }
 
 /**
- * Checks if the next word in the buffer is the given keyword, with ignoring
- * case. If found, the pointer is moved such that the keyword is consumed in the
- * buffer, and this function returns a non-zero value.
+ * Checks whether the next token in the buffer is the given keyword,
+ * ignoring case. If found, the keyword is consumed and the pointer is advanced
+ * to the first non-whitespace character following the keyword.
  *
- * @param[in,out]  s    The pointer to the buffer. Changed if the keyword found.
- * @param          opt  The optional keyword.
- * @return              1 if the keyword found, otherwise 0.
+ * @param[in,out]  s    Pointer to the current position in the buffer.
+ * 						The buffer must be null-terminated. On return,
+ * 						the pointer is advanced if the keyword is found.
+ * @param          opt  Case-insensitive keyword.
+ * @return              1 if the keyword is found, otherwise 0.
  */
 static inline int ConsumeOption(UBYTE **s, const char *opt)
 {
@@ -73,10 +80,9 @@ static inline int ConsumeOption(UBYTE **s, const char *opt)
 	/* Check if `opt` ended. */
 	if ( !*opt ) {
 		/* Check if `*p` is a word boundary. */
-		if ( !*p || !(FG.cTable[(unsigned char)*p] == 0 ||
-		              FG.cTable[(unsigned char)*p] == 1 || *p == '_' ||
-		              *p == '$') ) {
-			/* Consume the option. Skip the trailing spaces. */
+		UINT c = FG.cTable[(unsigned char)*p];
+		if ( c != 0 && c != 1 && *p != '_' && *p != '$' ) {
+			/* Consume the option. Skip the trailing whitespace. */
 			*s = (UBYTE *)p;
 			SkipSpaces(s);
 			return(1);

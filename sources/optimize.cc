@@ -5,7 +5,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -129,10 +129,27 @@ public:
 	int num_visits;
 	WORD var;
 	bool finished;
-	PADPOINTER(1,1,1,1);
 
 	tree_node (int _var=0):
 		sum_results(0), num_visits(0), var(_var), finished(false) {}
+
+	tree_node(const tree_node& other):
+		childs(other.childs),
+		sum_results(other.sum_results),
+		num_visits(other.num_visits),
+		var(other.var),
+		finished(other.finished) {}
+
+	tree_node& operator=(const tree_node& other) {
+		if (this != &other) {
+			childs = other.childs;
+			sum_results = other.sum_results;
+			num_visits = other.num_visits;
+			var = other.var;
+			finished = other.finished;
+		}
+		return *this;
+	}
 };
 
 // global variables for multithreading
@@ -234,7 +251,7 @@ LONG get_expression (int exprnr) {
   }
 
   // sort and store in buffer
-  LONG len = EndSort(BHEAD (WORD *)((VOID *)(&optimize_expr)),2);
+  LONG len = EndSort(BHEAD (WORD *)((void *)(&optimize_expr)),2);
   LowerSortLevel();
   AT.WorkPointer = term;
 
@@ -4271,7 +4288,7 @@ void PF_optimize_expression_given_Horner_slave () {
  *	 "PrintExtraSymbol". The results are stored in the buffer
  *	 AO.OptimizeResult.
  */
-VOID generate_output (const vector<WORD> &instr, int exprnr, int extraoffset, const vector<vector<WORD> > &brackets) {
+void generate_output (const vector<WORD> &instr, int exprnr, int extraoffset, const vector<vector<WORD> > &brackets) {
 
 #ifdef DEBUG
 	MesPrint ("*** [%s, w=%w] CALL: generate_output", thetime_str().c_str());
@@ -4504,7 +4521,7 @@ WORD generate_expression (WORD exprnr) {
  *	 expression is printed (for "Print") or not (for "#Optimize /
  *	 #write "%O").
  */
-VOID optimize_print_code (int print_expr) {
+void optimize_print_code (int print_expr) {
 
 #ifdef DEBUG
 	MesPrint ("*** [%s, w=%w] CALL: optimize_print_code", thetime_str().c_str());

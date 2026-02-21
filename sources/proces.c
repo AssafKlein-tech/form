@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -61,10 +61,11 @@ WORD printscratch[2];
  *	        return on the spot by calling Terminate.
  */
  
-WORD Processor(VOID)
+int Processor(void)
 {
 	GETIDENTITY
-	WORD *term, *t, i, retval = 0, size;
+	WORD *term, *t, i, size;
+	int retval = 0;
 	EXPRESSIONS e;
 	POSITION position;
 	WORD last, LastExpression, fromspectator;
@@ -99,7 +100,9 @@ WORD Processor(VOID)
 	AR.CompressPointer = AR.CompressBuffer;
 	AR.NoCompress = AC.NoCompress;
 	term = AT.WorkPointer;
-	if ( ( (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer) ) > AT.WorkTop ) return(MesWork());
+	if ( ( (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer) ) > AT.WorkTop ) {
+		MesWork();
+	}
 	UpdatePositions();
 	C->rhs[C->numrhs+1] = C->Pointer;
 	AR.KeptInHold = 0;
@@ -1189,28 +1192,9 @@ Important: we may not have enough spots here
 				}
 			}
 			else if ( *t == TOPOLOGIES ) {
-/*
-				Syntax:
-				topologies_(nloops,nlegs,setvertexsizes,setext,setint[,options])
-*/
-				t1 = t+FUNHEAD; t2 = t+t[1];
-				if ( *t1 == -SNUMBER && t1[1] >= 0 &&
-					t1[2] == -SNUMBER && ( t1[3] >= 0 || t1[3] == -2 ) &&
-					t1[4] == -SETSET && Sets[t1[5]].type == CNUMBER &&
-					t1[6] == -SETSET && Sets[t1[7]].type == CVECTOR &&
-					t1[8] == -SETSET && Sets[t1[9]].type == CVECTOR &&
-					t1+10 <= t2 ) {
-					if ( t1+10 == t2 || ( t1+12 <= t2 && ( t1[10] == -SNUMBER ||
-						( t1[10] == -SETSET &&
-							Sets[t1[5]].last-Sets[t1[5]].first ==
-							Sets[t1[11]].last-Sets[t1[11]].first ) ) ) ) {
-						AN.TeInFun = -15;
-						AN.TeSuOut = 0;
-						AR.TePos = -1;
-						AR.funoffset = t - term;
-						DONE(1)
-					}
-				}
+				MesPrint("&The topologies_ function was removed in FORM 5.0.");
+				MesPrint("&See the TopologiesOnly_ option of diagrams_.");
+				Terminate(-1);
 			}
 			else if ( *t == DIAGRAMS ) {
 /*
@@ -1226,8 +1210,10 @@ Important: we may not have enough spots here
 					|| ( Sets[t1[3]].type == ANYTYPE && ( Sets[t1[3]].first == Sets[t1[3]].last ) ) ) &&
 				  t1[4] == -SETSET && ( Sets[t1[5]].type == CFUNCTION
 					|| ( Sets[t1[5]].type == ANYTYPE && ( Sets[t1[5]].first == Sets[t1[5]].last ) ) ) &&
-				  t1[6] == -SETSET && Sets[t1[7]].type == CVECTOR &&
-				  t1[8] == -SETSET && Sets[t1[9]].type == CVECTOR &&
+				  t1[6] == -SETSET && ( Sets[t1[7]].type == CVECTOR
+					|| ( Sets[t1[7]].type == ANYTYPE && ( Sets[t1[7]].first == Sets[t1[7]].last ) ) ) &&
+				  t1[8] == -SETSET && ( Sets[t1[9]].type == CVECTOR
+					|| ( Sets[t1[9]].type == ANYTYPE && ( Sets[t1[9]].first == Sets[t1[9]].last ) ) ) &&
 				  t1+12 <= t2 ) {
 /*
 					Test that the sets of particles correspond to particles
@@ -1266,7 +1252,7 @@ Important: we may not have enough spots here
 								tt1 += 2;
 							}
 						}
-						AN.TeInFun = -16;
+						AN.TeInFun = -15;
 						AN.TeSuOut = 0;
 						AR.TePos = -1;
 						AR.funoffset = t - term;
@@ -1292,7 +1278,7 @@ Important: we may not have enough spots here
 								tt1 += 2;
 							}
 						}
-						AN.TeInFun = -16;
+						AN.TeInFun = -15;
 						AN.TeSuOut = 0;
 						AR.TePos = -1;
 						AR.funoffset = t - term;
@@ -2178,7 +2164,7 @@ EndTest2:;
  *		Special attention should be given to nested functions!
  */
 
-WORD InFunction(PHEAD WORD *term, WORD *termout)
+int InFunction(PHEAD WORD *term, WORD *termout)
 {
 	GETBIDENTITY
 	WORD *m, *t, *r, *rr, sign = 1, oldncmod;
@@ -2213,7 +2199,12 @@ WORD InFunction(PHEAD WORD *term, WORD *termout)
 				*m++ = 3;
 				r = term + *term;
 				while ( t < r ) *m++ = *t++;
-				if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) goto TooLarge;
+				if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) {
+					MLOCK(ErrorMessageLock);
+					MesPrint("Output term too large (%d words) (MaxTermSize: %d words)", m-termout, AM.MaxTer/sizeof(WORD));
+					MUNLOCK(ErrorMessageLock);
+					goto TooLarge;
+				}
 				*termout = WORDDIF(m,termout);
 				return(0);
 			}
@@ -2286,7 +2277,12 @@ WORD InFunction(PHEAD WORD *term, WORD *termout)
 					r = term + *term;
 					t = v;
 					while ( t < r ) *m++ = *t++;
-					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) goto TooLarge;
+					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) {
+						MLOCK(ErrorMessageLock);
+						MesPrint("Output term too large (%d words) (MaxTermSize: %d words)", m-termout, AM.MaxTer/sizeof(WORD));
+						MUNLOCK(ErrorMessageLock);
+						goto TooLarge;
+					}
 					*termout = WORDDIF(m,termout);
 					AR.DeferFlag = olddefer;
 					AN.ncmod = oldncmod;
@@ -2470,7 +2466,12 @@ WORD InFunction(PHEAD WORD *term, WORD *termout)
 					r = term + *term;
 					t = v;
 					while ( t < r ) *m++ = *t++;
-					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) goto TooLarge;
+					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) {
+						MLOCK(ErrorMessageLock);
+						MesPrint("Output term too large (%d words) (MaxTermSize: %d words)", m-termout, AM.MaxTer/sizeof(WORD));
+						MUNLOCK(ErrorMessageLock);
+						goto TooLarge;
+					}
 					*termout = WORDDIF(m,termout);
 					AR.DeferFlag = olddefer;
 					AN.ncmod = oldncmod;
@@ -2512,7 +2513,12 @@ WORD InFunction(PHEAD WORD *term, WORD *termout)
 					from++;  /* Skip our function */
 					r = term + *term;
 					while ( from < r ) *m++ = *from++;
-					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) goto TooLarge;
+					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) {
+						MLOCK(ErrorMessageLock);
+						MesPrint("Output term too large (%d words) (MaxTermSize: %d words)", m-termout, AM.MaxTer/sizeof(WORD));
+						MUNLOCK(ErrorMessageLock);
+						goto TooLarge;
+					}
 					*termout = WORDDIF(m,termout);
 					return(0);
 				}
@@ -2653,7 +2659,12 @@ wrongtype:;
 					term += *term;
 					while ( from < term ) *m++ = *from++;
 					if ( sign < 0 ) m[-1] = -m[-1];
-					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) goto TooLarge;
+					if ( (m-termout) > (LONG)(AM.MaxTer/sizeof(WORD)) ) {
+						MLOCK(ErrorMessageLock);
+						MesPrint("Output term too large (%d words) (MaxTermSize: %d words)", m-termout, AM.MaxTer/sizeof(WORD));
+						MUNLOCK(ErrorMessageLock);
+						goto TooLarge;
+					}
 					*termout = m - termout;
 					AN.ncmod = oldncmod;
 					return(0);
@@ -2697,7 +2708,6 @@ InFunc:
 
 TooLarge:
 	MLOCK(ErrorMessageLock);
-	MesPrint("Output term too large. Try to increase MaxTermSize in the setup.");
 	MesCall("InFunction");
 	MUNLOCK(ErrorMessageLock);
 	SETERROR(-1)
@@ -2724,8 +2734,8 @@ TooLarge:
  *		@return  Normal conventions (OK = 0).
  */
 
-WORD InsertTerm(PHEAD WORD *term, WORD replac, WORD extractbuff, WORD *position, WORD *termout,
-                WORD tepos)
+int InsertTerm(PHEAD WORD *term, WORD replac, WORD extractbuff, WORD *position, WORD *termout,
+               WORD tepos)
 {
 	GETBIDENTITY
 	WORD *m, *t, *r, i, l2, j;
@@ -2806,7 +2816,7 @@ ComAct:		if ( t < u ) do { *m++ = *t++; } while ( t < u );
 			*termout = WORDDIF(m,termout);
 			if ( (*termout)*((LONG)sizeof(WORD)) > AM.MaxTer ) {
 				MLOCK(ErrorMessageLock);
-				MesPrint("Term too complex during substitution. MaxTermSize of %l is too small",AM.MaxTer);
+				MesPrint("Term too complex during substitution (%d words). MaxTermSize (%l words) is too small.", *termout, AM.MaxTer/(LONG)sizeof(WORD) );
 				goto InsCall2;
 			}
 			AT.WorkPointer = coef;
@@ -3047,7 +3057,7 @@ WORD *PasteTerm(PHEAD WORD number, WORD *accum, WORD *position, WORD times, WORD
  *		@param tepos   the position of the subterm in term to be replaced
  */
 
-WORD FiniTerm(PHEAD WORD *term, WORD *accum, WORD *termout, WORD number, WORD tepos)
+int FiniTerm(PHEAD WORD *term, WORD *accum, WORD *termout, WORD number, WORD tepos)
 {
 	GETBIDENTITY
 	WORD *m, *t, *r, i, numacc, l2, ipp;
@@ -3246,11 +3256,12 @@ static LONG debugcounter = 0;
  *		sorting routines.
  */
 
-WORD Generator(PHEAD WORD *term, WORD level)
+int Generator(PHEAD WORD *term, WORD level)
 {
 	GETBIDENTITY
 	WORD replac, *accum, *termout, *t, i, j, tepos, applyflag = 0, *StartBuf;
-	WORD *a, power, power1, DumNow = AR.CurDum, oldtoprhs, oldatoprhs, retnorm, extractbuff;
+	WORD *a, power, power1, DumNow = AR.CurDum, oldtoprhs, oldatoprhs, extractbuff;
+	int ret;
 	int *RepSto = AN.RepPoint, iscopy = 0;
 	CBUF *C = cbuf+AM.rbufnum, *CC = cbuf + AT.ebufnum, *CCC = cbuf + AT.aebufnum;
 	LONG posisub, oldcpointer, oldacpointer;
@@ -3276,8 +3287,8 @@ ReStart:
 Renormalize:
 		AN.PolyNormFlag = 0;
 		AN.idfunctionflag = 0;
-		if ( ( retnorm = Normalize(BHEAD term) ) != 0 ) {
-			if ( retnorm > 0 ) {
+		if ( ( ret = Normalize(BHEAD term) ) != 0 ) {
+			if ( ret > 0 ) {
 				if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
 				goto ReStart;
 			}
@@ -3322,12 +3333,14 @@ SkipCount:	level++;
 			if ( level > AR.Cnumlhs ) {
 				if ( AR.DeferFlag && AR.sLevel <= 0 ) {
 #ifdef WITHMPI
-				  if ( PF.me != MASTER && AC.mparallelflag == PARALLELFLAG && PF.exprtodo < 0 ) {
-					if ( PF_Deferred(term,level) ) goto GenCall;
-				  }
-				  else
+					if ( PF.me != MASTER && AC.mparallelflag == PARALLELFLAG && PF.exprtodo < 0 ) {
+						if ( PF_Deferred(term,level) ) goto GenCall;
+					}
+					else
 #endif
-					if ( Deferred(BHEAD term,level) ) goto GenCall;
+					{
+						if ( Deferred(BHEAD term,level) ) goto GenCall;
+					}
 					goto Return0;
 				}
 				if ( AN.ncmod != 0 ) {
@@ -3357,25 +3370,25 @@ SkipCount:	level++;
 					if ( PutBracket(BHEAD term) ) return(-1);
 					AN.RepPoint = RepSto;
 					*AT.WorkPointer = 0;
-					i = StoreTerm(BHEAD termout);
+					ret = StoreTerm(BHEAD termout);
 					AT.WorkPointer = termout;
 					CC->numrhs = oldtoprhs;
 					CC->Pointer = CC->Buffer + oldcpointer;
 					CCC->numrhs = oldatoprhs;
 					CCC->Pointer = CCC->Buffer + oldacpointer;
-					return(i);
+					return(ret);
 				}
 				else {
 					if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
 					if ( AT.WorkPointer >= AT.WorkTop ) goto OverWork;
 					*AT.WorkPointer = 0;
 					AN.RepPoint = RepSto;
-					i = StoreTerm(BHEAD term);
+					ret = StoreTerm(BHEAD term);
 					CC->numrhs = oldtoprhs;
 					CC->Pointer = CC->Buffer + oldcpointer;
 					CCC->numrhs = oldatoprhs;
 					CCC->Pointer = CCC->Buffer + oldacpointer;
-					return(i);
+					return(ret);
 				}
 			}
 			i = C->lhs[level][0];
@@ -3590,8 +3603,18 @@ SkipCount:	level++;
 						if ( WildFill(BHEAD ow,term,op) < 0 ) goto GenCall;
 						AR.CompressPointer = op;
 						i = ow[0];
-						for ( j = 0; j < i; j++ ) term[j] = ow[j];
+						WORD term_changed = 0;
+						for ( j = 0; j < i; j++ ) {
+							if ( term[j] != ow[j] ) term_changed = 1;
+							term[j] = ow[j];
+						}
+						// If the term was modified by WildFill, set RepCount.
+						if ( term_changed ) *AN.RepPoint = 1;
 						AT.WorkPointer = ow;
+						// Most other calls to ReNumber reset AN.IndDum to AM.IndDum first. Here it is
+						// not done, but doing it is one way to fix Issue #710. The fix that is actually
+						// implemented is to change a comparison in FunLevel and then a reset of
+						// AN.IndDum appears unnecessary here. But maybe one day this comment is useful.
 						ReNumber(BHEAD term);
 						goto Renormalize;
 					}
@@ -3761,14 +3784,14 @@ CommonEnd:
 					level = C->lhs[level][2];
 					break;
 				  case TYPETERM:
-					retnorm = execterm(BHEAD term,level);
+					ret = execterm(BHEAD term,level);
 					AN.RepPoint = RepSto;
 					AR.CurDum = DumNow;
 					CC->numrhs = oldtoprhs;
 					CC->Pointer = CC->Buffer + oldcpointer;
 					CCC->numrhs = oldatoprhs;
 					CCC->Pointer = CCC->Buffer + oldacpointer;
-					return(retnorm);
+					return(ret);
 				  case TYPEDETCURDUM:
 					AT.WorkPointer = term + *term;
 					AR.CurDum = DetCurDum(BHEAD term);
@@ -3822,6 +3845,8 @@ CommonEnd:
 					AT.WorkPointer = term + *term;
 					if ( ChainIn(BHEAD term,C->lhs[level][2]) ) goto GenCall;
 					AT.WorkPointer = term + *term;
+					/* Symmetry properties might mean the term has vanished */
+					if ( *term == 0 ) goto Return0;
 					if ( *term != lter ) *AN.RepPoint = 1;
 					}
 					break;
@@ -3961,6 +3986,14 @@ CommonEnd:
 					AT.WorkPointer = term + *term;
 					if ( ToRat(BHEAD term,level) ) goto GenCall;
 					goto Return0;
+				  case TYPESTRICTROUNDING:
+					AT.WorkPointer = term + *term;
+					if ( StrictRounding(BHEAD term,level,C->lhs[level][2],C->lhs[level][3]) ) goto GenCall;
+					goto Return0;
+				  case TYPECHOP:
+					AT.WorkPointer = term + *term;
+					if ( Chop(BHEAD term,level) ) goto GenCall;
+					goto Return0;
 #endif
 				}
 				goto SkipCount;
@@ -4037,9 +4070,6 @@ AutoGen:	i = *AT.TMout;
 					if ( DIVfunction(BHEAD term,level,3) < 0 ) goto GenCall;
 					break;
 				case -15:
-					if ( GenTopologies(BHEAD term,level) < 0 ) goto GenCall;
-					break;
-				case -16:
 					if ( GenDiagrams(BHEAD term,level) < 0 ) goto GenCall;
 					break;
 			}
@@ -4593,8 +4623,8 @@ OverWork:
 char freezestring[] = "freeze<-xxxx";
 #endif
 
-WORD DoOnePow(PHEAD WORD *term, WORD power, WORD nexp, WORD * accum,
-              WORD *aa, WORD level, WORD *freeze)
+int DoOnePow(PHEAD WORD *term, WORD power, WORD nexp, WORD * accum,
+             WORD *aa, WORD level, WORD *freeze)
 {
 	GETBIDENTITY
 	POSITION oldposition, startposition;
@@ -4814,7 +4844,7 @@ PowCall2:;
  *		             multiplying term by term we call Generator again.
  */
 
-WORD Deferred(PHEAD WORD *term, WORD level)
+int Deferred(PHEAD WORD *term, WORD level)
 {
 	GETBIDENTITY
 	POSITION startposition;
@@ -4942,7 +4972,7 @@ DefCall:;
  *		inside a function or dollar variable.
  */
 
-WORD PrepPoly(PHEAD WORD *term,WORD par)
+int PrepPoly(PHEAD WORD *term,WORD par)
 {
 	GETBIDENTITY
 	WORD count = 0, i, jcoef, ncoef;
@@ -5330,12 +5360,13 @@ endofit:;
  *		@return Normal conventions (OK = 0).
  */
 
-WORD PolyFunMul(PHEAD WORD *term)
+int PolyFunMul(PHEAD WORD *term)
 {
 	GETBIDENTITY
 	WORD *t, *fun1, *fun2, *t1, *t2, *m, *w, *ww, *tt1, *tt2, *tt4, *arg1, *arg2;
 	WORD *tstop, i, dirty = 0, OldPolyFunPow = AR.PolyFunPow, minp1, minp2;
-	WORD n1, n2, i1, i2, l1, l2, l3, l4, action = 0, noac = 0, retval = 0;
+	WORD n1, n2, i1, i2, l1, l2, l3, l4, action = 0, noac = 0;
+	int retval = 0;
 	if ( AR.PolyFunType == 2 && AR.PolyFunExp == 1 ) {
 		WORD pow = 0, pow1;
 		t = term + 1; t1 = term + *term; t1 -= ABS(t1[-1]);
@@ -5742,7 +5773,7 @@ retry:
 	*AT.WorkPointer = n1 = WORDDIF(t,AT.WorkPointer);
 	if ( n1*((LONG)sizeof(WORD)) > AM.MaxTer ) {
 		MLOCK(ErrorMessageLock);
-		MesPrint("Term too complex. Maybe increasing MaxTermSize can help");
+		MesPrint("Term too complex (%d words). MaxTermSize (%l words) is too small.", n1, AM.MaxTer/(LONG)sizeof(WORD) );
 		goto PolyCall2;
 	}
 	m = term; t = AT.WorkPointer;

@@ -16,7 +16,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -72,12 +72,18 @@ extern LONG nummallocs;
 extern LONG numfrees;
 #endif
 
-LONG numcompares;
+//#define COUNTCOMPARES
+#ifdef COUNTCOMPARES
+	// This needs to be large enough for the number of threads.
+	// It is hardcoded here, but 1024 should be enough.
+	// Enabling this has a performance impact.
+	LONG numcompares[1024];
+#endif
 
 /*
   	#] Includes : 
 	#[ SortUtilities :
-		#[ WriteStats :				VOID WriteStats(lspace,par,checkLogType)
+		#[ WriteStats :				void WriteStats(lspace,par,checkLogType)
 */
 char *toterms[] = { "   ", " >>", "-->" };
 
@@ -224,6 +230,26 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
 #endif
 
 
+#define HUMANSTRLEN 12
+#define HUMANSUFFLEN 4
+const char humanTermsSuffix[HUMANSUFFLEN][4] = {"K  ","M  ","B  ","T  "};
+const char humanBytesSuffix[HUMANSUFFLEN][4] = {"KiB","MiB","GiB","TiB"};
+void HumanString(char* string, float input, const char suffix[HUMANSUFFLEN][4]) {
+	int ind = -1;
+	while (ind < 0 || (input >= 1000.0f && ind < HUMANSUFFLEN) ) {
+		input /= 1000.0f;
+		ind++;
+	}
+	if ( input <= 0.5f ) {
+		snprintf(string, HUMANSTRLEN,
+			"  ( <1 %s)", suffix[ind]);
+	}
+	else {
+		snprintf(string, HUMANSTRLEN,
+			"  (%3.f %s)", input, suffix[ind]);
+	}
+}
+
 /**
  *		Writes the statistics.
  *
@@ -240,7 +266,7 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
  *		S->GenTerms.
  */
 
-VOID WriteStats(POSITION *plspace, WORD par, WORD checkLogType)
+void WriteStats(POSITION *plspace, WORD par, WORD checkLogType)
 {
 	GETIDENTITY
 	LONG millitime, y = 0x7FFFFFFFL >> 1;
@@ -265,6 +291,15 @@ VOID WriteStats(POSITION *plspace, WORD par, WORD checkLogType)
 		AR.ShortSortCount = 0;
 
 		S = AT.SS;
+
+		char humanGenTermsText[HUMANSTRLEN] = "";
+		char humanTermsLeftText[HUMANSTRLEN] = "";
+		char humanBytesText[HUMANSTRLEN] = "";
+		if ( AC.HumanStatsFlag ) {
+			HumanString(humanGenTermsText, (float)(S->GenTerms), humanTermsSuffix);
+			HumanString(humanTermsLeftText, (float)(S->TermsLeft), humanTermsSuffix);
+			HumanString(humanBytesText, (float)(BASEPOSITION(*plspace)), humanBytesSuffix);
+		}
 
 		MLOCK(ErrorMessageLock);
 
@@ -578,149 +613,149 @@ VOID WriteStats(POSITION *plspace, WORD par, WORD checkLogType)
 #if ( BITSINLONG > 32 )
 			if ( S->GenTerms >= 10000000000L ) {
 				if ( use_wtime ) {
-					MesPrint("WTime = %7l.%2i sec   Generated terms = %16l",
-						millitime,timepart,S->GenTerms);
+					MesPrint("WTime = %7l.%2i sec   Generated terms = %16l%s",
+						millitime,timepart,S->GenTerms,humanGenTermsText);
 				}
 				else {
-					MesPrint("Time = %7l.%2i sec    Generated terms = %16l",
-						millitime,timepart,S->GenTerms);
+					MesPrint("Time = %7l.%2i sec    Generated terms = %16l%s",
+						millitime,timepart,S->GenTerms,humanGenTermsText);
 				}
 			}
 			else {
 				if ( use_wtime ) {
-					MesPrint("WTime = %7l.%2i sec   Generated terms = %10l",
-						millitime,timepart,S->GenTerms);
+					MesPrint("WTime = %7l.%2i sec   Generated terms = %10l%s",
+						millitime,timepart,S->GenTerms,humanGenTermsText);
 				}
 				else {
-					MesPrint("Time = %7l.%2i sec    Generated terms = %10l",
-						millitime,timepart,S->GenTerms);
+					MesPrint("Time = %7l.%2i sec    Generated terms = %10l%s",
+						millitime,timepart,S->GenTerms,humanGenTermsText);
 				}
 			}
 #else
 			if ( use_wtime ) {
-				MesPrint("WTime = %7l.%2i sec   Generated terms = %10l",
-					millitime,timepart,S->GenTerms);
+				MesPrint("WTime = %7l.%2i sec   Generated terms = %10l%s",
+					millitime,timepart,S->GenTerms,humanGenTermsText);
 			}
 			else {
-				MesPrint("Time = %7l.%2i sec    Generated terms = %10l",
-					millitime,timepart,S->GenTerms);
+				MesPrint("Time = %7l.%2i sec    Generated terms = %10l%s",
+					millitime,timepart,S->GenTerms,humanGenTermsText);
 			}
 #endif
 		}
 #if ( BITSINLONG > 32 )
 		if ( par == STATSSPLITMERGE )
 			if ( S->TermsLeft >= 10000000000L ) {
-				MesPrint("%16s%8l Terms %s = %16l",EXPRNAME(AR.CurExpr),
-				AN.ninterms,FG.swmes[par],S->TermsLeft);
+				MesPrint("%16s%8l Terms %s = %16l%s",EXPRNAME(AR.CurExpr),
+				AN.ninterms,FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 			}
 			else {
-				MesPrint("%16s%8l Terms %s = %10l",EXPRNAME(AR.CurExpr),
-				AN.ninterms,FG.swmes[par],S->TermsLeft);
+				MesPrint("%16s%8l Terms %s = %10l%s",EXPRNAME(AR.CurExpr),
+				AN.ninterms,FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 			}
 		else {
 			if ( S->TermsLeft >= 10000000000L ) {
 #ifdef WITHPTHREADS
 				if ( identity > 0 && par == STATSPOSTSORT ) {
-					MesPrint("%16s         Terms in thread = %16l",
-					EXPRNAME(AR.CurExpr),S->TermsLeft);
+					MesPrint("%16s         Terms in thread = %16l%s",
+					EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 				}
 				else
 #elif defined(WITHMPI)
 				if ( PF.me != MASTER && par == STATSPOSTSORT ) {
-					MesPrint("%16s         Terms in process= %16l",
-					EXPRNAME(AR.CurExpr),S->TermsLeft);
+					MesPrint("%16s         Terms in process= %16l%s",
+					EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 				}
 				else
 #endif
 				{
-					MesPrint("%16s         Terms %s = %16l",
-					EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft);
+					MesPrint("%16s         Terms %s = %16l%s",
+					EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 				}
 			}
 			else {
 #ifdef WITHPTHREADS
 				if ( identity > 0 && par == STATSPOSTSORT ) {
-					MesPrint("%16s         Terms in thread = %10l",
-					EXPRNAME(AR.CurExpr),S->TermsLeft);
+					MesPrint("%16s         Terms in thread = %10l%s",
+					EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 				}
 				else
 #elif defined(WITHMPI)
 				if ( PF.me != MASTER && par == STATSPOSTSORT ) {
-					MesPrint("%16s         Terms in process= %10l",
-					EXPRNAME(AR.CurExpr),S->TermsLeft);
+					MesPrint("%16s         Terms in process= %10l%s",
+					EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 				}
 				else
 #endif
 				{
-					MesPrint("%16s         Terms %s = %10l",
-					EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft);
+					MesPrint("%16s         Terms %s = %10l%s",
+					EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 				}
 			}
 		}
 #else
 		if ( par == STATSSPLITMERGE )
-			MesPrint("%16s%8l Terms %s = %10l",EXPRNAME(AR.CurExpr),
-			AN.ninterms,FG.swmes[par],S->TermsLeft);
+			MesPrint("%16s%8l Terms %s = %10l%s",EXPRNAME(AR.CurExpr),
+			AN.ninterms,FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 		else {
 #ifdef WITHPTHREADS
 			if ( identity > 0 && par == STATSPOSTSORT ) {
-				MesPrint("%16s         Terms in thread = %10l",
-				EXPRNAME(AR.CurExpr),S->TermsLeft);
+				MesPrint("%16s         Terms in thread = %10l%s",
+				EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 			}
 			else
 #elif defined(WITHMPI)
 			if ( PF.me != MASTER && par == STATSPOSTSORT ) {
-				MesPrint("%16s         Terms in process= %10l",
-				EXPRNAME(AR.CurExpr),S->TermsLeft);
+				MesPrint("%16s         Terms in process= %10l%s",
+				EXPRNAME(AR.CurExpr),S->TermsLeft,humanTermsLeftText);
 			}
 			else
 #endif
 			{
-				MesPrint("%16s         Terms %s = %10l",
-				EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft);
+				MesPrint("%16s         Terms %s = %10l%s",
+				EXPRNAME(AR.CurExpr),FG.swmes[par],S->TermsLeft,humanTermsLeftText);
 			}
 		}
 #endif
 		SETBASEPOSITION(pp,y);
 		if ( ISLESSPOS(*plspace,pp) ) {
-			MesPrint("%24s Bytes used      = %10p",AC.Commercial,plspace);
+			MesPrint("%24s Bytes used      = %10p%s",AC.Commercial,plspace,humanBytesText);
 		}
 		else {
 			y = 1000000000L;
 			SETBASEPOSITION(pp,y);
 			MULPOS(pp,100);
 			if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used      =%11p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used      =%11p%s",AC.Commercial,plspace,humanBytesText);
 			}
 			else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used     =%12p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used     =%12p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used    =%13p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used    =%13p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used   =%14p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used   =%14p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used  =%15p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used  =%15p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used =%16p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used =%16p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				else {
 				MULPOS(pp,10);
 				if ( ISLESSPOS(*plspace,pp) ) {
-				MesPrint("%24s Bytes used=%17p",AC.Commercial,plspace);
+				MesPrint("%24s Bytes used=%17p%s",AC.Commercial,plspace,humanBytesText);
 				}
 				} } } } }
 			}
@@ -753,7 +788,7 @@ VOID WriteStats(POSITION *plspace, WORD par, WORD checkLogType)
  *		@return Regular convention (OK -> 0)
  */
 
-WORD NewSort(PHEAD0)
+int NewSort(PHEAD0)
 {
 	GETBIDENTITY
 	SORTING *S, **newFS;
@@ -772,7 +807,13 @@ WORD NewSort(PHEAD0)
 	}
 	if ( AR.sLevel == 0 ) {
 
-		numcompares = 0;
+#ifdef COUNTCOMPARES
+#ifdef WITHPTHREADS
+		numcompares[AT.identity] = 0;
+#else
+		numcompares[0] = 0;
+#endif
+#endif
 
 		AN.FunSorts[0] = AT.S0;
 		if ( AR.PolyFun == 0 ) { AT.S0->PolyFlag = 0; }
@@ -848,7 +889,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
   GETBIDENTITY
   SORTING *S = AT.SS;
   WORD j, **ss, *to, *t;
-  LONG sSpace, over, tover, spare, retval = 0, jj;
+  LONG sSpace, over, tover, spare, retval = 0;
   POSITION position, pp;
   off_t lSpace;
   FILEHANDLE *fout = 0, *oldoutfile = 0, *newout = 0;
@@ -931,14 +972,19 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				while ( ( t = *ss++ ) != 0 ) {
 					j = *t;
 					if ( ( sSpace += j ) > AM.MaxTer/((LONG)sizeof(WORD)) ) {
+						/* Too big! Get the total size for useful error message */
+						while ( ( t = *ss++ ) != 0 ) {
+							sSpace += *t;
+						}
 						MLOCK(ErrorMessageLock);
-						MesPrint("Sorted function argument too long.");
+						MesPrint("Sorted function argument too long (%d words). Increase MaxTermSize (%l words).", sSpace, AM.MaxTer/((LONG)sizeof(WORD)));
 						MUNLOCK(ErrorMessageLock);
 						retval = -1; goto RetRetval;
 					}
 					while ( --j >= 0 ) *to++ = *t++;
 				}
 				*to = 0;
+				retval = to - buffer;
 			}
 			goto RetRetval;
 		}
@@ -1142,28 +1188,20 @@ TooLarge:
 					}
 					else {
 						t = newout->PObuffer;
-						if ( par == 2 ) {
-							jj = newout->POfill - t;
-							if ( AN.tryterm > 0 && ( (jj+2)*sizeof(WORD) < (size_t)(AM.MaxTer) ) ) {
-								to = TermMalloc("$-sort space");
-							}
-							else {
-								LONG allocsp = jj+2;
-								if ( allocsp < MINALLOC ) allocsp = MINALLOC;
-								allocsp = ((allocsp+7)/8)*8;
-								to = (WORD *)Malloc1(allocsp*sizeof(WORD),"$-sort space");
-								if ( AN.tryterm > 0 ) AN.tryterm = 0;
-							}
-							*((WORD **)buffer) = to;
-							NCOPY(to,t,jj);
-						}
-						else {
+						// We deal with the par == 2 case after RetRetval.
+						if ( par != 2 ) {
 							j = newout->POfill - t;
 							to = buffer;
 							if ( to >= AT.WorkSpace && to < AT.WorkTop && to+j > AT.WorkTop )
 								goto WorkSpaceError;
-							if ( j > AM.MaxTer ) goto TooLarge;
+							if ( j > AM.MaxTer ) {
+								MLOCK(ErrorMessageLock);
+								MesPrint("Encountered term of size: %d words.", j/(LONG)sizeof(WORD) );
+								MUNLOCK(ErrorMessageLock);
+								goto TooLarge;
+							}
 							NCOPY(to,t,j);
+							retval = to - buffer - 1;
 						}
 					}
 				}
@@ -1412,11 +1450,19 @@ RetRetval:
 			newout = 0;
 		}
 	}
-/*
+
+#ifdef COUNTCOMPARES
 	if ( AR.sLevel < 0 ) {
-		MesPrint(" number of calls to compare was %l",numcompares);
+#ifdef WITHPTHREADS
+		MLOCK(ErrorMessageLock);
+		MesPrint(">>>number of calls to Compare: %l (tid %d)", numcompares[AT.identity], AT.identity);
+		MUNLOCK(ErrorMessageLock);
+#else
+		MesPrint(">>>number of calls to Compare: %l", numcompares[0]);
+#endif
 	}
-*/
+#endif
+
 	return(retval);
 WorkSpaceError:
 	MLOCK(ErrorMessageLock);
@@ -1506,7 +1552,7 @@ LONG PutIn(FILEHANDLE *file, POSITION *position, WORD *buffer, WORD **take, int 
  *	@param fi  The filesystem (or its cache) to which the patch should be written
  */
 
-WORD Sflush(FILEHANDLE *fi)
+int Sflush(FILEHANDLE *fi)
 {
 	LONG size, RetCode;
 #ifdef WITHZLIB
@@ -1703,10 +1749,119 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				MLOCK(ErrorMessageLock);
 				MesPrint("Ran into precompressed term");
 				MUNLOCK(ErrorMessageLock);
-				Crash();
+				Terminate(-1);
 				return(-1);
 			}
 		}
+		else if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
+			if ( dobracketindex ) {
+				PutBracketInIndex(BHEAD term,position);
+			}
+			j = *r++ - 1;
+			p = term + 1;
+			i--;
+			if ( AR.PolyFun ) {
+				WORD *polystop, *sa;
+				sa = p + i;
+				sa -= ABS(sa[-1]);
+				polystop = p;
+				while ( polystop < sa && *polystop != AR.PolyFun ) {
+					polystop += polystop[1];
+				}
+				if ( polystop < sa ) {
+					if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
+					while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
+						i--; j--; k--; p++; r++;
+					}
+				}
+				else {
+					while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
+				}
+			}
+#ifdef WITHFLOAT
+			else if ( AC.DefaultPrecision ) {
+				WORD *floatstop, *sa;
+				sa = p + i;
+				sa -= ABS(sa[-1]);
+				floatstop = p;
+				while ( floatstop < sa && *floatstop != FLOATFUN ) {
+					floatstop += floatstop[1];
+				}
+				if ( floatstop < sa ) {
+					while ( i > 0 && j > 0 && *p == *r && p < floatstop ) {
+						i--; j--; k--; p++; r++;
+					}
+				}
+				else {
+					while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
+				}
+			}
+#endif
+			else {
+				WORD *sa;
+				sa = p + i;
+				sa -= ABS(sa[-1]);
+				while ( i > 0 && j > 0 && *p == *r && p < sa ) { i--; j--; k--; p++; r++; }
+			}
+			if ( k > -2 ) {
+nocompress:
+				j = i = *term;
+				k = 0;
+				p = term;
+				r = rr;
+				NCOPY(r,p,j);
+			}
+			else {
+				*rr = *term;
+				term = p;
+				j = i;
+				NCOPY(r,p,j);
+				j = i;
+				i += 2;
+				first = 2;
+			}
+/*					Sabotage getting into the coefficient next time */
+			r[-(ABS(r[-1]))] = 0;
+			if ( r >= AR.ComprTop ) {
+				MLOCK(ErrorMessageLock);
+				MesPrint("CompressSize of %10l is insufficient",AM.CompressSize);
+				MUNLOCK(ErrorMessageLock);
+				Terminate(-1);
+				return(-1);
+			}
+		}
+		else if ( !AR.NoCompress && ( ncomp < 0 ) && AR.sLevel <= 0 ) {
+				/* No compress but put in compress buffer anyway */
+			if ( dobracketindex ) {
+				PutBracketInIndex(BHEAD term,position);
+			}
+			j = *r++ - 1;
+			p = term + 1;
+			i--;
+			if ( AR.PolyFun ) {
+				WORD *polystop, *sa;
+				sa = p + i;
+				sa -= ABS(sa[-1]);
+				polystop = p;
+				while ( polystop < sa && *polystop != AR.PolyFun ) {
+					polystop += polystop[1];
+				}
+				if ( polystop < sa ) {
+					if ( AR.PolyFunType == 2 ) polystop[2] &= ~MUSTCLEANPRF;
+					while ( i > 0 && j > 0 && *p == *r && p < polystop ) {
+						i--; j--; k--; p++; r++;
+					}
+				}
+				else {
+					while ( i > 0 && j > 0 && *p == *r ) { i--; j--; k--; p++; r++; }
+				}
+			}
+			else {
+				while ( i > 0 && j > 0 && *p == *r ) { i--; j--; k--; p++; r++; }
+			}
+			goto nocompress;
+		}
+		else {
 		else{
 #ifdef WITHMPI
 			if (lowmr_sort ) {
@@ -2009,7 +2164,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
  *	@return   Regular conventions (OK -> 0).
  */
 
-WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
+int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 {
 	GETIDENTITY
 	LONG size, RetCode;
@@ -2239,7 +2394,7 @@ WORD FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
  *		The resulting term is left in *ps1.
  */
 
-WORD AddCoef(PHEAD WORD **ps1, WORD **ps2)
+int AddCoef(PHEAD WORD **ps1, WORD **ps2)
 {
 	GETBIDENTITY
 	SORTING *S = AT.SS;
@@ -2368,7 +2523,7 @@ RegEnd:
  *		@return If zero the terms cancel. Otherwise the new term is in *ps1.
  */
 
-WORD AddPoly(PHEAD WORD **ps1, WORD **ps2)
+int AddPoly(PHEAD WORD **ps1, WORD **ps2)
 {
 	GETBIDENTITY
 	SORTING *S = AT.SS;
@@ -2528,7 +2683,7 @@ WORD AddPoly(PHEAD WORD **ps1, WORD **ps2)
 
 /*
  		#] AddPoly : 
- 		#[ AddArgs :				VOID AddArgs(arg1,arg2,to)
+ 		#[ AddArgs :				void AddArgs(arg1,arg2,to)
 */
  
 #define INSLENGTH(x)  w[1] = FUNHEAD+ARGHEAD+x; w[FUNHEAD] = ARGHEAD+x;
@@ -2540,7 +2695,7 @@ WORD AddPoly(PHEAD WORD **ps1, WORD **ps2)
  *	@param m  Pointer to where the answer should be.
  */
 
-VOID AddArgs(PHEAD WORD *s1, WORD *s2, WORD *m)
+void AddArgs(PHEAD WORD *s1, WORD *s2, WORD *m)
 {
 	GETBIDENTITY
 	WORD i1, i2;
@@ -2843,9 +2998,15 @@ WORD Compare1(PHEAD WORD *term1, WORD *term2, WORD level)
 	WORD prevorder;
 	WORD count = -1, localPoly, polyhit = -1;
 
+#ifdef COUNTCOMPARES
 	if ( AR.sLevel == 0 ) {
-		numcompares++;
+#ifdef WITHPTHREADS
+		numcompares[AT.identity]++;
+#else
+		numcompares[0]++;
+#endif
 	}
+#endif
 
 	if ( S->PolyFlag ) {
 /*
@@ -3183,7 +3344,7 @@ NoPoly:
 				}
 			}
 #ifdef WITHFLOAT
-			if ( c1 == FLOATFUN && t1 == stopper1 && t2 == stopper2 && AT.aux_ != 0 ) {
+			if ( level == 0 && c1 == FLOATFUN && t1 == stopper1 && t2 == stopper2 && AT.aux_ != 0 ) {
 /*
 				We have two FLOATFUN's. Test whether they are 'legal'
 */
@@ -3255,12 +3416,12 @@ NoPoly:
 		}
 	}
 #ifdef WITHFLOAT
-	if ( t1 < stopper1 && *t1 == FLOATFUN && t1+t1[1] == stopper1
-			&& TestFloat(t1) ) {
+	if ( level == 0 && t1 < stopper1 && *t1 == FLOATFUN && t1+t1[1] == stopper1
+			&& TestFloat(t1) && AT.aux_ != 0 ) {
 		AT.SortFloatMode = 1; return(0);
 	}
-	else if ( t2 < stopper2 && *t2 == FLOATFUN && t2+t2[1] == stopper2
-			&& TestFloat(t2) ) {
+	else if ( level == 0 && t2 < stopper2 && *t2 == FLOATFUN && t2+t2[1] == stopper2
+			&& TestFloat(t2) && AT.aux_ != 0 ) {
 		AT.SortFloatMode = 2; return(0);
 	}
 #endif
@@ -3530,7 +3691,7 @@ LONG ComPress(WORD **ss, LONG *n)
 
 /*
  		#] ComPress : 
- 		#[ SplitMerge :				VOID SplitMerge(Point,number)
+ 		#[ SplitMerge :				void SplitMerge(Point,number)
 */
 /**
  *		Algorithm by J.A.M.Vermaseren (31-7-1988)
@@ -3822,7 +3983,7 @@ LONG SplitMerge(PHEAD WORD **Pointer, LONG number)
 
 /*
  		#] SplitMerge : 
- 		#[ GarbHand :				VOID GarbHand()
+ 		#[ GarbHand :				void GarbHand()
 */
 /**
  *		Garbage collection that takes place when the small extension is full
@@ -3839,7 +4000,7 @@ LONG SplitMerge(PHEAD WORD **Pointer, LONG number)
  *		polyfun or polyratfun is active.
  */
 
-VOID GarbHand(VOID)
+void GarbHand(void)
 {
 	GETIDENTITY
 	SORTING *S = AT.SS;
@@ -3954,7 +4115,7 @@ VOID GarbHand(VOID)
  *
  */
 
-WORD MergePatches(WORD par)
+int MergePatches(WORD par)
 {
 	GETIDENTITY
 	SORTING *S = AT.SS;
@@ -4776,7 +4937,7 @@ PatCall2:;
  *	@return  Regular return conventions (OK -> 0)
  */
 
-WORD StoreTerm(PHEAD WORD *term)
+int StoreTerm(PHEAD WORD *term)
 {
 	GETBIDENTITY
 	SORTING *S = AT.SS;
@@ -4885,7 +5046,7 @@ StoreCall:
 
 /*
  		#] StoreTerm : 
- 		#[ StageSort :				VOID StageSort(FILEHANDLE *fout)
+ 		#[ StageSort :				void StageSort(FILEHANDLE *fout)
 */
 /**
  *		Prepares a stage 4 or higher sort.
@@ -4893,7 +5054,7 @@ StoreCall:
  *		can be merged in one pass.
  */
 
-VOID StageSort(FILEHANDLE *fout)
+void StageSort(FILEHANDLE *fout)
 {
 	GETIDENTITY
 	SORTING *S = AT.SS;
@@ -4992,11 +5153,12 @@ VOID StageSort(FILEHANDLE *fout)
  *	@return  Normal conventions (OK -> 0)
  */
 
-WORD SortWild(WORD *w, WORD nw)
+int SortWild(WORD *w, WORD nw)
 {
 	GETIDENTITY
 	WORD *v, *s, *m, k, i;
-	WORD *pScrat, *stop, *sv, error = 0;
+	WORD *pScrat, *stop, *sv;
+	int error = 0;
 	pScrat = AT.WorkPointer;
 	if ( ( AT.WorkPointer + 8 * AM.MaxWildcards ) >= AT.WorkTop ) {
 		MLOCK(ErrorMessageLock);
@@ -5078,7 +5240,7 @@ WORD SortWild(WORD *w, WORD nw)
 
 /*
  		#] SortWild : 
- 		#[ CleanUpSort :			VOID CleanUpSort(num)
+ 		#[ CleanUpSort :			void CleanUpSort(num)
 */
 /**
  *		Partially or completely frees function sort buffers.
@@ -5178,13 +5340,13 @@ void CleanUpSort(int num)
 
 /*
  		#] CleanUpSort : 
- 		#[ LowerSortLevel :         VOID LowerSortLevel()
+ 		#[ LowerSortLevel :         void LowerSortLevel()
 */
 /**
  *		Lowers the level in the sort system.
  */
 
-VOID LowerSortLevel(VOID)
+void LowerSortLevel(void)
 {
 	GETIDENTITY
 	if ( AR.sLevel >= 0 ) {
@@ -5303,7 +5465,7 @@ Illegal:
 		Sorts an array of WORDs. No adding of equal objects.
 */
 
-VOID SimpleSplitMergeRec(WORD *array,WORD num,WORD *auxarray)
+void SimpleSplitMergeRec(WORD *array,WORD num,WORD *auxarray)
 {
 	WORD n1,n2,i,j,k,*t1,*t2;
 	if ( num < 2 ) return;
@@ -5331,7 +5493,7 @@ VOID SimpleSplitMergeRec(WORD *array,WORD num,WORD *auxarray)
 */
 }
 
-VOID SimpleSplitMerge(WORD *array,WORD num)
+void SimpleSplitMerge(WORD *array,WORD num)
 {
 	WORD *auxarray = Malloc1(sizeof(WORD)*num/2,"SimpleSplitMerge");
 	SimpleSplitMergeRec(array,num,auxarray);

@@ -1,4 +1,4 @@
-.TH FORM 1 "2018-10-04"
+.TH FORM 1 "2026-01-27"
 .SH NAME
 FORM \- Symbolic manipulation system
 .SH SYNOPSIS
@@ -60,10 +60,8 @@ Make a regular log file.
 Make a log file without intermediate statistics.
 .TP
 .BR "-M"
-Put the PID (process identifier) in the name of the temporary files. This makes for longer
-names, but gives a better guarantee of uniqueness. If a file with the created name exists
-already it will be overwritten. This option is for when several instances of FORM are started
-at nearly the same time as can happen from minos or make (with the make -j option).
+This option is ignored. The PID (process identifier) of the process is now always included
+in the name of the temporary files.
 .TP
 .BR "-p"
 Next argument/option is the path of a directory for input, include, procedure and subroutine
@@ -97,6 +95,9 @@ the program.
 .TP
 .BR "-v"
 Only the version will be printed. The program terminates immediately after it.
+.TP
+.BR "-vv"
+Same as \fB-v\fR, but prints verbose version information.
 .TP
 .BR "-w"
 This should be followed immediately by a number without any space. The number
@@ -135,5 +136,5 @@ The full path and name of a setup file.
 \fBhttps://www.nikhef.nl/~form/\fR
 The FORM home site.
 .TP
-\fBhttps://github.com/vermaseren/form/\fR
+\fBhttps://github.com/form-dev/form/\fR
 The repository on GitHub.

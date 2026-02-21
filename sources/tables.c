@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -59,6 +59,7 @@
 
 #include "form3.h"
 #include "minos.h"
+#include "comtool.h"
 
 /* static UBYTE *sparse = (UBYTE *)"sparse"; */
 static UBYTE *tablebase = (UBYTE *)"tablebase";
@@ -330,7 +331,7 @@ int FindTableTree(TABLES T, WORD *tp, int inc)
   	#[ DoTableExpansion :
 */
 
-WORD DoTableExpansion(WORD *term, WORD level)
+int DoTableExpansion(WORD *term, WORD level)
 {
 	GETIDENTITY
 	WORD *t, *tstop, *stopper, *termout, *m, *mm, *tp, *r, xx;
@@ -570,6 +571,7 @@ WORD DoTableExpansion(WORD *term, WORD level)
 	TB,options;
 	Options are:
 		Open "File.tbl";                   Open for R/W
+		Open "File.tbl", readonly;         Open for R
 		Create "File.tbl";                 Create for write
 		Load "File.tbl", tablename;        Loads stubs of table
 		Load "File.tbl";                   Loads stubs of all tables
@@ -770,12 +772,23 @@ int CoTBcreate(UBYTE *s)
 int CoTBopen(UBYTE *s)
 {
 	DBASE *d;
-	DUMMYUSE(s);
+	MLONG rw = 1;
+
+	SkipSpaces(&s);
+	
+	if ( *s ) {
+		if ( ConsumeOption(&s,"readonly") != 0 ) {
+			rw = 0;
+		} else {
+			MesPrint("&Invalid option for TableBase open: %s, ignoring", s);
+		}
+	}
+	
 	if ( ( d = FindTB(tablebasename) ) != 0 ) {
 		MesPrint("&There is already an open TableBase with the name %s",tablebasename);
 		return(-1);
 	}
-	d = GetDbase((char *)tablebasename);
+	d = GetDbase((char *)tablebasename, rw);
 	if ( CheckTableDeclarations(d) ) return(-1);
 	return(0);
 }
@@ -797,6 +810,11 @@ int CoTBaddto(UBYTE *s)
 	int i, j, error = 0, sum;
 	if ( ( d = FindTB(tablebasename) ) == 0 ) {
 		MesPrint("&No open tablebase with the name %s",tablebasename);
+		return(-1);
+	}
+	
+	if ( ( d->rwmode ) == 0 ) {
+		MesPrint("&Tablebase with the name %s opened in read only mode",tablebasename);
 		return(-1);
 	}
 	AO.DollarOutSizeBuffer = 32;
@@ -965,7 +983,7 @@ int CoTBenter(UBYTE *s)
 	int dict = AO.CurrentDictionary;
 	AO.CurrentDictionary = 0;
 	if ( ( d = FindTB(tablebasename) ) == 0 ) {
-		MesPrint("&No open tablebase with the name %s",tablebasename);
+		MesPrint("&No open tablebase with the name %s, check for existence of file or try readonly mode when opening.",tablebasename);
 		error = -1;
 		goto Endofall;
 	}
@@ -1393,10 +1411,11 @@ finishup:;
 	We need the arguments of TestUse to see for which tables it is to be done
 */
 
-WORD TestUse(WORD *term, WORD level)
+int TestUse(WORD *term, WORD level)
 {
 	WORD *tstop, *t, *m, *tstart, tabnum;
-	WORD *funs, numfuns, error = 0;
+	WORD *funs, numfuns;
+	int error = 0;
 	TABLES T;
 	LONG i;
 	CBUF *C = cbuf+AM.rbufnum;
@@ -1878,7 +1897,7 @@ int CoTBhelp(UBYTE *s)
 	This gains one space. Hence we have to be very careful
 */
 
-VOID ReWorkT(WORD *term, WORD *funs, WORD numfuns)
+void ReWorkT(WORD *term, WORD *funs, WORD numfuns)
 {
 	WORD *tstop, *tend, *m, *t, *tt, *mm, *mmm, *r, *rr;
 	int i, j;
@@ -1959,7 +1978,7 @@ inc:		j = t[1];
   	#[ Apply :
 */
 
-WORD Apply(WORD *term, WORD level)
+void Apply(WORD *term, WORD level)
 {
 	WORD *funs, numfuns;
 	TABLES T;
@@ -1996,7 +2015,6 @@ WORD Apply(WORD *term, WORD level)
 	Note that we actually gain one space. 
 */
 	ReWorkT(term,funs,numfuns);
-	return(0);
 }
 
 /*
@@ -2235,7 +2253,7 @@ int ApplyExec(WORD *term, int maxtogo, WORD level)
   	#[ ApplyReset :
 */
 
-WORD ApplyReset(WORD level)
+void ApplyReset(WORD level)
 {
 	WORD *funs, numfuns;
 	TABLES T;
@@ -2263,7 +2281,6 @@ WORD ApplyReset(WORD level)
 			}
 		}
 	}
-	return(0);
 }
 
 /*
@@ -2271,7 +2288,7 @@ WORD ApplyReset(WORD level)
   	#[ TableReset :
 */
 
-WORD TableReset(VOID)
+void TableReset(void)
 {
 	TABLES T;
 	int i;
@@ -2281,7 +2298,6 @@ WORD TableReset(VOID)
 			functions[i].tabl = T->spare;
 		}
 	}
-	return(0);
 }
 
 /*
@@ -2298,7 +2314,7 @@ int LoadTableElement(DBASE *d, TABLE *T, WORD num)
 	Releases all TableBases
 */
 
-int ReleaseTB(VOID)
+int ReleaseTB(void)
 {
 	DBASE *d;
 	int i;

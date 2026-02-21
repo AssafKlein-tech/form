@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -44,7 +44,7 @@
 		par == 0 after .sort
 */
 
-WORD CleanExpr(WORD par)
+int CleanExpr(WORD par)
 {
 	GETIDENTITY
 	WORD j, n, i;
@@ -208,10 +208,11 @@ WORD CleanExpr(WORD par)
 
 */
 
-WORD PopVariables(VOID)
+int PopVariables(void)
 {
 	GETIDENTITY
-	WORD i, j, retval;
+	WORD i, j;
+	int retval;
 	UBYTE *s;
 
 	retval = CleanExpr(1);
@@ -379,7 +380,7 @@ WORD PopVariables(VOID)
  		#[ MakeGlobal :
 */
 
-VOID MakeGlobal(VOID)
+void MakeGlobal(void)
 {
 	WORD i, j, *pp, *mm;
 	UWORD *p, *m;
@@ -480,7 +481,7 @@ VOID MakeGlobal(VOID)
  		#[ TestDrop :
 */
 
-VOID TestDrop(VOID)
+void TestDrop(void)
 {
 	EXPRESSIONS e;
 	WORD j;
@@ -612,10 +613,10 @@ restart:;
  		#[ DoExecute :
 */
 
-WORD DoExecute(WORD par, WORD skip)
+int DoExecute(WORD par, WORD skip)
 {
 	GETIDENTITY
-	WORD RetCode = 0;
+	int RetCode = 0;
 	int i, oldmultithreaded = AS.MultiThreaded;
 #ifdef PARALLELCODE
 	int j;
@@ -802,7 +803,7 @@ WORD DoExecute(WORD par, WORD skip)
 			/* The user switched off the parallel execution explicitly. */
 		}
 		else if ( AC.mparallelflag & NOPARALLEL_DOLLAR ) {
-			if ( AC.WarnFlag >= 2 ) {  /* HighWarning */
+			if ( AC.WarnFlag >= 1 ) {  /* Warning */
 				int i, j, k, n;
 				UBYTE *s, *s1;
 				s = strDup1((UBYTE *)"","NOPARALLEL_DOLLAR s");
@@ -825,7 +826,7 @@ WORD DoExecute(WORD par, WORD skip)
 					s1 = AddToString(s1,(UBYTE *)"s",0);
 				s1 = AddToString(s1,(UBYTE *)": ",0);
 				s1 = AddToString(s1,s,0);
-				HighWarning((char *)s1);
+				Warning((char *)s1);
 				M_free(s,"NOPARALLEL_DOLLAR s");
 				M_free(s1,"NOPARALLEL_DOLLAR s1");
 			}
@@ -1122,7 +1123,7 @@ if ( AC.SwitchInArray > 0 ) {
 	15-oct-1991
 */
 
-WORD PutBracket(PHEAD WORD *termin)
+int PutBracket(PHEAD WORD *termin)
 {
 	GETBIDENTITY
 	WORD *t, *t1, *b, i, j, *lastfun;
@@ -1132,7 +1133,9 @@ WORD PutBracket(PHEAD WORD *termin)
 	WORD *bbb = 0, *bind, *binst = 0, bwild = 0, *bss = 0, *bns = 0, bset = 0;
 	term1 = AT.WorkPointer+1;
 	term2 = (WORD *)(((UBYTE *)(term1)) + AM.MaxTer);
-	if ( ( (WORD *)(((UBYTE *)(term2)) + AM.MaxTer) ) > AT.WorkTop ) return(MesWork());
+	if ( ( (WORD *)(((UBYTE *)(term2)) + AM.MaxTer) ) > AT.WorkTop ) {
+		MesWork();
+	}
 	if ( AR.BracketOn < 0 ) {
 		t2 = term1; t1 = term2;		/* AntiBracket */
 	}
@@ -1634,7 +1637,7 @@ NextSymbol2:;
  		#[ SpecialCleanup :
 */
 
-VOID SpecialCleanup(PHEAD0)
+void SpecialCleanup(PHEAD0)
 {
 	GETBIDENTITY
 	if ( AT.previousEfactor ) M_free(AT.previousEfactor,"Efactor cache");
@@ -1648,7 +1651,7 @@ VOID SpecialCleanup(PHEAD0)
 
 #ifndef WITHPTHREADS
 
-void SetMods(VOID)
+void SetMods(void)
 {
 	int i, n;
 	if ( AN.cmod != 0 ) M_free(AN.cmod,"AN.cmod");
@@ -1666,7 +1669,7 @@ void SetMods(VOID)
 
 #ifndef WITHPTHREADS
 
-void UnSetMods(VOID)
+void UnSetMods(void)
 {
 	if ( AN.cmod != 0 ) M_free(AN.cmod,"AN.cmod");
 	AN.cmod = 0;
@@ -2411,7 +2414,7 @@ LONG SizeOfExpression(WORD num)
  		#[ UpdatePositions :
 */
 
-void UpdatePositions(VOID)
+void UpdatePositions(void)
 {
 	EXPRESSIONS e = Expressions;
 	POSITION *old;
@@ -2441,13 +2444,12 @@ void UpdatePositions(VOID)
 			oldw = AS.Oldvflags;
 			AS.Oldvflags = (WORD *)Malloc1(NumExpressions*sizeof(WORD),"vflags pointers");
 			for ( i = 0; i < AS.NumOldNumFactors; i++ ) AS.Oldvflags[i] = oldw[i];
-			AS.NumOldNumFactors = NumExpressions;
 			M_free(oldw,"vflags pointers");
 			oldw = AS.Olduflags;
 			AS.Olduflags = (WORD *)Malloc1(NumExpressions*sizeof(WORD),"uflags pointers");
 			for ( i = 0; i < AS.NumOldNumFactors; i++ ) AS.Olduflags[i] = oldw[i];
-			AS.NumOldNumFactors = NumExpressions;
 			M_free(oldw,"uflags pointers");
+			AS.NumOldNumFactors = NumExpressions;
 		}
 		else {
 			AS.OldNumFactors = (WORD *)Malloc1(NumExpressions*sizeof(WORD),"numfactors pointers");

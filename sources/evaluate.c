@@ -1,9 +1,38 @@
+/** @file evaluate.c
+ *
+ *   Evaluation of functions for the floating-point system, by interfacing with MPFR.
+ */
+/* #[ License : */
+/*
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
+ *   When using this file you are requested to refer to the publication
+ *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
+ *   This is considered a matter of courtesy as the development was paid
+ *   for by FOM the Dutch physics granting agency and we would like to
+ *   be able to track its scientific use to convince FOM of its value
+ *   for the community.
+ *
+ *   This file is part of FORM.
+ *
+ *   FORM is free software: you can redistribute it and/or modify it under the
+ *   terms of the GNU General Public License as published by the Free Software
+ *   Foundation, either version 3 of the License, or (at your option) any later
+ *   version.
+ *
+ *   FORM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *   WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ *   FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ *   details.
+ *
+ *   You should have received a copy of the GNU General Public License along
+ *   with FORM.  If not, see <http://www.gnu.org/licenses/>.
+ */
+/* #] License : */
 /*
   	#[ includes :
 */
 
 #include "form3.h"
-#include <stdarg.h>
 #include <gmp.h>
 #include <mpfr.h>
 
@@ -89,14 +118,6 @@ void SetfFloatPrecision(LONG prec)
   #ifdef WITHSORTBOTS
 	totnum = MaX(2*AM.totalnumberofthreads-3,AM.totalnumberofthreads);
   #endif
-	if ( AB[0]->T.auxr_ ) {
-	    for ( id = 0; id < totnum; id++ ) {
-			a = (mpfr_t *)AB[id]->T.auxr_;
-			mpfr_clears(a[0],a[1],a[2],a[3],a[4],(mpfr_ptr)0);
-			M_free(AB[id]->T.auxr_,"AB[id]->T.auxr_");
-			AB[id]->T.auxr_ = 0;
-		}
-	}
     for ( id = 0; id < totnum; id++ ) {
 		AB[id]->T.auxr_ = (void *)Malloc1(sizeof(mpfr_t)*5,"AB[id]->T.auxr_");
 		a = (mpfr_t *)AB[id]->T.auxr_;
@@ -107,11 +128,6 @@ void SetfFloatPrecision(LONG prec)
 		mpfr_inits2(fprec,a[0],a[1],a[2],a[3],a[4],(mpfr_ptr)0);
 	}
 #else
-	if ( AT.auxr_ ) {
-		mpfr_clears(auxr1,auxr2,auxr3,auxr4,auxr5,(mpfr_ptr)0);
-		M_free(AT.auxr_,"AT.auxr_");
-		AT.auxr_ = 0;
-	}
 	AT.auxr_ = (void *)Malloc1(sizeof(mpfr_t)*5,"AT.auxr_");
 	mpfr_inits2(fprec,auxr1,auxr2,auxr3,auxr4,auxr5,(mpfr_ptr)0);
 #endif
@@ -122,7 +138,7 @@ void SetfFloatPrecision(LONG prec)
  		#[ ClearfFloat :
 */
 
-void ClearfFloat(VOID)
+void ClearfFloat(void)
 {
 #ifdef WITHPTHREADS
 	int totnum = AM.totalnumberofthreads, id;
@@ -137,10 +153,6 @@ void ClearfFloat(VOID)
 			M_free(AB[id]->T.auxr_,"AB[id]->T.auxr_");
 			AB[id]->T.auxr_ = 0;
 		}
-/*
-		M_free(AB[0]->T.auxr_,"AB[0]->T.auxr_");
-		AB[0]->T.auxr_ = 0;
-*/
 	}
 #else
 	if ( AT.auxr_ ) {
@@ -149,12 +161,6 @@ void ClearfFloat(VOID)
 		AT.auxr_ = 0;
 	}
 #endif
-/*
-	if ( AS.delta_1 ) {
-		mpf_clear(ln2);
-		AS.delta_1 = 0;
-	}
-*/
 }
 
 /*
@@ -185,7 +191,7 @@ int GetFloatArgument(PHEAD mpfr_t f_out,WORD *fun,int par)
 		if ( *arg == -SNUMBER ) {
 			mpfr_set_si(f_out,(LONG)(arg[1]),RND);
 		}
-		else if ( *arg == -SYMBOL && ( arg[1] == AM.numpi ) ) {
+		else if ( *arg == -SYMBOL && ( arg[1] == PISYMBOL ) ) {
 			mpfr_const_pi(f_out,RND);
 		}
 		else if ( *arg == -INDEX && arg[1] >= 0 && arg[1] < AM.OffsetIndex ) {
@@ -237,7 +243,7 @@ int GetFloatArgument(PHEAD mpfr_t f_out,WORD *fun,int par)
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
 		}
-		else if ( t[1] == SYMBOL && t[2] == 4 && t[3] == AM.numpi && t[4] == 1 ) {
+		else if ( t[0] == SYMBOL && t[1] == 4 && t[2] == PISYMBOL && t[3] == 1 ) {
 			if ( first ) {
 				mpfr_const_pi(f_out,RND);
 				first = 0;
@@ -275,12 +281,12 @@ int GetPiArgument(PHEAD WORD *arg)
 	One: determine whether there is a rational coefficient and a pi_:
 */
 	if ( *arg == -SNUMBER && arg[1] == 0 ) return(0);
-	if ( *arg == -SYMBOL && arg[1] == AM.numpi ) return(12);
+	if ( *arg == -SYMBOL && arg[1] == PISYMBOL ) return(12);
 	if ( *arg < 0 ) return(-1);
 	if ( arg[ARGHEAD] != *arg-ARGHEAD ) return(-1);
 	t = arg+ARGHEAD+1;
 	tn = arg+*arg; tstop = tn - ABS(tn[-1]);
-	if ( *t != SYMBOL || t[1] != 4 || t[2] != AM.numpi || t[3] != 1
+	if ( *t != SYMBOL || t[1] != 4 || t[2] != PISYMBOL || t[3] != 1
 		|| t+t[1] != tstop ) return(-1);
 /*
 	The denominator must be a divisor of 12
@@ -296,9 +302,8 @@ int GetPiArgument(PHEAD WORD *arg)
 	Mully(BHEAD co,&ii,&twelve,1);
 /*
 	Now the denominator should be 1
-	i2 = i = (ii-1)/2;
 */
-	i2 = i = ii;
+	i = ii; i2 = i-1;
 	numer = co; denom = numer + i;
 	if ( i > 1 ) {
 		while ( i2 > 0 ) {
@@ -363,7 +368,7 @@ int GetPiArgument(PHEAD WORD *arg)
 int EvaluateFun(PHEAD WORD *term, WORD level, WORD *pars)
 {
 	WORD *t, *tstop, *tt, *tnext, *newterm, i;
-	WORD *oldworkpointer = AT.WorkPointer, nsize, nsgn;
+	WORD *oldworkpointer = AT.WorkPointer, nsize, nsgn, nsgn2;
 	int retval = 0, first = 1, pimul;
 
 	tstop = term + *term; tstop -= ABS(tstop[-1]);
@@ -374,10 +379,31 @@ int EvaluateFun(PHEAD WORD *term, WORD level, WORD *pars)
 		if ( pars[2] == *t ) {	/* have to do this one if possible */
 TestArgument:
 /*
-			There must be a single argument, except for the AGM function
+			There must be a single argument, except for the AGM or atan2 functions
 */
 			tnext = t+t[1]; tt = t+FUNHEAD; NEXTARG(tt);
-			if ( tt != tnext && *t != AGMFUNCTION ) goto nextfun;
+			if( *t == SYMBOL) {
+				for ( WORD* ti = t+2; ti < t+t[1]; ti+=2 ) {
+					if( ( *ti == PISYMBOL || *ti == EESYMBOL  || *ti == EMSYMBOL )
+					 && ( pars[2] == ALLFUNCTIONS || pars[3] == *ti ) ) {
+						if ( *ti == PISYMBOL )
+							mpfr_const_pi(auxr3,RND);
+						else if ( *ti == EESYMBOL ) {
+							mpfr_set_ui(auxr3,1,RND);
+							mpfr_exp(auxr3,auxr3,RND);
+						}
+						else if ( *ti == EMSYMBOL )
+							mpfr_const_euler(auxr3,RND);
+						if ( ti[1] != 1 )
+							mpfr_pow_si(auxr3,auxr3,ti[1],RND);
+						mpfr_mul(auxr2,auxr2,auxr3,RND);
+						ti[1] = 0;
+						first = 0;
+					}
+				}
+				goto nextfun;
+			}
+			if ( tt != tnext && *t != AGMFUNCTION && *t != ATAN2FUNCTION) goto nextfun;
 			if ( *t == SINFUNCTION ) {
 				pimul = GetPiArgument(BHEAD t+FUNHEAD);
 				if ( pimul >= 0 && pimul < 24 ) {
@@ -437,7 +463,7 @@ label6:
 			else if ( *t == COSFUNCTION ) {
 				pimul = GetPiArgument(BHEAD t+FUNHEAD);
 				if ( pimul >= 0 && pimul < 24 ) {
-					if ( pimul > 12 ) pimul = 24-12;
+					if ( pimul > 12 ) pimul = 24-pimul;
 					if ( pimul > 6 ) { pimul = 12-pimul; nsgn = -1; }
 					else nsgn = 1;
 					if ( pimul == 6 ) goto getout;
@@ -486,12 +512,12 @@ label6:
 							mpfr_mul(auxr2,auxr2,auxr3,RND);
 							break;
 					}
-					*t = 0;
+					*t = 0; first = 0;
 					goto nextfun;
 				}
 			}
 
-			if ( *t == AGMFUNCTION ) {
+			if ( *t == AGMFUNCTION || *t == ATAN2FUNCTION ) {
 				if ( GetFloatArgument(BHEAD auxr1,t,1) < 0 ) goto nextfun;
 				if ( GetFloatArgument(BHEAD auxr3,t,-2) < 0 ) goto nextfun;
 			}
@@ -507,10 +533,16 @@ label6:
 				break;
 				case LNFUNCTION:
 					if ( nsgn <= 0 ) goto nextfun;
+					if ( mpfr_cmp_ui(auxr1,1L) == 0 ) goto getout;
 					else mpfr_log(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
+				case EXPFUNCTION:
+					mpfr_exp(auxr3,auxr1,RND);
+					mpfr_mul(auxr2,auxr2,auxr3,RND);
+				break;
 				case LI2FUNCTION: /* should be between -1 and +1 */
+					if ( nsgn == 0 ) goto getout;
 					mpfr_abs(auxr3,auxr1,RND);
 					if ( mpfr_cmp_ui(auxr3,1L) > 0 ) goto nextfun;
 					mpfr_li2(auxr3,auxr1,RND);
@@ -535,10 +567,15 @@ label6:
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case AGMFUNCTION:
+					nsgn = mpfr_sgn(auxr1);
+					nsgn2 = mpfr_sgn(auxr3);
+					if ( nsgn == 0 || nsgn2 == 0) goto getout;
+					if ( nsgn < 0 || nsgn2 < 0 ) goto nextfun;
 					mpfr_agm(auxr3,auxr1,auxr3,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case SINHFUNCTION:
+					if ( nsgn == 0 ) goto getout;
 					mpfr_sinh(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
@@ -547,21 +584,25 @@ label6:
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case TANHFUNCTION:
+					if ( nsgn == 0 ) goto getout;
 					mpfr_tanh(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case ASINHFUNCTION:
+					if ( nsgn == 0 ) goto getout;
 					mpfr_asinh(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case ACOSHFUNCTION:
+					if ( mpfr_cmp_ui(auxr1,1L) < 0 ) goto nextfun;
+					if ( mpfr_cmp_ui(auxr1,1L) == 0 ) goto getout;
 					mpfr_acosh(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case ATANHFUNCTION:
 					if ( nsgn == 0 ) goto getout;
 					mpfr_abs(auxr3,auxr1,RND);
-					if ( mpfr_cmp_ui(auxr3,1L) > 0 ) goto nextfun;
+					if ( mpfr_cmp_ui(auxr3,1L) >= 0 ) goto nextfun;
 					mpfr_atanh(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
@@ -573,14 +614,23 @@ label6:
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case ACOSFUNCTION:
-					if ( nsgn == 0 ) goto getout;
+					if ( mpfr_cmp_ui(auxr1,1L) == 0 ) goto getout;
 					mpfr_abs(auxr3,auxr1,RND);
 					if ( mpfr_cmp_ui(auxr3,1L) > 0 ) goto nextfun;
 					mpfr_acos(auxr3,auxr1,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case ATANFUNCTION:
+					if ( nsgn == 0 ) goto getout;
 					mpfr_atan(auxr3,auxr1,RND);
+					mpfr_mul(auxr2,auxr2,auxr3,RND);
+				break;
+				case ATAN2FUNCTION:
+					nsgn = mpfr_sgn(auxr1);
+					nsgn2 = mpfr_sgn(auxr3);
+					// We follow the conventions of mpfr here:
+					if ( nsgn == 0 && nsgn2 >= 0) goto getout;
+					mpfr_atan2(auxr3,auxr1,auxr3,RND);
 					mpfr_mul(auxr2,auxr2,auxr3,RND);
 				break;
 				case SINFUNCTION:
@@ -613,9 +663,11 @@ label6:
 				case LNFUNCTION:
 				case LI2FUNCTION:
 				case LINFUNCTION:
+				case EXPFUNCTION:
 				case ASINFUNCTION:
 				case ACOSFUNCTION:
 				case ATANFUNCTION:
+				case ATAN2FUNCTION:
 				case SINHFUNCTION:
 				case COSHFUNCTION:
 				case TANHFUNCTION:
@@ -626,16 +678,13 @@ label6:
 				case COSFUNCTION:
 				case TANFUNCTION:
 				case AGMFUNCTION:
+				case SYMBOL:
 					goto TestArgument;
 				case MZV:
 				case EULER:
 				case MZVHALF:
-					goto nextfun;
 				default:
-					MLOCK(ErrorMessageLock);
-					MesPrint("Function in evaluate statement not yet implemented.");
-					MUNLOCK(ErrorMessageLock);
-					break;
+					goto nextfun;
 			}
 		}
 		else goto nextfun;

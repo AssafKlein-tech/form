@@ -20,21 +20,20 @@ jobs:
         with:
           fetch-depth: 0  # ensures a reachable tag
 
-      - name: Determine distname
-        run: |
-          echo "distname=form-$(./scripts/git-version-gen.sh -r | sed '2q;d' | sed 's/^v//')" >> $GITHUB_ENV
+      - name: Set up build
+        uses: ./.github/actions/setup-build
 
       - name: Build tarball distribution
         run: |
-          autoreconf -i
-          ./configure --disable-dependency-tracking --disable-scalar --disable-threaded --disable-native --without-gmp --without-zlib
-          make distdir=$distname dist-gzip
+          distname="${{ env.DISTNAME }}"
+          echo "distname=$distname" >>"$GITHUB_ENV"
+          make distdir="$distname" dist-gzip
 
       - name: Print tarball information
         run: |
-          ls -l $distname.tar.gz
-          file $distname.tar.gz
-          tar -tf $distname.tar.gz
+          ls -l "$distname.tar.gz"
+          file "$distname.tar.gz"
+          tar -tf "$distname.tar.gz"
 
       - name: Upload tarball as artifact
         uses: actions/upload-artifact@v4
@@ -57,100 +56,45 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - {os: ubuntu-24.04, shell: bash, bin: form}
+          - {os: ubuntu-24.04, shell: bash, bin: tform}
           # To maximize compatibility, we build executables on the oldest
           # platforms available.
-          - {os: ubuntu-20.04, shell: bash, bin: form}
-          - {os: ubuntu-20.04, shell: bash, bin: tform}
-          - {os: macos-13, shell: bash, bin: form}
-          - {os: macos-13, shell: bash, bin: tform}
+          - {os: ubuntu-24.04-arm, shell: bash, bin: form}
+          - {os: ubuntu-24.04-arm, shell: bash, bin: tform}
+          - {os: macos-15-intel, shell: bash, bin: form}
+          - {os: macos-15-intel, shell: bash, bin: tform}
           # The macos-14 runner image is based on the arm64 architecture.
           - {os: macos-14, shell: bash, bin: form}
           - {os: macos-14, shell: bash, bin: tform}
-          # NOTE: Windows native executables have too many problems.
-          # We include them in artifacts but not in releases.
+          # NOTE: Windows native executables may have some problems.
           # Unfortunately, "allow-failure" is not available on GitHub Actions
           # (https://github.com/actions/toolkit/issues/399).
           # We have to use "continue-on-error", instead.
-          - {os: windows-2019, shell: msys2, bin: form}
-          - {os: windows-2019, shell: msys2, bin: tform}
+          - {os: windows-2022, shell: msys2, bin: form}
+          - {os: windows-2022, shell: msys2, bin: tform}
     steps:
-      - name: Install dependencies (Ubuntu)
-        if: runner.os == 'Linux'
-        uses: awalsh128/cache-apt-pkgs-action@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          packages: libmpfr-dev
-          version: 1.0
-
-      - name: Install dependencies (Windows)
-        if: runner.os == 'Windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          install: >-
-            make
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-gmp
-            mingw-w64-x86_64-mpfr
-            mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-ruby
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
 
       - name: Download tarball
         uses: actions/download-artifact@v4
         with:
           name: src
 
-      - name: Uncompress tarball
-        run: |
-          tar -xf *.tar.gz --strip-components 1
-          rm *.tar.gz
-
-      - name: Configure
-        run: |
-          opts='--disable-dependency-tracking --disable-scalar --disable-threaded --disable-native --enable-static-link --with-gmp --with-zlib'
-          case ${{ matrix.bin }} in
-            form)  opts="$opts --enable-scalar";;
-            tform) opts="$opts --enable-threaded";;
-          esac
-          # --static fails on macOS but we want to statically link
-          # the brewed gmp. The linker supports neither -Wl,-static nor
-          # -l:libgmp.a to make partial static links possible.
-          # As a workaround, we make a library directory with libgmp.a
-          # but without libgmp.dylib so that the linker has to link libgmp.a.
-          # Note that the Homebrew installation path for Apple Silicon (arm64)
-          # differs from the one on macOS Intel (x86-64).
-          mkdir static-lib
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            if [ "$RUNNER_ARCH" == "ARM64" ]; then
-              ln -s /opt/homebrew/opt/gmp/lib/libgmp.a static-lib/libgmp.a
-              ln -s /opt/homebrew/opt/mpfr/lib/libmpfr.a static-lib/libmpfr.a
-              # The GMP and MPFR include directories, not located in the usual places,
-              # must be explicitly appended to the include paths.
-              export CPATH="/opt/homebrew/opt/gmp/include:/opt/homebrew/opt/mpfr/include:${CPATH:-}"
-            else
-              ln -s /usr/local/opt/gmp/lib/libgmp.a static-lib/libgmp.a
-              ln -s /usr/local/opt/mpfr/lib/libmpfr.a static-lib/libmpfr.a
-            fi
-            export LIBRARY_PATH="$(pwd)/static-lib:${LIBRARY_PATH:-}"
-            opts="$opts --disable-static-link"
-          fi
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            opts="$opts --with-api=windows"
-          fi
-          ./configure $opts
+      - name: Set up build
+        uses: ./.github/actions/setup-build
+        with:
+          features: ${{ matrix.bin }} ${{ matrix.shell }} deploy
 
       - name: Build
         id: build
         continue-on-error: ${{ runner.os == 'Windows' }}
-        run: |
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            if [ "$RUNNER_ARCH" == "ARM64" ]; then
-              export CPATH="/opt/homebrew/opt/gmp/include:/opt/homebrew/opt/mpfr/include:${CPATH:-}"
-            fi
-            export LIBRARY_PATH="$(pwd)/static-lib:${LIBRARY_PATH:-}"
-          fi
-          make -j 4
+        run: make -j 4
 
-      # NOTE: Currently, many tests on Windows miserably fail.
       - name: Test
         if: steps.build.outcome == 'success' && steps.build.conclusion == 'success'
         continue-on-error: ${{ runner.os == 'Windows' }}
@@ -162,27 +106,28 @@ jobs:
         continue-on-error: ${{ runner.os == 'Windows' }}
         run: |
           binname=${{ matrix.bin }}
-          if [ "$RUNNER_OS" == "Windows" ]; then
+          if [ "${{ runner.os }}" == "Windows" ]; then
             binname=$binname.exe
           fi
-          ls -l sources/$binname
-          file sources/$binname
-          if [ "$RUNNER_OS" == "macOS" ]; then
-            otool -L sources/$binname
-            # Check if brewed libraries are statically linked.
-            if otool -L sources/$binname | grep -q '/usr/local/opt'; then
-              echo 'Error: failed to statically link brewed libraries' >&2
+          ls -l "sources/$binname"
+          file "sources/$binname"
+          if [ "${{ runner.os }}" == "macOS" ]; then
+            otool -L "sources/$binname"
+            # Check if brewed/built libraries are statically linked.
+            if otool -L "sources/$binname" | grep -Eq '/usr/local/opt/|/opt/homebrew/opt/|/form/form/lib/'; then
+              echo 'Error: unexpected dependency on shared libraries' >&2
               exit 1
             fi
           fi
-          if [ "$RUNNER_OS" == "Windows" ]; then
-            ldd sources/$binname
-            # Check if MSYS2 DLLs are not linked.
-            if ldd sources/$binname | grep -q 'msys'; then
-              echo 'Error: failed to avoid to link with MSYS2 DLLs' >&2
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            ldd "sources/$binname"
+            # Check if MSYS2/built DLLs are not linked.
+            if ldd "sources/$binname" | grep -Eq 'msys|mingw|/form/form/lib/'; then
+              echo 'Error: unexpected dependency on DLLs' >&2
               exit 1
             fi
           fi
+          ./sources/$binname -vv
 
       - name: Upload binary as artifact
         if: steps.check-portability.outcome == 'success' && steps.check-portability.conclusion == 'success'
@@ -200,44 +145,33 @@ jobs:
     needs: build-src
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
       - name: Download tarball
         uses: actions/download-artifact@v4
         with:
           name: src
 
-      - name: Determine distname
-        run: |
-          echo "distname=$(basename *.tar.gz .tar.gz)-manual" >> $GITHUB_ENV
-
-      - name: Uncompress tarball
-        run: |
-          tar -xf *.tar.gz --strip-components 1
-          rm *.tar.gz
-
-      # Currently, cache-apt-pkgs-action doesn't work for LaTeX.
-      # https://github.com/awalsh128/cache-apt-pkgs-action/issues/57
-      # - name: Install LaTeX2HTML
-      #   uses: awalsh128/cache-apt-pkgs-action@v1
-      #   with:
-      #     packages: latex2html  # shares the same cache with build-doc-html
-      #     version: 1.0
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install texlive-latex-extra
+      - name: Set up build
+        uses: ./.github/actions/setup-build
+        with:
+          features: latex
 
       - name: Build PDF file
         run: |
-          autoreconf -i
-          ./configure --disable-dependency-tracking --disable-scalar --disable-threaded --disable-native --without-gmp --without-zlib
+          distname="${{ env.DISTNAME }}-manual"
+          echo "distname=$distname" >>"$GITHUB_ENV"
           make pdf
-          cp doc/manual/manual.pdf $distname.pdf
+          mv doc/manual/manual.pdf "$distname.pdf"
 
       - name: Print document information
         run: |
-          ls -l $distname.pdf
-          file $distname.pdf
+          ls -l "$distname.pdf"
+          file "$distname.pdf"
 
       - name: Upload document as artifact
         uses: actions/upload-artifact@v4
@@ -253,50 +187,53 @@ jobs:
     needs: build-src
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+
       - name: Download tarball
         uses: actions/download-artifact@v4
         with:
           name: src
 
-      - name: Determine distname
-        run: |
-          echo "distname=$(basename *.tar.gz .tar.gz)-manual-html" >> $GITHUB_ENV
-
-      - name: Uncompress tarball
-        run: |
-          tar -xf *.tar.gz --strip-components 1
-          rm *.tar.gz
-
-      # Currently, cache-apt-pkgs-action doesn't work for LaTeX.
-      # https://github.com/awalsh128/cache-apt-pkgs-action/issues/57
-      # - name: Install LaTeX2HTML
-      #   uses: awalsh128/cache-apt-pkgs-action@v1
-      #   with:
-      #     packages: latex2html  # shares the same cache with build-doc-pdf
-      #     version: 1.0
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install latex2html
+      - name: Set up build
+        uses: ./.github/actions/setup-build
+        with:
+          features: latex2html
 
       - name: Build HTML files
         run: |
-          autoreconf -i
-          ./configure --disable-dependency-tracking --disable-scalar --disable-threaded --disable-native --without-gmp --without-zlib
+          distname="${{ env.DISTNAME }}-manual-html"
+          echo "distname=$distname" >>"$GITHUB_ENV"
           make -C doc/manual latex2html
           (
             cd doc/manual/manual
             rm -f images.aux images.idx images.log images.pdf images.pl images.tex internals.pl labels.pl WARNINGS
+            # Print generated files.
+            ls -A -C
+            # Check if there are no unexpected files.
+            shopt -s nullglob
+            for f in * .*; do
+              case "$f" in
+                index.html|manual.html|manual.css|img*.svg)
+                  ;;
+                *)
+                  echo "Error: unexpected file: $f" >&2
+                  exit 1
+                  ;;
+              esac
+            done
           )
-          cp -r doc/manual/manual $distname
-          tar -c $distname/* | gzip -c -9 > $distname.tar.gz
+          mv doc/manual/manual "$distname"
+          tar -c "$distname"/* | gzip -c -9 > "$distname.tar.gz"
 
       - name: Print file information
         run: |
-          ls -l $distname.tar.gz
-          file $distname.tar.gz
-          tar -tf $distname.tar.gz
+          ls -l "$distname.tar.gz"
+          file "$distname.tar.gz"
+          tar -tf "$distname.tar.gz"
 
       - name: Upload file as artifact
         uses: actions/upload-artifact@v4
@@ -322,46 +259,59 @@ jobs:
         with:
           path: artifacts
 
-      - name: Determine distname
-        run: |
-          echo "distname=$(basename artifacts/src/*.tar.gz .tar.gz)" >> $GITHUB_ENV
-
       - name: Print all artifacts
         run: ls -l -R artifacts
 
       - name: Prepare distributions
         run: |
+          distname=$(basename artifacts/src/*.tar.gz .tar.gz)
           mkdir dist
-          mv artifacts/src/*.tar.gz dist
-          mv artifacts/doc-html/*.tar.gz dist
-          mv artifacts/doc-pdf/*.pdf dist
+          mv artifacts/src/*.tar.gz dist/
+          mv artifacts/doc-html/*.tar.gz dist/
+          mv artifacts/doc-pdf/*.pdf dist/
           make_tar_gz() {
-            if ls artifacts/$2 >/dev/null 2>&1; then
+            if compgen -G "artifacts/$2" >/dev/null; then
               pkgname=$distname-$1
-              mkdir $pkgname
-              mv artifacts/$2 $pkgname
-              chmod +x $pkgname/*form*
-              tar -c $pkgname/* | gzip -c -9 >dist/$pkgname.tar.gz
-              rm -rf $pkgname
+              mkdir "$pkgname"
+              mv artifacts/$2 "$pkgname"/
+              chmod +x "$pkgname"/*form*
+              tar -c "$pkgname"/* | gzip -c -9 >"dist/$pkgname.tar.gz"
+              rm -rf "$pkgname"
             fi
           }
           make_zip() {
-            if ls artifacts/$2 >/dev/null 2>&1; then
+            if compgen -G "artifacts/$2" >/dev/null; then
               pkgname=$distname-$1
-              mkdir $pkgname
-              mv artifacts/$2 $pkgname
-              chmod +x $pkgname/*form*
-              zip -9 dist/$pkgname.zip $pkgname/*
-              rm -rf $pkgname
+              mkdir "$pkgname"
+              mv artifacts/$2 "$pkgname"/
+              chmod +x "$pkgname"/*form*
+              zip -9 "dist/$pkgname.zip" "$pkgname"/*
+              rm -rf "$pkgname"
             fi
           }
-          make_tar_gz x86_64-linux '*-ubuntu-*/*form'
-          make_tar_gz x86_64-osx '*-macos-13/*form'
+          make_tar_gz x86_64-linux '*-ubuntu-24.04/*form'
+          make_tar_gz arm64-linux '*-ubuntu-24.04-arm/*form'
+          make_tar_gz x86_64-osx '*-macos-15-intel/*form'
           make_tar_gz arm64-osx '*-macos-14/*form'
-          make_zip x86_64-windows '*-windows-*/*form.exe'
+          make_zip x86_64-windows '*-windows-2022/*form.exe'
 
-      - name: Print distributions
-        run: ls -l dist
+      - name: Summarize the distributions
+        run: |
+          expected_count=8
+          actual_count=$(find dist -type f | wc -l)
+
+          {
+            echo "Number of files: $actual_count"
+            echo
+            echo '| File Name | Size (bytes) |'
+            echo '| --- | ---: |'
+            find dist -type f -printf "| %f | %s |\n"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+          if [[ $actual_count -ne $expected_count ]]; then
+            echo "Error: expected $expected_count files, but found $actual_count." >&2
+            exit 1
+          fi
 
       # Upload the distributions as an artifact, regardless of whether
       # the commit has a versioning tag. This makes checking and debugging easy.
@@ -383,7 +333,7 @@ jobs:
       # a versioning tag.
       - name: Publish distributions
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/*.tar.gz

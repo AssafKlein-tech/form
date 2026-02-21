@@ -9,7 +9,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -51,7 +51,7 @@ void RatToFloat(mpf_t result, UWORD *formrat, int ratsize);
  		#[ CompareFunctions :
 */
 
-WORD CompareFunctions(WORD *fleft,WORD *fright)
+int CompareFunctions(WORD *fleft,WORD *fright)
 {
 	WORD k, kk;
 	if ( AC.properorderflag ) {
@@ -115,7 +115,7 @@ WORD CompareFunctions(WORD *fleft,WORD *fright)
 	of such funny functions.
 */
 
-WORD Commute(WORD *fleft, WORD *fright)
+int Commute(WORD *fleft, WORD *fright)
 {
 	WORD fun1, fun2;
 	if ( *fleft == DOLLAREXPRESSION || *fright == DOLLAREXPRESSION ) return(0);
@@ -190,7 +190,7 @@ WORD Commute(WORD *fleft, WORD *fright)
 
 */
 
-WORD Normalize(PHEAD WORD *term)
+int Normalize(PHEAD WORD *term)
 {
 /*
   	#[ Declarations :
@@ -216,7 +216,8 @@ WORD Normalize(PHEAD WORD *term)
 	WORD *n_coef, ncoef;				/* Accumulator for the coefficient */
 	WORD *n_llnum, *lnum, nnum;
 	WORD *termout, oldtoprhs = 0, subtype;
-	WORD ReplaceType, ReplaceVeto = 0, didcontr, regval = 0;
+	WORD ReplaceType, ReplaceVeto = 0, didcontr;
+	int regval = 0;
 	WORD *ReplaceSub;
 	WORD *fillsetexp;
 	CBUF *C = cbuf+AT.ebufnum;
@@ -2317,27 +2318,63 @@ redoshort:
 */
 					while ( mm < rr ) { num++; NEXTARG(mm); }
 					if ( num < t[FUNHEAD+2] ) { pnco[nnco++] = t; break; }
+					/* Replace "putfirst_" with the resulting function code. mm goes to arg start. */
 					*t = -t[FUNHEAD]; mm = t+FUNHEAD+3;
+					/* Set i to the arg number we are putting first, then move mm to its start. */
 					i = t[FUNHEAD+2];
 					while ( --i > 0 ) { NEXTARG(mm); }
-					tt = TermMalloc("Select_"); /* Move selected out of the way */
-                    tt1 = tt;
+					/* Keep a pointer to the arguments trailing the selected: */
+					WORD *argTail = mm;
+					NEXTARG(argTail);
+					tt = TermMalloc("Select_"); /* Move selected out of the way into tmp space */
+					tt1 = tt;
+					/* Normal argument: */
 					if ( *mm > 0 ) {
 						for ( i = 0; i < *mm; i++ ) *tt1++ = mm[i];
 					}
+					/* Fast-notation function: single word */
 					else if ( *mm <= -FUNCTION ) { *tt1++ = *mm; }
+					/* Fast-notation symbol, number etc: two words */
 					else { *tt1++ = mm[0]; *tt1++ = mm[1]; }
+					/* Put tt2 at the start of the original arguments */
 					tt2 = t+FUNHEAD+3;
+					/* Copy leading original arguments after the new first, in the tmp space. */
 					while ( tt2 < mm ) *tt1++ = *tt2++;
+					/* i contains the size so far. tt1 goes to the start of the tmp space.
+						tt2 to the final argument location (we overwrite "putfirst_") */
 					i = tt1-tt; tt1 = tt; tt2 = t+FUNHEAD;
+					/* Copy everything so far to its final place */
 					NCOPY(tt2,tt1,i);
+					/* We are finished with the tmp space */
 					TermFree(tt,"Select_");
-					NEXTARG(mm);
-					while ( mm < rr ) *tt2++ = *mm++;
+					/* Now copy the trailing args. Use the stored pointer, *mm has been edited
+						during the copy to tt2 above! NEXTARG(mm) would produce nonsense. */
+					while ( argTail < rr ) *tt2++ = *argTail++;
+					/* Set the size of all function args */
 					t[1] = tt2 - t;
+					/* Now copy the rest of the term, and set the final term size */
 					rr = term + *term;
-					while ( mm < rr ) *tt2++ = *mm++;
+					while ( argTail < rr ) *tt2++ = *argTail++;
 					*term = tt2-term;
+					if ( functions[*t-FUNCTION].spec == TENSORFUNCTION ) {
+						// If the output function is a tensor, we have one more job to do.
+						// The args are formatted as single words, representing indices or vectors.
+						// There is no ARGHEAD.
+						WORD *dst = t + FUNHEAD;
+						WORD *src = dst + 1;
+						// Strip the type information from the args:
+						while ( src < t + t[1] ) {
+							*dst = *src;
+							dst++; src++; src++;
+						}
+						t[1] = dst - t;
+						// Now copy the rest of the term. We've advanced src one too many above.
+						src--;
+						while ( src < term + *term ) {
+							*dst++ = *src++;
+						}
+						*term = dst - term;
+					}
 					goto Restart;
 				}
 				else pnco[nnco++] = t;
@@ -4176,7 +4213,7 @@ FromNorm:
  		#[ ExtraSymbol :
 */
 
-WORD ExtraSymbol(WORD sym, WORD pow, WORD nsym, WORD *ppsym, WORD *ncoef)
+int ExtraSymbol(WORD sym, WORD pow, WORD nsym, WORD *ppsym, WORD *ncoef)
 {
 	WORD *m, i;
 	i = nsym;
@@ -4238,7 +4275,7 @@ WORD ExtraSymbol(WORD sym, WORD pow, WORD nsym, WORD *ppsym, WORD *ncoef)
  		#[ DoTheta :
 */
 
-WORD DoTheta(PHEAD WORD *t)
+int DoTheta(PHEAD WORD *t)
 {
 	GETBIDENTITY
 	WORD k, *r1, *r2, *tstop, type;
@@ -4335,7 +4372,7 @@ WORD DoTheta(PHEAD WORD *t)
  		#[ DoDelta :
 */
 
-WORD DoDelta(WORD *t)
+int DoDelta(WORD *t)
 {
 	WORD k, *r1, *r2, *tstop, isnum, isnum2, type = *t;
 	if ( AC.BracketNormalize ) return(-1);
@@ -5251,7 +5288,7 @@ int TestFunFlag(PHEAD WORD *tfun)
   	#[ BracketNormalize :
 */
 
-WORD BracketNormalize(PHEAD WORD *term)
+int BracketNormalize(PHEAD WORD *term)
 {
 	WORD *stop = term+*term-3, *t, *tt, *tstart, *r;
 	WORD *oldwork = AT.WorkPointer;

@@ -7,7 +7,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -43,6 +43,13 @@
 #else
 #include <signal.h>
 #endif
+#ifdef ENABLE_BACKTRACE
+	#include <execinfo.h>
+#ifdef LINUX
+	#include <stdint.h>
+	#include <inttypes.h>
+#endif
+#endif
 
 /*
  * A macro for translating the contents of `x' into a string after expanding.
@@ -68,7 +75,7 @@
 	/* We have also version.h. */
 	#include "version.h"
 	#ifndef REPO_VERSION
-		#define REPO_VERSION STRINGIFY(REPO_MAJOR_VERSION) "." STRINGIFY(REPO_MINOR_VERSION)
+		#define REPO_VERSION STRINGIFY(REPO_MAJOR_VERSION) "." STRINGIFY(REPO_MINOR_VERSION) "." STRINGIFY(REPO_PATCH_VERSION)
 	#endif
 	#ifndef REPO_DATE
 		/* The build date, instead of the repo date. */
@@ -81,15 +88,16 @@
 	#endif
 	#define MAJORVERSION REPO_MAJOR_VERSION
 	#define MINORVERSION REPO_MINOR_VERSION
+	#define PATCHVERSION REPO_PATCH_VERSION
 #else
 	/*
-	 * Otherwise, form3.h defines MAJORVERSION, MINORVERSION and PRODUCTIONDATE,
-	 * possibly BETAVERSION.
+	 * Otherwise, form3.h defines MAJORVERSION, MINORVERSION, PATCHVERSION
+	 * and PRODUCTIONDATE, possibly BETAVERSION.
 	 */
 	#ifdef BETAVERSION
-		#define VERSIONSTR__ STRINGIFY(MAJORVERSION) "." STRINGIFY(MINORVERSION) "Beta"
+		#define VERSIONSTR__ STRINGIFY(MAJORVERSION) "." STRINGIFY(MINORVERSION) "." STRINGIFY(PATCHVERSION) "Beta"
 	#else
-		#define VERSIONSTR__ STRINGIFY(MAJORVERSION) "." STRINGIFY(MINORVERSION)
+		#define VERSIONSTR__ STRINGIFY(MAJORVERSION) "." STRINGIFY(MINORVERSION) "." STRINGIFY(PATCHVERSION)
 	#endif
 	#define VERSIONSTR FORMNAME " " VERSIONSTR__ " (" PRODUCTIONDATE ")"
 #endif
@@ -100,11 +108,50 @@
 */
 
 /**
+ * Prints build information.
+ *
+ * @note As a configure-time assumption, the C and C++ compilers are from
+ *       the same vendor and have the same version.
+ */
+static void PrintBuildInfo(void) {
+#if defined(__INTEL_LLVM_COMPILER)
+	MesPrint("Compiler: Intel LLVM oneAPI %d",__INTEL_LLVM_COMPILER);
+#elif defined(__INTEL_COMPILER)
+	MesPrint("Compiler: Intel Classic %d",__INTEL_COMPILER);
+#elif defined(__clang__) && defined(__apple_build_version__)
+	MesPrint("Compiler: Apple Clang %d.%d.%d (build %d)",__clang_major__,__clang_minor__,__clang_patchlevel__,__apple_build_version__);
+#elif defined(__clang__)
+	MesPrint("Compiler: Clang %d.%d.%d",__clang_major__,__clang_minor__,__clang_patchlevel__);
+#elif defined(__GNUC__)
+	MesPrint("Compiler: GCC %d.%d.%d",__GNUC__,__GNUC_MINOR__,__GNUC_PATCHLEVEL__);
+#elif defined(_MSC_VER)
+	MesPrint("Compiler: MSVC %d",_MSC_VER);
+#else
+	MesPrint("Compiler: Unknown");
+#endif
+
+#if defined(__x86_64__) || defined(_M_X64)
+	MesPrint("Architecture: x86_64");
+#elif defined(__i386__) || defined(_M_IX86)
+	MesPrint("Architecture: x86 (32-bit)");
+#elif defined(__aarch64__) || defined(_M_ARM64)
+	MesPrint("Architecture: arm64");
+#elif defined(__arm__) || defined(_M_ARM)
+	MesPrint("Architecture: arm (32-bit)");
+#else
+	MesPrint("Architecture: Unknown");
+#endif
+}
+
+/**
  * Prints the header line of the output.
  *
- * @param  with_full_info  True for printing also runtime information.
+ * @param  par  Controls the output mode
+ *              (0: default,
+ *               1: including runtime information,
+ *               2: including verbose version information).
  */
-static void PrintHeader(int with_full_info)
+static void PrintHeader(int par)
 {
 #ifdef WITHMPI
 	if ( PF.me == MASTER && !AM.silent ) {
@@ -140,7 +187,7 @@ static void PrintHeader(int with_full_info)
 		s += snprintf(s,250-(s-buffer1)," %d-bits",(WORD)(sizeof(WORD)*16));
 		*s = 0;
 */
-		if ( with_full_info ) {
+		if ( par == 1 ) {
 #if defined(WITHPTHREADS) || defined(WITHMPI)
 #if defined(WITHPTHREADS)
 			int nworkers = AM.totalnumberofthreads-1;
@@ -193,11 +240,16 @@ static void PrintHeader(int with_full_info)
 			MesPrint("%s",buffer1);
 			AC.LineLength = oldLineLength;
 		}
+
+		if ( par == 2 ) {
+			PrintFeatureList();
+			PrintBuildInfo();
+		}
 	}
 #ifdef WINDOWS
 	PrintDeprecation("the native Windows version", "issues/623");
 #endif
-#ifdef ILP32
+#if BITSINWORD == 16
 	PrintDeprecation("the 32-bit version", "issues/624");
 #endif
 #ifdef WITHMPI
@@ -241,6 +293,8 @@ int DoTail(int argc, UBYTE **argv)
 	AM.InputFileName = AM.LogFileName = AM.IncDir = AM.TempDir = AM.TempSortDir =
 	AM.SetupDir = AM.SetupFile = AM.Path = 0;
 	AM.FromStdin = 0;
+	/* Always use MultiRun, "-M" option is now ignored. */
+	AM.MultiRun = 1;
 	if ( argc < 1 ) {
 		onlyversion = 0;
 		goto printversion;
@@ -295,7 +349,8 @@ int DoTail(int argc, UBYTE **argv)
 				case 'L': /* Make log file with only final statistics */
 							AM.LogType = 1;  break;
 				case 'M': /* Multirun. Name of tempfiles will contain PID */
-							AM.MultiRun = 1;
+							/* This option is now ignored. We always use MultiRun. */
+							/* AM.MultiRun = 1; */
 							break;
 				case 'm': /* Read number of threads */
 				case 'w': /* Read number of workers */
@@ -422,12 +477,14 @@ int DoTail(int argc, UBYTE **argv)
 							break;
 				case 'T': /* Print the total size used at end of job */
 							AM.PrintTotalSize = 1; break;
-				case 'v':
+				case 'v': /* Print version information */
+							AC.FinalStats = 0;
+							if ( s[1] == 'v' ) {  /* verbose version information */
+								PrintHeader(2);
+								return(1);
+							}
 printversion:;
-#ifdef WITHMPI
-							if ( PF.me == MASTER )
-#endif
-								PrintHeader(0);
+							PrintHeader(0);
 							if ( onlyversion ) return(1);
 							goto NoFile;
 				case 'y': /* Preprocessor dumps output. No compilation. */
@@ -556,7 +613,7 @@ NoFile:
 		.clear instructions if so desired without using interpretation
 */
 
-int OpenInput(VOID)
+int OpenInput(void)
 {
 	int oldNoShowInput = AC.NoShowInput;
 	UBYTE c;
@@ -676,8 +733,11 @@ int OpenInput(VOID)
 
 UBYTE *emptystring = (UBYTE *)".";
 UBYTE *defaulttempfilename = (UBYTE *)"xformxxx.str";
+/* This is the length of the above default, but with 7 spaces for PID digits
+   instead of the "xxx". (Previously FORM used 5 digits and this value was 14) */
+#define DEFAULTFNAMELENGTH 16
 
-VOID ReserveTempFiles(int par)
+void ReserveTempFiles(int par)
 {
 	GETIDENTITY
 	SETUPPARAMETERS *sp;
@@ -709,11 +769,11 @@ VOID ReserveTempFiles(int par)
 	when one device is full we can continue on the next one.
 */
 	s = AM.TempDir; i = 200;   /* Some extra for VMS */
-	while ( *s && *s != ':' ) { if ( *s == '\\' ) s++; s++; i++; }
-	FG.fnamesize = sizeof(UBYTE)*(i+14);
+	while ( *s && *s != PATHSEPARATOR ) { if ( *s == '\\' ) s++; s++; i++; }
+	FG.fnamesize = sizeof(UBYTE)*(i+DEFAULTFNAMELENGTH);
 	FG.fname = (char *)Malloc1(FG.fnamesize,"name for temporary files");
 	s = AM.TempDir; t = (UBYTE *)FG.fname;
-	while ( *s && *s != ':' ) { if ( *s == '\\' ) s++; *t++ = *s++; }
+	while ( *s && *s != PATHSEPARATOR ) { if ( *s == '\\' ) s++; *t++ = *s++; }
 	if ( (char *)t > FG.fname && t[-1] != SEPARATOR && t[-1] != ALTSEPARATOR )
 		*t++ = SEPARATOR;
 	*t = 0;
@@ -721,12 +781,12 @@ VOID ReserveTempFiles(int par)
 	FG.fnamebase = t-(UBYTE *)(FG.fname);
 
 	s = AM.TempSortDir; i = 200;   /* Some extra for VMS */
-	while ( *s && *s != ':' ) { if ( *s == '\\' ) s++; s++; i++; }
+	while ( *s && *s != PATHSEPARATOR ) { if ( *s == '\\' ) s++; s++; i++; }
 
-	FG.fname2size = sizeof(UBYTE)*(i+14);
+	FG.fname2size = sizeof(UBYTE)*(i+DEFAULTFNAMELENGTH);
 	FG.fname2 = (char *)Malloc1(FG.fname2size,"name for sort files");
 	s = AM.TempSortDir; t = (UBYTE *)FG.fname2;
-	while ( *s && *s != ':' ) { if ( *s == '\\' ) s++; *t++ = *s++; }
+	while ( *s && *s != PATHSEPARATOR ) { if ( *s == '\\' ) s++; *t++ = *s++; }
 	if ( (char *)t > FG.fname2 && t[-1] != SEPARATOR && t[-1] != ALTSEPARATOR )
 		*t++ = SEPARATOR;
 	*t = 0;
@@ -737,35 +797,10 @@ VOID ReserveTempFiles(int par)
 	s = defaulttempfilename;
 #ifdef WITHMPI
 	{ 
-	  int iii;
-#ifdef SMP
-	  /* Very dirty quick-hack for the qcm smp machine at TTP */
-	  M_free(FG.fname,"name for temporary files");
-	  if(PF.me == 0){
-      /*[04nov2003 mt] To avoid segfault with -fast optimization option*/
-		/*[04nov2003 mt]:*/ /*NOTE, this is only a temporary stub!*/
-		/*FG.fname = "/formswap/xxxxxxxxxxxxxxxxxxxxx";*/
-		FG.fname = calloc(128,1);
-		strcpy(FG.fname,"/formswap/xxxxxxxxxxxxxxxxxxxxx");
-		/*:[04nov2003 mt]*/
-		t = (UBYTE *)FG.fname + 10;
-		FG.fnamebase = t-FG.fname;
-	  }
-	  else{
-		/*[04nov2003 mt]:*/
-		/*FG.fname = "/formswapx/xxxxxxxxxxxxxxxxxxxxx";*/
-		FG.fname = calloc(128,1);
-		strcpy(FG.fname,"/formswapx/xxxxxxxxxxxxxxxxxxxxx");
-		/*:[04nov2003 mt]*/
-		FG.fname[9] = '0' + PF.me;
-		t = (UBYTE *)FG.fname + 11;
-		FG.fnamebase = t-FG.fname;
-	  }
-#else
-	  iii = snprintf((char*)t,FG.fnamesize-((char*)t-FG.fname),"%d",PF.me);
-	  t+= iii;
-	  s+= iii; /* in case defaulttmpfilename is too short */
-#endif
+		int iii;
+		iii = snprintf((char*)t,FG.fnamesize-((char*)t-FG.fname),"%d",PF.me);
+		t+= iii;
+		s+= iii; /* in case defaulttmpfilename is too short */
 	}
 #endif
 	while ( *s ) *t++ = *s++;
@@ -780,8 +815,8 @@ VOID ReserveTempFiles(int par)
 		command tail.
 */
 	if ( AM.MultiRun ) {
-		int num = ((int)GetPID())%100000;
-		t += 2;
+		int num = ((int)GetPID())%10000000;
+		t += 4;
 		*t = 0;
 		t[-1] = 'r';
 		t[-2] = 't';
@@ -791,9 +826,11 @@ VOID ReserveTempFiles(int par)
 		t[-6] = (UBYTE)('0' + (num/10)%10);
 		t[-7] = (UBYTE)('0' + (num/100)%10);
 		t[-8] = (UBYTE)('0' + (num/1000)%10);
-		t[-9] = (UBYTE)('0' + num/10000);
+		t[-9] = (UBYTE)('0' + (num/10000)%10);
+		t[-10] = (UBYTE)('0' + (num/100000)%10);
+		t[-11] = (UBYTE)('0' + num/1000000);
 		if ( ( AC.StoreHandle = CreateFile((char *)FG.fname) ) < 0 ) {
-			t[-5] = 'x'; t[-6] = 'x'; t[-7] = 'x'; t[-8] = 'x'; t[-9] = 'x';
+			t[-5] = 'x'; t[-6] = 'x'; t[-7] = 'x'; t[-8] = 'x'; t[-9] = 'x'; t[-10] = 'x'; t[-11] = 'x';
 			goto classic;
 		}
 	}
@@ -842,7 +879,7 @@ classic:;
 /*
 	Now we should assign a name to the main sort file and the two stage 4 files.
 */
-	AM.S0->file.name = (char *)Malloc1(sizeof(char)*(i+14),"name for temporary files");
+	AM.S0->file.name = (char *)Malloc1(sizeof(char)*(i+DEFAULTFNAMELENGTH),"name for temporary files");
 	s = (UBYTE *)AM.S0->file.name;
 	t = (UBYTE *)FG.fname2;
 	i = 1;
@@ -874,6 +911,7 @@ classic:;
 	if ( par == 0 ) {
 		s = (UBYTE *)((void *)(FG.fname2)); i = 0;
 		while ( *s ) { s++; i++; }
+		/* +1 for null terminator */
 		s = (UBYTE *)Malloc1(sizeof(char)*(i+1),"name for stage4 file a");
 		AR.FoStage4[1].name = (char *)s;
 		t = (UBYTE *)FG.fname2;
@@ -881,12 +919,14 @@ classic:;
 		s[-2] = '4'; s[-1] = 'a'; *s = 0;
 		s = (UBYTE *)((void *)(FG.fname)); i = 0;
 		while ( *s ) { s++; i++; }
+		/* +1 for null terminator */
 		s = (UBYTE *)Malloc1(sizeof(char)*(i+1),"name for stage4 file b");
 		AR.FoStage4[0].name = (char *)s;
 		t = (UBYTE *)FG.fname;
 		while ( *t ) *s++ = *t++;
 		s[-2] = '4'; s[-1] = 'b'; *s = 0;
 		for ( j = 0; j < 3; j++ ) {
+			/* +1 for null terminator */
 			s = (UBYTE *)Malloc1(sizeof(char)*(i+1),"name for scratch file");
 			AR.Fscr[j].name = (char *)s;
 			t = (UBYTE *)FG.fname;
@@ -899,6 +939,7 @@ classic:;
 		size_t tname;
 		s = (UBYTE *)((void *)(FG.fname2)); i = 0;
 		while ( *s ) { s++; i++; }
+		/* +1 for null terminator, +10 for 32bit int, +1 for "." */
 		tname = sizeof(char)*(i+12);
 		s = (UBYTE *)Malloc1(tname,"name for stage4 file a");
 		snprintf((char *)s,tname,"%s.%d",FG.fname2,AT.identity);
@@ -906,6 +947,7 @@ classic:;
 		AR.FoStage4[1].name = (char *)s;
 		s = (UBYTE *)((void *)(FG.fname)); i = 0;
 		while ( *s ) { s++; i++; }
+		/* +1 for null terminator, +10 for 32bit int, +1 for "." */
 		tname = sizeof(char)*(i+12);
 		s = (UBYTE *)Malloc1(tname,"name for stage4 file b");
 		snprintf((char *)s,tname,"%s.%d",FG.fname,AT.identity);
@@ -913,6 +955,7 @@ classic:;
 		AR.FoStage4[0].name = (char *)s;
 		if ( AT.identity == 0 ) {
 			for ( j = 0; j < 3; j++ ) {
+				/* +1 for null terminator */
 				s = (UBYTE *)Malloc1(sizeof(char)*(i+1),"name for scratch file");
 				AR.Fscr[j].name = (char *)s;
 				t = (UBYTE *)FG.fname;
@@ -933,7 +976,7 @@ classic:;
 ALLPRIVATES *DummyPointer = 0;
 #endif
 
-VOID StartVariables(VOID)
+void StartVariables(void)
 {
 	int i, ii;
 	PUTZERO(AM.zeropos);
@@ -1134,7 +1177,7 @@ VOID StartVariables(VOID)
 	cbuf[AM.dbufnum].mnumrhs = cbuf[AM.dbufnum].numrhs;
 
 	AddSymbol((UBYTE *)"i_",-MAXPOWER,MAXPOWER,VARTYPEIMAGINARY,0);
-	AM.numpi = AddSymbol((UBYTE *)"pi_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
+	AddSymbol((UBYTE *)"pi_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
 /*
 	coeff_ should have the number COEFFSYMBOL and den_ the number DENOMINATOR
     and the three should be in this order!
@@ -1146,6 +1189,8 @@ VOID StartVariables(VOID)
 	AddSymbol((UBYTE *)"dimension_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
 	AddSymbol((UBYTE *)"factor_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
 	AddSymbol((UBYTE *)"sep_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
+	AddSymbol((UBYTE *)"ee_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
+	AddSymbol((UBYTE *)"em_",-MAXPOWER,MAXPOWER,VARTYPENONE,0);
 	i = BUILTINSYMBOLS;  /* update this in ftypes.h when we add new symbols */
 /*
 	Next we add a number of dummy symbols for ensuring that the user defined
@@ -1220,35 +1265,53 @@ VOID StartVariables(VOID)
 	AM.oldnumextrasymbols = strDup1((UBYTE *)"OLDNUMEXTRASYMBOLS_","oldnumextrasymbols");
 	PutPreVar((UBYTE *)"VERSION_",(UBYTE *)STRINGIFY(MAJORVERSION),0,0);
 	PutPreVar((UBYTE *)"SUBVERSION_",(UBYTE *)STRINGIFY(MINORVERSION),0,0);
+	PutPreVar((UBYTE *)"SUBSUBVERSION_",(UBYTE *)STRINGIFY(PATCHVERSION),0,0);
 	PutPreVar((UBYTE *)"DATE_",(UBYTE *)MakeDate(),0,0);
-	PutPreVar((UBYTE *)"random_",(UBYTE *)"________",(UBYTE *)"?a",0);
+	PutPreVar((UBYTE *)"random_",(UBYTE *)"________",0,0);
 	PutPreVar((UBYTE *)"optimminvar_",(UBYTE *)("0"),0,0);
 	PutPreVar((UBYTE *)"optimmaxvar_",(UBYTE *)("0"),0,0);
 	PutPreVar(AM.oldnumextrasymbols,(UBYTE *)("0"),0,0);
 	PutPreVar((UBYTE *)"optimvalue_",(UBYTE *)("0"),0,0);
 	PutPreVar((UBYTE *)"optimscheme_",(UBYTE *)("0"),0,0);
-	PutPreVar((UBYTE *)"tolower_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
-	PutPreVar((UBYTE *)"toupper_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
-	PutPreVar((UBYTE *)"takeleft_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
-	PutPreVar((UBYTE *)"takeright_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
-	PutPreVar((UBYTE *)"keepleft_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
-	PutPreVar((UBYTE *)"keepright_",(UBYTE *)("0"),(UBYTE *)("?a"),0);
+	PutPreVar((UBYTE *)"tolower_",(UBYTE *)("0"),0,0);
+	PutPreVar((UBYTE *)"toupper_",(UBYTE *)("0"),0,0);
+	PutPreVar((UBYTE *)"takeleft_",(UBYTE *)("0"),0,0);
+	PutPreVar((UBYTE *)"takeright_",(UBYTE *)("0"),0,0);
+	PutPreVar((UBYTE *)"keepleft_",(UBYTE *)("0"),0,0);
+	PutPreVar((UBYTE *)"keepright_",(UBYTE *)("0"),0,0);
 	PutPreVar((UBYTE *)"SYSTEMERROR_",(UBYTE *)("0"),0,0);
 /*
-	Next are a few 'constants' for diagram generation
+	Next are the flags to control diagram generation filters
 */
-	PutPreVar((UBYTE *)"ONEPI_",(UBYTE *)("1"),0,0);
-	PutPreVar((UBYTE *)"WITHOUTINSERTIONS_",(UBYTE *)("2"),0,0);
-	PutPreVar((UBYTE *)"NOTADPOLES_",(UBYTE *)("4"),0,0);
-	PutPreVar((UBYTE *)"SYMMETRIZE_",(UBYTE *)("8"),0,0);
-	PutPreVar((UBYTE *)"TOPOLOGIESONLY_",(UBYTE *)("16"),0,0);
-	PutPreVar((UBYTE *)"NONODES_",(UBYTE *)("32"),0,0);
-	PutPreVar((UBYTE *)"WITHEDGES_",(UBYTE *)("64"),0,0);
-/*		Note that CHECKEXTERN is 128 */
-	PutPreVar((UBYTE *)"WITHBLOCKS_",(UBYTE *)("256"),0,0);
-		PutPreVar((UBYTE *)"WITHONEPISETS_",(UBYTE *)("512"),0,0);
-	PutPreVar((UBYTE *)"NOSNAILS_",(UBYTE *)("1024"),0,0);
-	PutPreVar((UBYTE *)"NOEXTSELF_",(UBYTE *)("2048"),0,0);
+	#define STR2(x) #x
+	#define STR(x) STR2(x)
+	PutPreVar((UBYTE *)"TOPOLOGIESONLY_" ,(UBYTE*)(STR(TOPOLOGIESONLY)) ,0,0);
+	PutPreVar((UBYTE *)"WITHOUTNODES_"   ,(UBYTE*)(STR(WITHOUTNODES))   ,0,0);
+	PutPreVar((UBYTE *)"WITHEDGES_"      ,(UBYTE*)(STR(WITHEDGES))      ,0,0);
+	PutPreVar((UBYTE *)"WITHBLOCKS_"     ,(UBYTE*)(STR(WITHBLOCKS))     ,0,0);
+	PutPreVar((UBYTE *)"WITHONEPISETS_"  ,(UBYTE*)(STR(WITHONEPISETS))  ,0,0);
+	PutPreVar((UBYTE *)"WITHSYMMETRIZEI_",(UBYTE*)(STR(WITHSYMMETRIZEI)),0,0);
+	PutPreVar((UBYTE *)"WITHSYMMETRIZEF_",(UBYTE*)(STR(WITHSYMMETRIZEF)),0,0);
+	// This is not an "option" preprocessor var but is set by "external" particle definitions
+//	PutPreVar((UBYTE *)"CHECKEXTERN_"    ,(UBYTE*)(STR(CHECKEXTERN))    ,0,0);
+	PutPreVar((UBYTE *)"ONEPI_"          ,(UBYTE*)(STR(ONEPARTI))       ,0,0);
+	PutPreVar((UBYTE *)"ONEPR_"          ,(UBYTE*)(STR(ONEPARTR))       ,0,0);
+	PutPreVar((UBYTE *)"ONSHELL_"        ,(UBYTE*)(STR(ONSHELL))        ,0,0);
+	PutPreVar((UBYTE *)"OFFSHELL_"       ,(UBYTE*)(STR(OFFSHELL))       ,0,0);
+	PutPreVar((UBYTE *)"NOSIGMA_"        ,(UBYTE*)(STR(NOSIGMA))        ,0,0);
+	PutPreVar((UBYTE *)"SIGMA_"          ,(UBYTE*)(STR(SIGMA))          ,0,0);
+	PutPreVar((UBYTE *)"NOSNAIL_"        ,(UBYTE*)(STR(NOSNAIL))        ,0,0);
+	PutPreVar((UBYTE *)"SNAIL_"          ,(UBYTE*)(STR(SNAIL))          ,0,0);
+	PutPreVar((UBYTE *)"NOTADPOLE_"      ,(UBYTE*)(STR(NOTADPOLE))      ,0,0);
+	PutPreVar((UBYTE *)"TADPOLE_"        ,(UBYTE*)(STR(TADPOLE))        ,0,0);
+	PutPreVar((UBYTE *)"SIMPLE_"         ,(UBYTE*)(STR(SIMPLE))         ,0,0);
+	PutPreVar((UBYTE *)"NOTSIMPLE_"      ,(UBYTE*)(STR(NOTSIMPLE))      ,0,0);
+	PutPreVar((UBYTE *)"BIPART_"         ,(UBYTE*)(STR(BIPART))         ,0,0);
+	PutPreVar((UBYTE *)"NONBIPART_"      ,(UBYTE*)(STR(NONBIPART))      ,0,0);
+	PutPreVar((UBYTE *)"CYCLI_"          ,(UBYTE*)(STR(CYCLI))          ,0,0);
+	PutPreVar((UBYTE *)"CYCLR_"          ,(UBYTE*)(STR(CYCLR))          ,0,0);
+	PutPreVar((UBYTE *)"FLOOP_"          ,(UBYTE*)(STR(FLOOP))          ,0,0);
+	PutPreVar((UBYTE *)"NOTFLOOP_"       ,(UBYTE*)(STR(NOTFLOOP))       ,0,0);
 
 	{
 		char buf[41];  /* up to 128-bit */
@@ -1343,7 +1406,7 @@ VOID StartVariables(VOID)
  		#[ StartMore :
 */
 
-VOID StartMore(VOID)
+void StartMore(void)
 {
 #ifdef WITHEXTERNALCHANNEL
 	/*If env.variable "FORM_PIPES" is defined, we have to initialize 
@@ -1381,7 +1444,7 @@ VOID StartMore(VOID)
 		This routine initializes the parameters that may change during the run.
 */
 
-WORD IniVars(VOID)
+void IniVars(void)
 {
 #ifdef WITHPTHREADS
 	GETIDENTITY
@@ -1417,12 +1480,26 @@ WORD IniVars(VOID)
 	AC.lPolyFunExp = AM.gPolyFunExp = 0;
 	AC.lPolyFunVar = AM.gPolyFunVar = 0;
 	AC.lPolyFunPow = AM.gPolyFunPow = 0;
+#ifdef WITHFLINT
+	AC.FlintPolyFlag = 1;
+#else
+	AC.FlintPolyFlag = 0;
+#endif
 	AC.DirtPow = 0;
 	AC.lDefDim = AM.gDefDim = 4;
 	AC.lDefDim4 = AM.gDefDim4 = 0;
 	AC.lUnitTrace = AM.gUnitTrace = 4;
 	AC.NamesFlag = AM.gNamesFlag = 0;
 	AC.CodesFlag = AM.gCodesFlag = 0;
+	/* Printing a backtrace on crash is on by default for both normal and debug
+		modes if FORM has been compiled with backtrace support. */
+#ifdef ENABLE_BACKTRACE
+	AC.PrintBacktraceFlag = 1;
+#else
+	AC.PrintBacktraceFlag = 0;
+#endif
+	/* Human-readable statistics are off by default */
+	AC.HumanStatsFlag = 0;
 	AC.extrasymbols = AM.gextrasymbols = AM.ggextrasymbols = 0;
 	AC.extrasym = (UBYTE *)Malloc1(2*sizeof(UBYTE),"extrasym");
 	AM.gextrasym = (UBYTE *)Malloc1(2*sizeof(UBYTE),"extrasym");
@@ -1443,6 +1520,10 @@ WORD IniVars(VOID)
 	AR.gzipCompress = GZIPDEFAULT;
 	AR.FoStage4[0].ziobuffer = 0;
 	AR.FoStage4[1].ziobuffer = 0;
+#ifdef WITHZSTD
+	/* Zstd compression is on by default, if we have compiled with it */
+	ZWRAP_useZSTDcompression(1);
+#endif
 #endif
 	AR.BracketOn = 0;
 	AC.bracketindexflag = 0;
@@ -1589,7 +1670,6 @@ WORD IniVars(VOID)
 	AC.cbufnum = AM.rbufnum;		/* Select the default compiler buffer */
 	AC.HideLevel = 0;
 	AP.PreAssignFlag = 0;
-	return(0);
 }
 
 /*
@@ -1607,7 +1687,7 @@ static int trappedTerminate = 0;
 #ifdef INTSIGHANDLER
 static int onErrSig(int i)
 #else
-static VOID onErrSig(int i)
+static void onErrSig(int i)
 #endif
 {
 	if (exitInProgress){
@@ -1620,14 +1700,14 @@ static VOID onErrSig(int i)
 #endif
 	}
 	trappedTerminate = 1;
-	/*[13jul2005 mt]*//*Terminate(-1) on signal is here:*/
+	/*[13jul2005 mt]*//*TerminateImpl(-1) on signal is here:*/
 	Terminate(-1);
 }
 
 #ifdef INTSIGHANDLER
-static VOID setNewSig(int i, int (*handler)(int))
+static void setNewSig(int i, int (*handler)(int))
 #else
-static VOID setNewSig(int i, void (*handler)(int))
+static void setNewSig(int i, void (*handler)(int))
 #endif
 {
 	if(! (i<NSIG) )/* Invalid signal -- see comments in the file */
@@ -1637,7 +1717,7 @@ static VOID setNewSig(int i, void (*handler)(int))
 		signal(i,handler);
 }
 
-VOID setSignalHandlers(VOID)
+void setSignalHandlers(void)
 {
 	/* Reset various unrecoverable error signals:*/
 	setNewSig(SIGSEGV,onErrSig);
@@ -1674,7 +1754,7 @@ ALLPRIVATES *ABdummy[10];
 int main(int argc, char **argv)
 {
 	int retval;
-	bzero((VOID *)(&A),sizeof(A)); /* make sure A is initialized at zero */
+	bzero((void *)(&A),sizeof(A)); /* make sure A is initialized at zero */
 	iniTools();
 #ifdef TRAPSIGNALS
 	setSignalHandlers();
@@ -1753,6 +1833,9 @@ int main(int argc, char **argv)
 #ifdef WITH_ALARM
 	if ( AM.TimeLimit > 0 ) alarm(AM.TimeLimit);
 #endif
+#ifdef WITHFLINT
+	flint_check_version();
+#endif
 	TimeCPU(0);
 	TimeChildren(0);
 	TimeWallClock(0);
@@ -1770,7 +1853,7 @@ int main(int argc, char **argv)
 
 */
 
-VOID CleanUp(WORD par)
+void CleanUp(WORD par)
 {
 	GETIDENTITY
 	int i;
@@ -1854,15 +1937,17 @@ dontremove:;
 
 /*
  		#] CleanUp : 
- 		#[ Terminate :
+ 		#[ TerminateImpl :
 */
 
 static int firstterminate = 1;
 
-VOID Terminate(int errorcode)
+void TerminateImpl(int errorcode, const char* file, int line, const char* function)
 {
 	if ( errorcode && firstterminate ) {
 		firstterminate = 0;
+
+		MLOCK(ErrorMessageLock);
 #ifdef WITHPTHREADS
 		MesPrint("Program terminating in thread %w at &");
 #elif defined(WITHMPI)
@@ -1870,6 +1955,121 @@ VOID Terminate(int errorcode)
 #else
 		MesPrint("Program terminating at &");
 #endif
+		MesPrint("Terminate called from %s:%d (%s)", file, line, function);
+
+		if ( AC.PrintBacktraceFlag ) {
+#ifdef ENABLE_BACKTRACE
+			void *stack[64];
+			int stacksize, stop = 0;
+			stacksize = backtrace(stack, sizeof(stack)/sizeof(stack[0]));
+
+			/* First check whether eu-addr2line is available */
+			if ( !system("command -v eu-addr2line > /dev/null 2>&1") ) {
+				MesPrint("Backtrace:");
+				for (int i = 0; i < stacksize && !stop; i++) {
+					FILE *fp;
+					char cmd[512];
+					// Leave an initial space
+					cmd[0] = ' ';
+					MesPrint("%#%2d:%", i);
+					snprintf(cmd+1, sizeof(cmd)-1, "eu-addr2line -s --pretty-print -f -i '%p' --pid=%d\n", stack[i], getpid());
+					fp = popen(cmd+1, "r");
+					while ( fgets(cmd+1, sizeof(cmd)-1, fp) != NULL ) {
+						MesPrint("%s", cmd);
+						/* Don't show functions lower than "main" (or thread equivalent) */
+						if ( strstr(cmd, " main ") || strstr(cmd, " RunThread ") || strstr(cmd, " RunSortBot ") ) {
+							stop = 1;
+						}
+					}
+					pclose(fp);
+				}
+			}
+#ifdef LINUX
+			else if ( !system("command -v addr2line > /dev/null 2>&1") ) {
+				/* Get the executable path. */
+				char exe_path[PATH_MAX];
+				{
+					ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+					if ( len != -1 ) {
+						exe_path[len] = '\0';
+					}
+					else {
+						goto backtrace_fallback;
+					}
+				}
+				/* Assume PIE binary and get the base address. */
+				uintptr_t base_address = 0;
+				{
+					char line[256];
+					FILE *maps = fopen("/proc/self/maps", "r");
+					if ( !maps ) {
+						goto backtrace_fallback;
+					}
+					/* See the format used by nommu_region_show() in fs/proc/nommu.c of the Linux source. */
+					if ( fgets(line, sizeof(line), maps) ) {
+						sscanf(line, "%" SCNxPTR "-", &base_address);
+					}
+					else {
+						fclose(maps);
+						goto backtrace_fallback;
+					}
+					fclose(maps);
+				}
+				char **strings;
+				strings = backtrace_symbols(stack, stacksize);
+				MesPrint("Backtrace:");
+				for ( int i = 0; i < stacksize && !stop; i++ ) {
+					FILE *fp;
+					char cmd[PATH_MAX + 512];
+					// Leave an initial space
+					cmd[0] = ' ';
+					uintptr_t addr = (uintptr_t)stack[i] - base_address;
+					MesPrint("%#%2d:%", i);
+					snprintf(cmd+1, sizeof(cmd)-1, "addr2line -e \"%s\" -i -p -s -f -C 0x%" PRIxPTR, exe_path, addr);
+					fp = popen(cmd+1, "r");
+					while ( fgets(cmd+1, sizeof(cmd)-1, fp) != NULL ) {
+						MesPrint("%s", cmd);
+						/* Don't show functions lower than "main" */
+						if ( strstr(cmd, " main ") || strstr(cmd, " RunThread ") || strstr(cmd, " RunSortBot ") ) {
+							stop = 1;
+						}
+					}
+					pclose(fp);
+				}
+				free(strings);
+			}
+#endif
+			else {
+				/* eu-addr2line not found */
+#ifdef LINUX
+backtrace_fallback: ;
+#endif
+				char **strings;
+				strings = backtrace_symbols(stack, stacksize);
+				MesPrint("Backtrace:");
+				for ( int i = 0; i < stacksize && !stop; i++ ) {
+					char *p = strings[i];
+					while ( *p && *p != '(' ) p++;
+					MesPrint("%#%2d: %s\n", i, p);
+					/* Don't show functions lower than "main" (or thread equivalent) */
+					if ( strstr(p, "(main+") || strstr(p, "(RunThread+") || strstr(p, "(RunSortBot+") ) {
+						stop = 1;
+					}
+				}
+#ifdef LINUX
+				MesPrint("Please install addr2line or eu-addr2line for readable stack information.");
+#else
+				MesPrint("Please install eu-addr2line for readable stack information.");
+#endif
+				free(strings);
+			}
+#else
+			MesPrint("FORM compiled without backtrace support.");
+#endif
+		} /* if ( AC.PrintBacktraceFlag) { */
+
+		MUNLOCK(ErrorMessageLock);
+
 		Crash();
 	}
 #ifdef TRAPSIGNALS
@@ -1928,6 +2128,13 @@ VOID Terminate(int errorcode)
 #ifdef WITHMPI
 	PF_Terminate(errorcode);
 #endif
+/*
+	We are about to terminate the program. If we are using flint, call the cleanup function.
+	This keeps valgrind happy.
+*/
+#ifdef WITHFLINT
+	flint_final_cleanup_master();
+#endif
 	CleanUp(errorcode);
 	M_print();
 #ifdef VMS
@@ -1938,7 +2145,7 @@ VOID Terminate(int errorcode)
 }
 
 /*
- 		#] Terminate : 
+ 		#] TerminateImpl : 
  		#[ PrintDeprecation :
 */
 
@@ -1960,7 +2167,7 @@ void PrintDeprecation(const char *feature, const char *issue) {
 	MesPrint("DeprecationWarning: We are considering deprecating %s.", feature);
 	MesPrint("If you want this support to continue, leave a comment at:");
 	MesPrint("");
-	MesPrint("    https://github.com/vermaseren/form/%s", issue);
+	MesPrint("    https://github.com/form-dev/form/%s", issue);
 	MesPrint("");
 	MesPrint("Otherwise, it will be discontinued in the future.");
 	MesPrint("To suppress this warning, use the -ignore-deprecation command line option or");
@@ -1972,7 +2179,7 @@ void PrintDeprecation(const char *feature, const char *issue) {
  		#[ PrintRunningTime :
 */
 
-VOID PrintRunningTime(VOID)
+void PrintRunningTime(void)
 {
 #if (defined(WITHPTHREADS) && (defined(WITHPOSIXCLOCK) || defined(WINDOWS))) || defined(WITHMPI)
 	LONG mastertime;
@@ -2013,7 +2220,7 @@ VOID PrintRunningTime(VOID)
  		#[ GetRunningTime :
 */
 
-LONG GetRunningTime(VOID)
+LONG GetRunningTime(void)
 {
 #if defined(WITHPTHREADS) && (defined(WITHPOSIXCLOCK) || defined(WINDOWS))
 	LONG mastertime;

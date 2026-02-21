@@ -60,10 +60,9 @@ any longer.
 \noindent \FORM\ has a number of built in preprocessor variables. They are:
 
 \begin{description}
-\item[VERSION\_]  The current version\index{VERSION\_} as the \formmajorversion{} in 
-                \formmajorversion.\formminorversion.
-\item[SUBVERSION\_]  The sub-version\index{SUBVERSION\_} as the \formminorversion{} in 
-                \formmajorversion.\formminorversion.
+\item[VERSION\_]  The current version\index{VERSION\_} (or ``major version''), as the ``1'' in 1.2.3.
+\item[SUBVERSION\_]  The current sub-version\index{SUBVERSION\_} (or ``minor version''), as the ``2'' in 1.2.3.
+\item[SUBSUBVERSION\_]  The current sub-sub-version\index{SUBSUBVERSION\_} (or ``patch version''), as the ``3'' in 1.2.3.
 \item[NAME\_]        The name\index{NAME\_} of the program file.
 \item[DATE\_]        The date\index{DATE\_} of the current run.
 \item[CMODULE\_]     The number\index{CMODULE\_} of the current module.
@@ -108,6 +107,14 @@ any longer.
         #endif
     #enddo
 \end{verbatim}
+\item[UNCHANGED\_] Takes the value 1 if all active expressions were unchanged in the
+                   previous module, and 0 otherwise. `UNCHANGED\_exprname' is 1 if the
+                   expression ``exprname'' was unchanged in the previous module, and
+                   0 otherwise.
+\item[ZERO\_] Takes the value 1 if all active expressions were zero in the
+                   previous module, and 0 otherwise. `ZERO\_exprname' is 1 if the
+                   expression ``exprname'' was zero in the previous module, and
+                   0 otherwise.
 \end{description}
 
 \noindent If \FORM\ cannot find a preprocessor variable, because it has 
@@ -117,7 +124,7 @@ there is an environment variable by that name. If this is the case its
 string value will be substituted.
 
 \noindent Preprocessor variables can have arguments and thereby become 
-macro's. One should consult the description of the \#define~\ref{predefine} 
+macros. One should consult the description of the \#define~\ref{predefine} 
 instruction about the delayed substitution feature to avoid the value of 
 the preprocessor variables in the macro would be substituted immediately 
 during the definition. Hence proper use is
@@ -125,15 +132,25 @@ during the definition. Hence proper use is
     #define EXCHANGE(x,y) "Multiply replace_(`~x',`~y',`~y',`~x');"
 \end{verbatim}
 
-\noindent \FORM{} has the following built in macro's:
+\noindent \FORM{} has the following built in macros:
 \begin{description}
 \item[TOLOWER\_(string)] in which the character string in the argument is 
 converted to lower case. After this it will become input.
 \item[TOUPPER\_(string)] in which the character string in the argument is 
 converted to upper case. After this it will become input.
 \end{description}
-It is anticipated that some more macro's will become available to allow for 
-the editing of names of variables.
+as well as macros which allow one to edit the names of variables,
+\begin{description}
+\item[KEEPLEFT\_(string,n)] keep only the first n characters of string.
+After this it will become input.
+\item[KEEPRIGHT\_(string,n)] keep only the last n characters of string.
+After this it will become input.
+\item[TAKELEFT\_(string,n)] remove the first n characters of string.
+After this it will become input.
+\item[TAKERIGHT\_(string,n)] remove the last n characters of string.
+After this it will become input.
+\end{description}
+Note that these macro names are not case sensitive.
 
 %--#] The preprocessor variables : 
 %--#[ Calculator :
@@ -614,6 +631,28 @@ sign in column 1 in longer expressions.
 The default commentary character is $\ast$.
 
 %--#] commentchar : 
+%--#[ continuedo :
+
+\section{\#continuedo}
+\label{precontinuedo}
+
+\noindent Syntax:
+
+\#continuedo [{\tt<}number{\tt>}]
+
+\noindent See also \#do (\ref{predo}) and \#enddo (\ref{preenddo})
+
+\noindent The \#continuedo\index{\#continuedo} instruction allows one to
+jump to the next iteration of a \#do loop.
+If a (nonzero integer) number is specified
+it indicates the number of enclosing loops
+that the program should continue to the next iteration of.
+Control will continue at the beginning of the next iteration
+of the enclosing loop indicated by `number'.
+The default value is one.
+If the value is zero the instruction has no effect.
+
+%--#] continuedo : 
 %--#[ create :
  
 \section{\#create}
@@ -692,7 +731,7 @@ C\index{C} language. Hence
 is allowed. The parameters should be referred to inside a pair of `' as 
 with all preprocessor variables. A special feature is the socalled 
 delayed\index{delayed substitution} 
-substitution\index{substitution!delayed}. With macro's like the above the 
+substitution\index{substitution!delayed}. With macros like the above the 
 question is always {\sl when} a preprocessor variable will be substituted. 
 Take for instance
 % THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
@@ -927,6 +966,18 @@ Example
 do\index{do loop} loop. See the \#do\index{\#do} instruction.
 
 %--#] enddo : 
+%--#[ endfloat :
+
+\section{\#endfloat}
+\label{preendfloat}
+
+\noindent Syntax:
+
+\#endfloat
+
+\noindent See also startfloat (\ref{prestartfloat}) and chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] endfloat : 
 %--#[ endif :
 
 \section{\#endif}
@@ -1952,6 +2003,18 @@ at the end of the current module. In some cases this can significantly reduce
 \FORM's memory usage as measured by ``resident set size''.
 
 %--#] sortreallocate : 
+%--#[ startfloat :
+
+\section{\#startfloat}
+\label{prestartfloat}
+
+\noindent Syntax:
+
+\#startfloat $<$precision$>$ [,MZV=$<$weight$>$]
+
+\noindent See also endfloat (\ref{preendfloat}) and chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#]  startfloat : 
 %--#[ switch :
 
 \section{\#switch}

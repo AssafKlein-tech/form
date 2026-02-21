@@ -17,13 +17,16 @@ m4_define([FORM_VERSION], m4_esyscmd_s([
 			# As a fallback, try for form3.h.
 			major_version=`grep MAJORVERSION sources/form3.h | sed -e 's/ *#define  *MAJORVERSION *//'`
 			minor_version=`grep MINORVERSION sources/form3.h | sed -e 's/ *#define  *MINORVERSION *//'`
-			if test "x$major_version" != x && test "x$minor_version" != x; then
+			patch_version=`grep PATCHVERSION sources/form3.h | sed -e 's/ *#define  *PATCHVERSION *//'`
+			if test "x$major_version" != x && test "x$minor_version" != x && test "x$patch_version" != x; then
 				# Make the version files.
-				echo "$major_version.$minor_version" >.version
+				echo "$major_version.$minor_version.$patch_version" >.version
 				echo "#define REPO_MAJOR_VERSION $major_version"  >sources/version.h.in
 				echo "#define REPO_MINOR_VERSION $minor_version" >>sources/version.h.in
+				echo "#define REPO_PATCH_VERSION $patch_version" >>sources/version.h.in
 				echo '\\def\\repomajorversion'"{$major_version}"  >doc/manual/version.tex.in
 				echo '\\def\\repominorversion'"{$minor_version}" >>doc/manual/version.tex.in
+				echo '\\def\\repopatchversion'"{$patch_version}" >>doc/manual/version.tex.in
 				cp doc/manual/version.tex.in doc/devref/version.tex.in
 				touch doc/doxygen/version.sh.in
 			fi
@@ -40,11 +43,11 @@ The reason may be
 Source distributions and some binaries can be found in:
 
   http://www.nikhef.nl/~form/maindir/binaries/binaries.html
-  https://github.com/vermaseren/form/releases
+  https://github.com/form-dev/form/releases
 
 The latest source code can be cloned by:
 
-  git clone https://github.com/vermaseren/form.git
+  git clone https://github.com/form-dev/form.git
 END
 			test -f .version && cat <<END >&2
 
@@ -66,14 +69,20 @@ m4_define([serial_tests], [m4_esyscmd_s([
 	${AUTOMAKE:-automake} --version | head -1 |
 	awk '{split ($NF,a,"."); if (a[1] >= 2 || (a[1] == 1 && a[2] >= 13)) { print "serial-tests" }}'
 ])])
+# If automake >= 1.14, use the subdir-objects option of AM_INIT_AUTOMAKE (available in automake >= 1.13)
+# to suppress the "possible forward-incompatibility" warning.
+m4_define([subdir_objects], [m4_esyscmd_s([
+	${AUTOMAKE:-automake} --version | head -1 |
+	awk '{split ($NF,a,"."); if (a[1] >= 2 || (a[1] == 1 && a[2] >= 14)) { print "subdir-objects" }}'
+])])
 
 AC_PREREQ([2.59])
-AC_INIT([FORM], [FORM_VERSION], [https://github.com/vermaseren/form/issues])
+AC_INIT([FORM], [FORM_VERSION], [https://github.com/form-dev/form/issues])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([sources/form3.h])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE([1.7 foreign -Wall dist-bzip2] serial_tests)
+AM_INIT_AUTOMAKE([1.7 foreign -Wall dist-bzip2] serial_tests subdir_objects)
 
 # Check for .version file
 AM_CONDITIONAL([FIXED_VERSION], [test -f $srcdir/.version])
@@ -96,53 +105,6 @@ AC_PROG_CC([gcc cc icc])
 AM_PROG_CC_C_O
 AC_PROG_CXX([g++ c++ icpc])
 AC_PROG_LN_S
-
-# Checks for header files
-# NOTE: autoconf>=2.70 has started to warn obsolete macros.
-# We check if AC_CHECK_INCLUDES_DEFAULT (introduced in 2.70) is available
-# and switch to the new code if possible.
-m4_ifdef([AC_CHECK_INCLUDES_DEFAULT],
-	[AC_CHECK_INCLUDES_DEFAULT
-	AC_PROG_EGREP
-	AC_CHECK_HEADERS_ONCE([sys/time.h])
-	AC_DEFINE([TIME_WITH_SYS_TIME],
-		[1],
-		[Define to 1 if you can safely include both <sys/time.h> and <time.h>. This macro is obsolete.])],
-	[AC_HEADER_STDC
-	AC_HEADER_TIME])
-AC_CHECK_HEADERS([fcntl.h limits.h sys/file.h])
-
-AC_LANG_PUSH([C++])
-AC_CHECK_HEADERS([unordered_map tr1/unordered_map boost/unordered_map.hpp])
-AC_CHECK_HEADERS([unordered_set tr1/unordered_set boost/unordered_set.hpp])
-AC_LANG_POP([C++])
-
-# Checks for builtin functions
-ok=no
-AS_IF([test $ok != yes],
-	[AC_MSG_CHECKING([__builtin_popcount])
-	AC_LINK_IFELSE(
-		[AC_LANG_PROGRAM([], [
-			int x = __builtin_popcount((unsigned int)(-1));
-		])],
-		[ok=yes;
-		AC_DEFINE([HAVE_BUILTIN_POPCOUNT], [1], [Define to 1 if you have __builtin_popcount function.])])
-	AC_MSG_RESULT($ok)])
-AS_IF([test $ok != yes],
-	[AC_MSG_CHECKING([__popcnt])
-	AC_LINK_IFELSE(
-		[AC_LANG_PROGRAM([#include <intrin.h>], [
-			unsigned int x = __popcnt((unsigned int)(-1));
-		])],
-		[ok=yes;
-		AC_DEFINE([HAVE_POPCNT], [1], [Define to 1 if you have __popcnt function.])])
-	AC_MSG_RESULT($ok)])
-
-# Check for inline
-AC_C_INLINE
-
-# Sets _FILE_OFFSET_BITS if possible
-AC_SYS_LARGEFILE
 
 # Check for architecture and OS
 AC_CANONICAL_HOST
@@ -216,6 +178,116 @@ choke me
 done
 vendor=`echo $vendor | cut -d: -f1`
 
+# Check for the C++ standard
+AC_ARG_WITH([cxxstd],
+	[AS_HELP_STRING([--with-cxxstd=STANDARD],
+		[specify the C++ standard @<:@default=check@:>@])],
+	[],
+	[with_cxxstd=check])
+cxxstd_flag=
+if test "x$vendor" = xgnu; then
+	AC_LANG_PUSH([C++])
+	if test "x$with_cxxstd" = xcheck; then
+		AC_MSG_CHECKING([whether C++11 requires any flag])
+		ok=no
+		for opt in none -std=gnu++11; do
+			save_CXXFLAGS=$CXXFLAGS
+			CXXFLAGS="$CXXFLAGS $opt"
+			AC_COMPILE_IFELSE([AC_LANG_PROGRAM([], [
+				#if __cplusplus < 201103L
+					#error C+11 not supported
+				#endif
+			])], [ok=yes])
+			CXXFLAGS=$save_CXXFLAGS
+			if test "x$ok" = xyes; then
+				if test "x$opt" = xnone; then
+					cxxstd_flag=
+					AC_MSG_RESULT([no])
+				else
+					cxxstd_flag=$opt
+					AC_MSG_RESULT([$opt])
+				fi
+				break
+			fi
+		done
+		if test "x$ok" = xno; then
+			cxxstd_flag=
+			AC_MSG_RESULT([not supported])
+		fi
+	elif test "x$with_cxxstd" != xnone; then
+		cxxstd_flag="-std=$with_cxxstd"
+		AX_CHECK_COMPILE_FLAG([$cxxstd_flag],
+			[],
+			[AC_MSG_FAILURE([Invalid argument for --with-cxxstd])],
+			[-Werror])
+	fi
+	AC_LANG_POP([C++])
+fi
+if test "x$cxxstd_flag" != x; then
+	CXX="$CXX $cxxstd_flag"
+	if test "x$CXXCPP" != x; then
+		CXXCPP="$CXXCPP $cxxstd_flag"
+	fi
+fi
+
+# Checks for header files
+# NOTE: autoconf>=2.70 has started to warn obsolete macros.
+# We check if AC_CHECK_INCLUDES_DEFAULT (introduced in 2.70) is available
+# and switch to the new code if possible.
+m4_ifdef([AC_CHECK_INCLUDES_DEFAULT],
+	[AC_CHECK_INCLUDES_DEFAULT
+	AC_PROG_EGREP
+	AC_CHECK_HEADERS_ONCE([sys/time.h])
+	AC_DEFINE([TIME_WITH_SYS_TIME],
+		[1],
+		[Define to 1 if you can safely include both <sys/time.h> and <time.h>. This macro is obsolete.])],
+	[AC_HEADER_STDC
+	AC_HEADER_TIME])
+AC_CHECK_HEADERS([fcntl.h limits.h sys/file.h])
+
+AC_LANG_PUSH([C++])
+AC_CHECK_HEADERS([unordered_map tr1/unordered_map boost/unordered_map.hpp])
+AC_CHECK_HEADERS([unordered_set tr1/unordered_set boost/unordered_set.hpp])
+AC_LANG_POP([C++])
+
+# Checks for builtin functions
+ok=no
+AS_IF([test $ok != yes],
+	[AC_MSG_CHECKING([__builtin_popcount])
+	AC_LINK_IFELSE(
+		[AC_LANG_PROGRAM([], [
+			int x = __builtin_popcount((unsigned int)(-1));
+		])],
+		[ok=yes;
+		AC_DEFINE([HAVE_BUILTIN_POPCOUNT], [1], [Define to 1 if you have __builtin_popcount function.])])
+	AC_MSG_RESULT($ok)])
+AS_IF([test $ok != yes],
+	[AC_MSG_CHECKING([__popcnt])
+	AC_LINK_IFELSE(
+		[AC_LANG_PROGRAM([#include <intrin.h>], [
+			unsigned int x = __popcnt((unsigned int)(-1));
+		])],
+		[ok=yes;
+		AC_DEFINE([HAVE_POPCNT], [1], [Define to 1 if you have __popcnt function.])])
+	AC_MSG_RESULT($ok)])
+AC_MSG_CHECKING([__attribute__((noreturn))])
+AC_LINK_IFELSE(
+	[AC_LANG_PROGRAM([extern void fatal() __attribute__((noreturn));], [return 0;])],
+	[
+		AC_DEFINE(NORETURN, [__attribute__((noreturn))], [The "noreturn" function attribute.])
+		AC_MSG_RESULT([yes])
+	],
+	[
+		AC_DEFINE(NORETURN, [], [The "noreturn" function attribute.])
+		AC_MSG_RESULT([no])
+	])
+
+# Check for inline
+AC_C_INLINE
+
+# Sets _FILE_OFFSET_BITS if possible
+AC_SYS_LARGEFILE
+
 # POSIX or Windows API
 AC_ARG_WITH([api],
 	[AS_HELP_STRING([--with-api=API],
@@ -233,59 +305,6 @@ AS_IF([test "x$with_api" = xwindows],
 	AC_DEFINE(WINDOWS, , [Compiling for WINDOWS system])])
 AM_CONDITIONAL([ONUNIX], [test "x$with_api" = xposix])
 AM_CONDITIONAL([ONWINDOWS], [test "x$with_api" = xwindows])
-
-# Check for data model
-AC_CHECK_SIZEOF([char])
-AC_CHECK_SIZEOF([short])
-AC_CHECK_SIZEOF([int])
-AC_CHECK_SIZEOF([long])
-AC_CHECK_SIZEOF([long long])
-AC_CHECK_SIZEOF([void *])
-AC_CHECK_SIZEOF([off_t])
-
-case $ac_cv_sizeof_char-$ac_cv_sizeof_short-$ac_cv_sizeof_int-$ac_cv_sizeof_long-$ac_cv_sizeof_long_long-$ac_cv_sizeof_void_p-$ac_cv_sizeof_off_t in
-	1-2-4-4-*-4-*)
-		# Most of today's 32 bit systems.
-		print_data_model="ILP32"
-		ac_cv_sizeof_WORD=$ac_cv_sizeof_short
-		ac_cv_sizeof_LONG=$ac_cv_sizeof_long
-		AC_DEFINE(ILP32, , [Compiling for ILP32 data model])
-		# We need INT64.
-		AS_IF([test $ac_cv_sizeof_long_long -ne 8],
-			[AC_MSG_FAILURE([64-bit integers are not available])])
-		;;
-	1-2-4-4-8-8-*)
-		# Microsoft Windows (X64/IA-64).
-		print_data_model="LLP64"
-		ac_cv_sizeof_WORD=$ac_cv_sizeof_int
-		ac_cv_sizeof_LONG=$ac_cv_sizeof_long_long
-		AC_DEFINE(LLP64, , [Compiling for LLP64 data model])
-		;;
-	1-2-4-8-*-8-*)
-		# Most Unix and Unix-like systems, e.g., Solaris, Linux and Mac OS X.
-		print_data_model="LP64"
-		ac_cv_sizeof_WORD=$ac_cv_sizeof_int
-		ac_cv_sizeof_LONG=$ac_cv_sizeof_long
-		AC_DEFINE(LP64, , [Compiling for LP64 data model])
-		;;
-	*)
-		AC_MSG_FAILURE([Cannot recognize the data model used in the compiler])
-		;;
-esac
-# Our basic assumption:
-#  sizeof(off_t) >= sizeof(LONG) >= sizeof(void *) >= sizeof(int)
-#                >= sizeof(WORD) >= sizeof(char) == 1.
-flag=:
-$flag && test $ac_cv_sizeof_off_t -lt $ac_cv_sizeof_LONG && flag=false
-$flag && test $ac_cv_sizeof_LONG -lt $ac_cv_sizeof_void_p && flag=false
-$flag && test $ac_cv_sizeof_void_p -lt $ac_cv_sizeof_int && flag=false
-$flag && test $ac_cv_sizeof_int -lt $ac_cv_sizeof_WORD && flag=false
-$flag && test $ac_cv_sizeof_WORD -lt $ac_cv_sizeof_char && flag=false
-$flag && test $ac_cv_sizeof_char -ne 1 && flag=false
-AS_IF([$flag], [], [AC_MSG_FAILURE([Basic assumption sizeof(off_t) >= sizeof(LONG) >= sizeof(void *) >= sizeof(int) >= sizeof(WORD) >= sizeof(char) == 1 does not hold.])])
-# sizeof(off_t) <= 4 means files must <= 2 GB.
-AS_IF([test $ac_cv_sizeof_off_t -le 4], [AC_MSG_WARN([Large files more than 2 GB are not supported])])
-AC_MSG_NOTICE([The data model is $print_data_model])
 
 # Check for gmp
 AC_ARG_WITH([gmp],
@@ -350,6 +369,81 @@ AS_IF([test "x$with_zlib" != xno],
 		AC_MSG_NOTICE([zlib is not available])
 		with_zlib=no])])
 
+# Check for zstd
+AC_ARG_WITH([zstd],
+	[AS_HELP_STRING([--with-zstd@<:@=DIR@:>@],
+		[use zstd for compression (installed in prefix DIR) @<:@default=check@:>@])],
+	[AS_IF([test "x$withval" != xyes && test "x$withval" != xno && test "x$withval" != xcheck],
+		[with_zstd=yes
+		CPPFLAGS="$CPPFLAGS -I$withval/include"
+		LDFLAGS="$LDFLAGS -L$withval/lib"])],
+	[with_zstd=check])
+AS_IF([test "x$with_zstd" != xno],
+	[flag=:
+	AS_IF([$flag], [AS_IF([test "x$with_zlib" = xno],
+		[AC_MSG_NOTICE([using zstd requires zlib])
+		flag=false])])
+	AS_IF([$flag], [AC_CHECK_HEADER([zstd.h], [], [flag=false])])
+	AS_IF([$flag], [AC_CHECK_LIB([zstd], [ZSTD_versionNumber], [LIBS="-lzstd $LIBS"], [flag=false])])
+	AS_IF([$flag],
+		[AC_DEFINE(WITHZSTD, [], [Define to use zstd for compression.])
+		with_zstd=yes],
+		[AS_IF([test "x$with_zstd" = xyes],
+			[AC_MSG_FAILURE([test for zstd failed. Give --without-zstd if you want to compile without zstd])])
+		AC_MSG_NOTICE([zstd is not available])
+		with_zstd=no])])
+AM_CONDITIONAL([WITHZSTD], [test "x$with_zstd" = xyes])
+
+# Ensure zstd/zlibWrapper
+AS_IF([test -f "$srcdir/extern/zstd/zlibWrapper/zstd_zlibwrapper.h"], [],
+	[AC_PATH_PROG([GIT], [git])
+		AS_IF([test -n "$GIT" && (cd "$srcdir" && "$GIT" rev-parse --is-inside-work-tree >/dev/null 2>&1)], [(cd "$srcdir" && "$GIT" submodule update --init)])])
+AS_IF([test -f "$srcdir/extern/zstd/zlibWrapper/zstd_zlibwrapper.h"], [],
+	[AS_IF([test -e "$srcdir/.git"],
+		[AC_MSG_FAILURE([$srcdir/extern/zstd/zlibWrapper does not exist. Run git submodule update --init in the repository directory])],
+		[AC_MSG_FAILURE([$srcdir/extern/zstd/zlibWrapper does not exist. Copy the zlibWrapper directory from upstream (https://github.com/facebook/zstd)])])])
+
+# Check for flint
+AC_ARG_WITH([flint],
+	[AS_HELP_STRING([--with-flint@<:@=DIR@:>@],
+		[use flint for polynomial arithmetic (installed in prefix DIR) @<:@default=check@:>@])],
+	[AS_IF([test "x$withval" != xyes && test "x$withval" != xno && test "x$withval" != xcheck],
+		[with_flint=yes
+		CPPFLAGS="$CPPFLAGS -I$withval/include"
+		LDFLAGS="$LDFLAGS -L$withval/lib"])],
+	[with_flint=check])
+AS_IF([test "x$with_flint" != xno],
+	[flag=:
+	AS_IF([$flag], [AC_CHECK_HEADER([flint/flint.h], [], [flag=false])])
+	AS_IF([$flag],
+		[AC_MSG_CHECKING([for a suitable FLINT version])
+		AC_PREPROC_IFELSE([AC_LANG_SOURCE([[#include <flint/flint.h>
+#if __FLINT_RELEASE < 30200
+#error "FLINT version must be >= 3.2.0: https://github.com/form-dev/form/issues/679"
+#endif]])],
+			[AC_MSG_RESULT([yes])],
+			[AC_MSG_RESULT([no])
+			AC_MSG_NOTICE([FLINT version 3.2.0 or higher is required])
+			flag=false]
+		)])
+	AS_IF([$flag],
+		[# Check how to link against the math library.
+		AC_SEARCH_LIBS([pow], [m])
+		AS_IF([test "x$ac_cv_search_pow" = "xno"],
+			[flag=false],
+			[AS_IF([test "x$ac_cv_search_pow" = "xnone required"],
+				[MATH_LIBS=""],
+				[MATH_LIBS="$ac_cv_search_pow"])])])
+	AS_IF([$flag], [AC_CHECK_LIB([flint], [fmpz_mpoly_init], [LIBS="-lflint $MATH_LIBS $LIBS"], [flag=false], [$MATH_LIBS])])
+	AS_IF([$flag],
+		[AC_DEFINE(WITHFLINT, [], [Define to use flint for polynomial arithmetic.])
+		with_flint=yes],
+		[AS_IF([test "x$with_flint" = xyes],
+			[AC_MSG_FAILURE([test for flint failed. Give --without-flint if you want to compile without flint])])
+		AC_MSG_NOTICE([flint is not available])
+		with_flint=no])])
+AM_CONDITIONAL([WITHFLINT], [test "x$with_flint" = xyes])
+
 # enable-scalar/threaded/parform/debug/float
 AC_ARG_ENABLE([scalar],
 	[AS_HELP_STRING([--enable-scalar],
@@ -401,7 +495,7 @@ AS_IF([test "x$enable_threaded" != xno],
 		#  none    : Cygwin
 		# -pthread : Linux/gcc (kernel threads), BSD/gcc (userland threads)
 		#  pthread : Linux, OSX
-		for a in none -pthread pthread; do
+		for a in -pthread none pthread; do
 			case $a in
 				none)
 					AC_MSG_CHECKING([whether pthreads works without any flags])
@@ -650,6 +744,9 @@ build_parform=$enable_parform
 AS_IF([test "x$enable_parform" = xyes && test "x$enable_debug" = xyes], [build_parvorm=yes], [build_parvorm=no])
 AM_CONDITIONAL([BUILD_PARFORM], [test "x$build_parform" = xyes])
 AM_CONDITIONAL([BUILD_PARVORM], [test "x$build_parvorm" = xyes])
+if test "x$MPICXX" != x && test "x$cxxstd_flag" != x; then
+	MPICXX="$MPICXX $cxxstd_flag"
+fi
 
 AS_IF([test "x$build_form" = xyes || test "x$build_tform" = xyes || test "x$build_parform" = xyes ||
 	test "x$build_vorm" = xyes || test "x$build_tvorm" = xyes || test "x$build_parvorm" = xyes], [build_any=yes], [build_any=no])
@@ -755,10 +852,10 @@ AC_SUBST([MPI_STATIC_LDFLAGS])
 # Check for native/universal build
 AC_ARG_ENABLE([native],
 	[AS_HELP_STRING([--enable-native],
-		[tune for the compiling machine (release versions) @<:@default=yes@:>@])],
+		[tune for the compiling machine (release versions) @<:@default=no@:>@])],
 	[AS_IF([test "x$enableval" = xno || test "x$cross_compiling" = xyes],
 		[enable_native=no], [enable_native=yes])],
-	[enable_native=yes])
+	[enable_native=no])
 
 # Check for profiling option
 AC_ARG_ENABLE([profile],
@@ -794,6 +891,30 @@ AC_ARG_ENABLE([extra-warning],
 	[],
 	[enable_extra_warning=no])
 
+# Check for backtrace (requires glibc):
+AC_ARG_ENABLE([backtrace],
+	[AS_HELP_STRING([--enable-backtrace],
+		[print a stack trace on Terminate @<:@default=no@:>@])],
+	[AS_IF(
+		[test "x$enableval" = xyes], [enable_backtrace=yes],
+		[test "x$enableval" = xno], [enable_backtrace=no],
+		[enable_backtrace=no]
+	)],
+	[enable_backtrace=no])
+AS_IF([test "x$enable_backtrace" != xno],
+	[flag=:
+	AS_IF([$flag], [AC_SEARCH_LIBS([backtrace], [c], [], [flag=false])])
+	AS_IF([$flag], [AC_CHECK_HEADERS([execinfo.h], [], [flag=false])])
+	AS_IF([$flag],
+		[AC_DEFINE(ENABLE_BACKTRACE, [], [Define to print a stack trace on Terminate.])
+			enable_backtrace=yes],
+		[AS_IF([test "x$enable_backtrace" = xyes],
+			[AC_MSG_FAILURE([test for backtrace failed. Give --disable-backtrace if you want to compile without backtrace.])])
+		AC_MSG_NOTICE([backtrace is not available])
+		enable_backtrace=no])
+	]
+)
+
 # Optimization/debugging flags
 AC_ARG_VAR([COMPILEFLAGS], [Compiler flags for release versions])
 AC_ARG_VAR([LINKFLAGS], [Linker flags for release versions])
@@ -806,45 +927,27 @@ DEBUGTOOL_LIBS=
 # -------------------------------------
 AC_DEFUN([AX_HANDLE_EXTRA_WARNING],
 [if test "x$enable_extra_warning" != xyes; then
-	# Too many misleading indentation in the FORM source code.
-	AX_CHECK_COMPILE_FLAG([-Wno-misleading-indentation],
-		[$1="$$1 -Wno-misleading-indentation"],
-		[],
-		[-Werror])
-	# Too many false positives.
-	# See: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88443
-	AX_CHECK_COMPILE_FLAG([-Wno-stringop-overflow],
-		[$1="$$1 -Wno-stringop-overflow"],
-		[],
-		[-Werror])
+	# Currently no warnings are disabled without --enable-extra-warning
+	$1="$$1"
 fi[]dnl
 ])
 
 my_test_COMPILEFLAGS=${COMPILEFLAGS+set}
 if test "$my_test_COMPILEFLAGS" != set; then
 	if test "x$vendor" = xgnu; then
-		# We don't use -pedantic option because of horrible warnings.
 		COMPILEFLAGS="-Wall -Wextra"
 		AX_HANDLE_EXTRA_WARNING([COMPILEFLAGS])
 		# Enable optimizations.
 		COMPILEFLAGS="$COMPILEFLAGS -O3"
-		if test "x$enable_profile" != xgprof; then
-			# -pg conflicts with -fomit-frame-pointer.
-			COMPILEFLAGS="$COMPILEFLAGS -fomit-frame-pointer"
+		if test "x$enable_backtrace" = xyes; then
+			# Keep symbols and frame pointers for easier debugging.
+			COMPILEFLAGS="$COMPILEFLAGS -g -fno-omit-frame-pointer"
 		fi
 		if test "x$enable_native" = xyes; then
 			# Use -march=native if available.
 			AX_CHECK_COMPILE_FLAG([-march=native],
 				[COMPILEFLAGS="$COMPILEFLAGS -march=native"],
-				[if test "x$print_data_model" = xILP32; then
-					if test "x$print_cpu" = xPentium; then
-						COMPILEFLAGS="$COMPILEFLAGS -march=i586"
-					elif test "x$print_cpu" = 'xPentium Pro'; then
-						COMPILEFLAGS="$COMPILEFLAGS -march=i686"
-					elif test "x$print_cpu" = xOpteron; then
-						COMPILEFLAGS="$COMPILEFLAGS -march=opteron"
-					fi
-				fi],
+				[],
 				[-Werror])
 		fi
 		# Profiling option.
@@ -872,16 +975,21 @@ if test "$my_test_COMPILEFLAGS" != set; then
 fi
 my_test_LINKFLAGS=${LINKFLAGS+set}
 if test "$my_test_LINKFLAGS" != set; then
+	LINKFLAGS=""
+	if test "x$enable_backtrace" = xyes; then
+		# For easier debugging
+		LINKFLAGS="$LINKFLAGS -rdynamic"
+	fi
 	if test "x$vendor" = xgnu && test "x$print_os" = xOSX; then
 		# On OS X Mavericks, -s option has a funny effect: though the linker
 		# warns the option is obsolete and being ignored, it causes an internal
 		# error "atom not found in symbolIndex...".
-		LINKFLAGS=
+		LINKFLAGS="$LINKFLAGS"
 	elif test "x$enable_profile" != xno && test "x$enable_profile" != xunavailable; then
 		# Profilers needs symbol tables.
-		LINKFLAGS=
+		LINKFLAGS="$LINKFLAGS"
 	else
-		LINKFLAGS=-s
+		LINKFLAGS="$LINKFLAGS"
 	fi
 fi
 my_test_DEBUGCOMPILEFLAGS=${DEBUGCOMPILEFLAGS+set}
@@ -904,7 +1012,7 @@ if test "$my_test_DEBUGCOMPILEFLAGS" != set && test "x$enable_debug" = xyes; the
 			[DEBUGCOMPILEFLAGS="$DEBUGCOMPILEFLAGS -O0"],
 			[-Werror])
 		# Debugging information.
-		DEBUGCOMPILEFLAGS="$DEBUGCOMPILEFLAGS -g3"
+		DEBUGCOMPILEFLAGS="$DEBUGCOMPILEFLAGS -g3 -fno-omit-frame-pointer"
 		# Coverage option.
 		if test "x$enable_coverage" = xyes; then
 			DEBUGCOMPILEFLAGS="$DEBUGCOMPILEFLAGS -coverage"
@@ -952,7 +1060,7 @@ if test "$my_test_DEBUGCOMPILEFLAGS" != set && test "x$enable_debug" = xyes; the
 fi
 my_test_DEBUGLINKFLAGS=${DEBUGLINKFLAGS+set}
 if test "$my_test_DEBUGLINKFLAGS" != set && test "x$enable_debug" = xyes; then
-	DEBUGLINKFLAGS=
+	DEBUGLINKFLAGS=-rdynamic
 	if test "x$vendor" = xgnu; then
 		# Coverage option.
 		if test "x$enable_coverage" = xyes; then
@@ -1047,10 +1155,14 @@ manoutputdir=$(eval "echo $mandir")
 manoutputdir=$(eval "echo $manoutputdir")
 echo "FORM $VERSION"
 echo
-echo "Compiling for: $print_cpu $print_os ($print_data_model $print_api)"
+echo "Compiling for: $print_cpu $print_os ($print_api)"
 echo
 echo "Optionally linked libraries:"
 atleastone=no
+if test "x$with_flint" = xyes; then
+	echo "    flint"
+	atleastone=yes
+fi
 if test "x$with_gmp" = xyes; then
 	echo "    gmp"
 	atleastone=yes
@@ -1061,6 +1173,20 @@ if test "x$with_mpfr" = xyes; then
 fi
 if test "x$with_zlib" = xyes; then
 	echo "    zlib"
+	atleastone=yes
+fi
+if test "x$with_zstd" = xyes; then
+	echo "    zstd"
+	atleastone=yes
+fi
+if test $atleastone = no; then
+	echo "    <NONE>"
+fi
+echo
+echo "Optionally enabled features:"
+atleastone=no
+if test "x$enable_backtrace" = xyes; then
+	echo "    backtrace"
 	atleastone=yes
 fi
 if test $atleastone = no; then
@@ -1227,11 +1353,6 @@ if test "x$build_parvorm" = xyes; then
 fi
 if test $atleastone = no; then
 	echo "    <NONE>"
-fi
-if test $ac_cv_sizeof_off_t -le 4; then
-	echo
-	echo "***CAUTION***  Large files more than 2 GB will be"
-	echo "not supported."
 fi
 if test "x$thread_clock_ok" = xno; then
 	s="none"

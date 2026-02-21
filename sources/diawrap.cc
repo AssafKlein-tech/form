@@ -1,3 +1,33 @@
+/** @file diawrap.cc
+ *
+ *   Functions with interface FORM with grcc, to implement the diagrams_ function.
+ */
+/* #[ License : */
+/*
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
+ *   When using this file you are requested to refer to the publication
+ *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
+ *   This is considered a matter of courtesy as the development was paid
+ *   for by FOM the Dutch physics granting agency and we would like to
+ *   be able to track its scientific use to convince FOM of its value
+ *   for the community.
+ *
+ *   This file is part of FORM.
+ *
+ *   FORM is free software: you can redistribute it and/or modify it under the
+ *   terms of the GNU General Public License as published by the Free Software
+ *   Foundation, either version 3 of the License, or (at your option) any later
+ *   version.
+ *
+ *   FORM is distributed in the hope that it will be useful, but WITHOUT ANY
+ *   WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ *   FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
+ *   details.
+ *
+ *   You should have received a copy of the GNU General Public License along
+ *   with FORM.  If not, see <http://www.gnu.org/licenses/>.
+ */
+/* #] License : */
 //	#[ Includes : diawrap.cc
 
 extern "C" {
@@ -6,6 +36,7 @@ extern "C" {
 
 #include "grccparam.h"
 #include "grcc.h"
+#include <map>
  
 #define MAXPOINTS 120
 
@@ -237,7 +268,7 @@ void ProcessDiagram(EGraph *eg, void *ti)
 	int i, j, intr;
 	Model *model = (Model *)info->currentModel;
 	MODEL *m = (MODEL *)info->currentMODEL;
-	int numlegs, vect, edge;
+	int numlegs, vect, edge, maxmom = 0;
 
 	newterm = term + *term;
 	for ( i = 1; i < info->diaoffset; i++ ) newterm[i] = term[i];
@@ -245,7 +276,7 @@ void ProcessDiagram(EGraph *eg, void *ti)
 //
 //	Now get the nodes
 //
-	if ( ( info->flags & NONODES ) == 0 ) {
+	if ( ( info->flags & WITHOUTNODES ) == 0 ) {
 	  for ( i = 0; i < eg->nNodes; i++ ) {
 //
 //		node_(number,coupling,particle_1(momentum_1),...,particle_n(momentum_n))
@@ -301,6 +332,8 @@ void ProcessDiagram(EGraph *eg, void *ti)
 			}
 			else { // Look up in set of internal momenta set
 				*fill++ = SetElements[Sets[info->internalset].first+(vect-eg->nExtern)];
+				// determine the number of momenta required from internalset:
+				maxmom = MaX(maxmom, vect-eg->nExtern);
 			}
 			*fill++ = 1; *fill++ = 1; *fill++ = 3;
 		}
@@ -335,6 +368,7 @@ void ProcessDiagram(EGraph *eg, void *ti)
 			}
 			else { // Look up in set of internal momenta set
 				*fill++ = SetElements[Sets[info->internalset].first+(i-eg->nExtern)];
+				maxmom = MaX(maxmom, i-eg->nExtern);
 			}
 			*fill++ = 1; *fill++ = 1; *fill++ = 3;
 //
@@ -385,6 +419,7 @@ void ProcessDiagram(EGraph *eg, void *ti)
 					}
 					else { // Look up in set of internal momenta set
 						*fill++ = SetElements[Sets[info->internalset].first+(vect-info->numextern)];
+						maxmom = MaX(maxmom, vect-info->numextern);
 					}
 				}
 				funfill[1] = fill-funfill;
@@ -395,7 +430,7 @@ void ProcessDiagram(EGraph *eg, void *ti)
 			startfill[1] = fill-startfill;
 		}
 	}
-	if ( ( info->flags & WITHONEPI ) == WITHONEPI ) {
+	if ( ( info->flags & WITHONEPISETS ) == WITHONEPISETS ) {
 		for ( i = 0; i < eg->econn->nopic; i++ ) {
 			startfill = fill;
 			*fill++ = ONEPI;
@@ -445,14 +480,21 @@ void ProcessDiagram(EGraph *eg, void *ti)
 		*fill++ = SNUMBER; *fill++ = 4; *fill++ = (WORD)eg->extperm; *fill++ = 1;
 	}
 //
+//	verify internalset has sufficient momenta:
+//
+	if ( maxmom >= Sets[info->internalset].last - Sets[info->internalset].first ) {
+		MLOCK(ErrorMessageLock);
+		MesPrint("&Insufficient internal momenta in diagrams_");
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
+	}
+//
 //	finish it off
 //
 	while ( tail < tend ) *fill++ = *tail++;
 	if ( eg->fsign < 0 ) fill[-1] = -fill[-1];
 	*newterm = fill - newterm;
 	AT.WorkPointer = fill;
-
-//	MesPrint("<> %a",newterm[0],newterm);
 
 	Generator(BHEAD newterm,info->level);
 	AT.WorkPointer = oldworkpointer;
@@ -479,6 +521,9 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 //	                return False; skip diagram generation (when asked for).
 //
 	TERMINFO *info = (TERMINFO *)ti;
+
+// This seems to work properly. It was disabled before.
+#define WITHEARLYVETO
 #ifdef WITHEARLYVETO
 	if ( ( ( info->flags & CHECKEXTERN ) == CHECKEXTERN ) && info->currentMODEL != NULL ) {
 		int i, j;
@@ -500,6 +545,7 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 		}
 	}
 #endif
+
 	if ( ( info->flags & TOPOLOGIESONLY ) == 0 ) {
 		info->numtopo++;
 		return True;
@@ -516,7 +562,7 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 	Model *model = (Model *)info->currentModel;
 	MODEL *m = (MODEL *)info->currentMODEL;
 	int i, j;
-	int numlegs, vect, edge;
+	int numlegs, vect, edge, maxmom = 0;
 
 	newterm = term + *term;
 	for ( i = 1; i < info->diaoffset; i++ ) newterm[i] = term[i];
@@ -566,6 +612,8 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 			}
 			else { // Look up in set of internal momenta set
 				*fill++ = SetElements[Sets[info->internalset].first+(vect-info->numextern)];
+				// determine the number of momenta required from internalset:
+				maxmom = MaX(maxmom, vect-info->numextern);
 			}
 		}
 		startfill[1] = fill-startfill;
@@ -588,6 +636,7 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 			}
 			else { // Look up in set of internal momenta set
 				*fill++ = SetElements[Sets[info->internalset].first+(i-eg->nExtern)];
+				maxmom = MaX(maxmom, i-eg->nExtern);
 			}
 //
 			*fill++ = -SNUMBER; *fill++ = n1+1; // number of the node from
@@ -640,6 +689,7 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 					}
 					else { // Look up in set of internal momenta set
 						*fill++ = SetElements[Sets[info->internalset].first+(vect-info->numextern)];
+						maxmom = MaX(maxmom, vect-info->numextern);
 					}
 				}
 				funfill[1] = fill-funfill;
@@ -664,7 +714,7 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 //			startfill[1] = fill-startfill;
 //		}
 	}
-	if ( ( info->flags & WITHONEPI ) == WITHONEPI ) {
+	if ( ( info->flags & WITHONEPISETS ) == WITHONEPISETS ) {
 		for ( i = 0; i < eg->econn->nopic; i++ ) {
 			startfill = fill;
 			*fill++ = ONEPI;
@@ -702,13 +752,13 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 		*fill++ = 0; *fill++ = 1; *fill++ = 5;
 	}
 //
-//	Symmetry factors. We let Normalize do the multiplication.
+//	verify internalset has sufficient momenta:
 //
-	if ( eg->nsym != 1 ) {
-		*fill++ = SNUMBER; *fill++ = 4; *fill++ = (WORD)eg->nsym; *fill++ = -1;
-	}
-	if ( eg->esym != 1 ) {
-		*fill++ = SNUMBER; *fill++ = 4; *fill++ = (WORD)eg->esym; *fill++ = -1;
+	if ( maxmom >= Sets[info->internalset].last - Sets[info->internalset].first ) {
+		MLOCK(ErrorMessageLock);
+		MesPrint("&Insufficient internal momenta in diagrams_");
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
 	}
 //
 //	finish it off
@@ -718,8 +768,6 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 	*newterm = fill - newterm;
 	AT.WorkPointer = fill;
 
-//MesPrint("<> %a",*newterm,newterm);
-
 	Generator(BHEAD newterm,info->level);
 	AT.WorkPointer = oldworkpointer;
 	info->numtopo++;
@@ -727,21 +775,48 @@ Bool ProcessTopology(EGraph *eg, void *ti)
 }
 
 //	#] ProcessTopology : 
+// #[ SetDualOpts : 
+void SetDualOpts(int *opt, const WORD num, const int key, const char* key_name,
+	const int dual, const char* dual_name, const int val, const int dval) {
+
+	if ( ( num & key ) == key ) {
+		if ( ( num & dual ) == dual ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("&Conflicting diagram filters: %s and %s.", key_name, dual_name);
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
+		}
+		else {
+			*opt = val;
+		}
+	}
+	else {
+		if ( ( num & dual ) == dual ) {
+			*opt = dval;
+		}
+		else {
+			// The default value is always 0.
+			*opt = 0;
+		}
+	}
+}
+// #] SetDualOpts : 
 //	#[ GenDiagrams :
 
-WORD GenDiagrams(PHEAD WORD *term, WORD level)
+int GenDiagrams(PHEAD WORD *term, WORD level)
 {
 	Model *model;
 	MODEL *m;
 	Options *opt;
 	Process *proc;
 	int pid = 1, x;
-	int babble = 0;    // Later we may set this at the FORM code level
+	int babble = AC.GrccVerbose ? 2 : 0;
 	TERMINFO info;
 	WORD inset,outset,*coupl,setnum,optionnumber = 0;
 	int i, j, cpl[GRCC_MAXNCPLG];
 	int ninitl, initlPart[GRCC_MAXLEGS], nfinal, finalPart[GRCC_MAXLEGS];
 	for ( i = 0; i < GRCC_MAXNCPLG; i++ ) cpl[i] = 0;
+	std::map<int,int> momlist;
 //
 //	Here we create an object of type Option and load it up.
 //	Next we run the diagram generation on it.
@@ -780,48 +855,46 @@ WORD GenDiagrams(PHEAD WORD *term, WORD level)
 
 	opt->setOutAG(ProcessDiagram, &info);
 	opt->setOutMG(ProcessTopology, &info);
-//	opt->setEndMG(fendMG, &info);
 
-	opt->values[GRCC_OPT_1PI] = ( optionnumber & ONEPARTICLEIRREDUCIBLE ) == ONEPARTICLEIRREDUCIBLE;
-	opt->values[GRCC_OPT_NoTadpole] = ( optionnumber & NOTADPOLES ) == NOTADPOLES;
-//
-//	Next are snails:
-//
-	opt->values[GRCC_OPT_No1PtBlock] = ( optionnumber & NOTADPOLES ) == NOTADPOLES;
-//
-	if ( ( optionnumber & WITHINSERTIONS ) == WITHINSERTIONS ) {
-		opt->values[GRCC_OPT_No2PtL1PI] = True;
-		opt->values[GRCC_OPT_NoAdj2PtV] = True;
-		opt->values[GRCC_OPT_No2PtL1PI] = True;
-	}
-	else {
-		opt->values[GRCC_OPT_NoAdj2PtV] = True;
-	}
-	opt->values[GRCC_OPT_SymmInitial] = ( optionnumber & WITHSYMMETRIZE ) == WITHSYMMETRIZE;
-	opt->values[GRCC_OPT_SymmFinal] = ( optionnumber & WITHSYMMETRIZE ) == WITHSYMMETRIZE;
+	opt->values[GRCC_OPT_SymmInitial] = ( optionnumber & WITHSYMMETRIZEI ) == WITHSYMMETRIZEI;
+	opt->values[GRCC_OPT_SymmFinal]   = ( optionnumber & WITHSYMMETRIZEF ) == WITHSYMMETRIZEF;
 
-//	opt->values[GRCC_OPT_Block] = ( optionnumber & WITHBLOCKS ) == WITHBLOCKS;
+	// WITHBLOCKS controls output formatting. We could introduce an extra filtering option
+	// corresponding to GRCC_OPT_Block, which is somewhat like Qgraf "onevi" but not quite
+	// the same currently.
+	//opt->values[GRCC_OPT_Block] = ;
+
+	// Now the "qgraf-compatible filtering options":
+	int qgopt[GRCC_QGRAF_OPT_Size];
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_ONEPI],    optionnumber,ONEPARTI, "ONEPI_",    ONEPARTR, "ONEPR_",    1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_ONSHELL],  optionnumber,ONSHELL,  "ONSHELL_",  OFFSHELL, "OFFSHELL_", 1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_NOSIGMA],  optionnumber,NOSIGMA,  "NOSIGMA_",  SIGMA,    "SIGMA_",    1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_NOSNAIL],  optionnumber,NOSNAIL,  "NOSNAIL_",  SNAIL,    "SNAIL_",    1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_NOTADPOLE],optionnumber,NOTADPOLE,"NOTADPOLE_",TADPOLE , "TADPOLE_",  1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_SIMPLE],   optionnumber,SIMPLE,   "SIMPLE_",   NOTSIMPLE,"NOTSIMPLE_",1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_BIPART],   optionnumber,BIPART,   "BIPART_",   NONBIPART,"NONBIPART_",1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_CYCLI],    optionnumber,CYCLI,    "CYCLI_",    CYCLR,    "CYCLR_",    1,-1);
+	SetDualOpts(&qgopt[GRCC_QGRAF_OPT_FLOOP],    optionnumber,FLOOP,    "FLOOP_",    NOTFLOOP, "NOTFLOOP_", 1,-1);
+	// Now set the options internally:
+	opt->setQGrafOpt(qgopt);
 
 	opt->setOutputF(False,"");
 	opt->setOutputP(False,"");
 	opt->printLevel(babble);
 
-//	opt->values[GRCC_OPT_Step]       = GRCC_AGraph;
-
 //	Load the various arrays.
-
-    ninitl = Sets[inset].last - Sets[inset].first;
-    for ( i = 0; i < ninitl; i++ ) {
-        x = SetElements[Sets[inset].first+i];
-        initlPart[i] = ConvertParticle(model,x);
+	ninitl = Sets[inset].last - Sets[inset].first;
+	for ( i = 0; i < ninitl; i++ ) {
+		x = SetElements[Sets[inset].first+i];
+		initlPart[i] = ConvertParticle(model,x);
 		info.legcouple[i] = m->vertices[numParticle(m,x)]->couplings;
-    }
-    nfinal = Sets[outset].last - Sets[outset].first;
-    for ( i = 0; i < nfinal; i++ ) {
-        x = SetElements[Sets[outset].first+i];
-        finalPart[i] = ConvertParticle(model,x);
+	}
+	nfinal = Sets[outset].last - Sets[outset].first;
+	for ( i = 0; i < nfinal; i++ ) {
+		x = SetElements[Sets[outset].first+i];
+		finalPart[i] = ConvertParticle(model,x);
 		info.legcouple[i+ninitl] = m->vertices[numParticle(m,x)]->couplings;
-    }
+	}
 	info.numextern = ninitl + nfinal;
 	for ( i = 2; i <= MAXLEGS; i++ ) {
 		if ( m->legcouple[i] == 1 ) {
@@ -830,6 +903,53 @@ WORD GenDiagrams(PHEAD WORD *term, WORD level)
 			}
 		}
 	}
+
+	// Check that we have sufficient external momenta in the set:
+	if ( info.numextern > Sets[info.externalset].last - Sets[info.externalset].first ) {
+		MLOCK(ErrorMessageLock);
+		MesPrint("&Insufficient external momenta in diagrams_");
+		MUNLOCK(ErrorMessageLock);
+		Terminate(-1);
+	}
+
+	// Check that none of the supplied momenta are negative or repeated:
+	for ( i = 0; i < Sets[info.externalset].last - Sets[info.externalset].first; i++ ) {
+		const int momcode = SetElements[Sets[info.externalset].first + i];
+		if ( momcode < AM.OffsetVector ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("&Invalid negative external momentum in diagrams_: -%s",
+				VARNAME(vectors, momcode+WILDMASK-AM.OffsetVector));
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
+		}
+		momlist[momcode]++;
+		if ( momlist[momcode] != 1 ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("&Invalid repeated momentum in diagrams_: %s",
+				VARNAME(vectors, momcode-AM.OffsetVector));
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
+		}
+	}
+	for ( i = 0; i < Sets[info.internalset].last - Sets[info.internalset].first; i++ ) {
+		const int momcode = SetElements[Sets[info.internalset].first + i];
+		if ( momcode < AM.OffsetVector ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("&Invalid negative internal momentum in diagrams_: -%s",
+				VARNAME(vectors, momcode+WILDMASK-AM.OffsetVector));
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
+		}
+		momlist[momcode]++;
+		if ( momlist[momcode] != 1 ) {
+			MLOCK(ErrorMessageLock);
+			MesPrint("&Invalid repeated momentum in diagrams_: %s",
+				VARNAME(vectors, momcode-AM.OffsetVector));
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
+		}
+	}
+
 Go_on:;
 //
 //	Now we have to sort out the coupling constants.
@@ -850,16 +970,14 @@ Go_on:;
 
 		if ( ( info.flags & TOPOLOGIESONLY ) == 0 ) {
 			while ( DistrN(nc,cpl,m->ncouplings,scratch) ) {
-				proc = new Process(pid, model, opt,
-        	               ninitl, initlPart, nfinal, finalPart, cpl);
+				proc = new Process(pid, model, opt, ninitl, initlPart, nfinal, finalPart, cpl);
 				delete proc;
 				info.numtopo = 1;
 			}
 		}
 		else {
 			cpl[0] = nc;
-			proc = new Process(pid, model, opt,
-       	               ninitl, initlPart, nfinal, finalPart, cpl);
+			proc = new Process(pid, model, opt, ninitl, initlPart, nfinal, finalPart, cpl);
 			delete proc;
 		}
 		M_free(scratch,"DistrN");
@@ -892,8 +1010,7 @@ Go_on:;
 /*
 	And now the generation:
 */
-	proc = new Process(pid, model, opt,
-                       ninitl, initlPart, nfinal, finalPart, cpl);
+	proc = new Process(pid, model, opt, ninitl, initlPart, nfinal, finalPart, cpl);
 	opt->end();
 	delete proc;
 	delete opt;
@@ -955,113 +1072,4 @@ int processVertex(TOPOTYPE *TopoInf, int pointsremaining, int level)
 }
 
 //	#] processVertex : 
-//	#[ GenTopologies :
-
-#define TOPO_MAXVERT 10
-
-WORD GenTopologies(PHEAD WORD *term, WORD level)
-{
-	Options *opt = new Options;
-	int nlegs, nloops, i, identical;
-	TERMINFO info;
-	WORD *t, *t1, *tstop;
-	TOPOTYPE TopoInf;
-	SETS s;
-//
-	info.term = term;
-	info.level = level;
-	info.diaoffset = AR.funoffset;
-	info.flags = 0;
- 
-	t = term + info.diaoffset;  // the function
-	t1 = t + FUNHEAD;           // its arguments
-	tstop = t + t[1];
-
-	info.externalset = t1[7];
-	info.internalset = t1[9];
-
-	s = &(Sets[t1[5]]);
-	TopoInf.nvert = s->last - s->first;
-	TopoInf.vert  = &(SetElements[s->first]);
-
-	nloops = t1[1];
-	nlegs = t1[3];
-
-	info.numextern = nlegs;
-
-	for ( i = 0; i <= MAXLEGS; i++ ) { TopoInf.cmind[i] = TopoInf.cmaxd[i] = 0; }
-
-	t1 += 10;
-	if ( t1 < tstop && t1[0] == -SETSET ) {
-		TopoInf.vertmax = &(SetElements[Sets[t1[1]].first]);
-		t1 += 2;
-	}
-	else TopoInf.vertmax = NULL;
-
-	info.flags |= TOPOLOGIESONLY;  // this is the topologies_ function after all.
-	if ( t1 < tstop && t1[0] == -SNUMBER ) {
-		if ( ( t1[1] &   NONODES ) ==   NONODES ) info.flags |=   NONODES;
-		if ( ( t1[1] & WITHEDGES ) == WITHEDGES ) info.flags |= WITHEDGES;
-		if ( ( t1[1] & WITHBLOCKS ) == WITHBLOCKS ) info.flags |= WITHBLOCKS;
-		if ( ( t1[1] & WITHONEPI ) == WITHONEPI ) info.flags |= WITHONEPI;
-		opt->values[GRCC_OPT_1PI] = ( t1[1] & ONEPARTICLEIRREDUCIBLE ) == ONEPARTICLEIRREDUCIBLE;
-//		opt->values[GRCC_OPT_NoTadpole] = ( t1[1] & NOTADPOLES ) == NOTADPOLES;
-		opt->values[GRCC_OPT_NoTadpole] = ( t1[1] & NOSNAILS ) == NOSNAILS;
-		opt->values[GRCC_OPT_No1PtBlock] = ( t1[1] & NOTADPOLES ) == NOTADPOLES;
-		opt->values[GRCC_OPT_NoExtSelf] = ( t1[1] & NOEXTSELF ) == NOEXTSELF;
-
-		if ( ( t1[1] & WITHINSERTIONS ) == WITHINSERTIONS ) {
-			opt->values[GRCC_OPT_No2PtL1PI] = True;
-			opt->values[GRCC_OPT_NoAdj2PtV] = True;
-			opt->values[GRCC_OPT_No2PtL1PI] = True;
-		}
-		opt->values[GRCC_OPT_SymmInitial] = ( t1[1] & WITHSYMMETRIZE ) == WITHSYMMETRIZE;
-	}
-
-	info.numdia = 0;
-	info.numtopo = 1;
-
-	opt->setOutAG(ProcessDiagram, &info);
-	opt->setOutMG(ProcessTopology, &info);
-//
-//	Now we should sum over all possible vertices and run MGraph for
-//	each combination. This is done by recursion in the processVertex routine
-//	First load up the relevant arrays.
-//
-
-//	First the external nodes.
-
-	if ( nlegs == -2 ) {
-		nlegs = 2;
-		identical = 1;
-	}
-	for ( i = 0; i < nlegs; i++ ) {
-		TopoInf.cldeg[i] = 1; TopoInf.clnum[i] = 1; TopoInf.clext[i] = -1;
-	}
-	int points = 2*nloops-2+nlegs;
-
-	if ( identical == 1 ) {	/* Only propagator topologies..... */
-		nlegs = 1;
-		TopoInf.clnum[0] = 2;
-	}
-	TopoInf.ncl = nlegs;
-	TopoInf.opt = opt;
-
-	if ( points >= MAXPOINTS ) {
-		MLOCK(ErrorMessageLock);
-		MesPrint("GenTopologies: %d loops and %d legs considered excessive",nloops,nlegs);
-		MUNLOCK(ErrorMessageLock);
-		Terminate(-1);
-	}
-	if ( processVertex(&TopoInf,points,0) != 0 ) {
-		MLOCK(ErrorMessageLock);
-		MesPrint("Called from GenTopologies with %d loops and %d legs",nloops,nlegs);
-		MUNLOCK(ErrorMessageLock);
-		Terminate(-1);
-	}
-	delete opt;
-	return(0);
-}
-
-//	#] GenTopologies : 
 

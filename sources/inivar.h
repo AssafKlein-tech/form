@@ -6,7 +6,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -243,7 +243,6 @@ static struct fixedfun {
 	,{"block_"      ,0 ,0             ,0               ,0} /* BLOCK */
 	,{"onepi_"      ,0 ,0             ,0               ,0} /* ONEPI */
 	,{"phi_"        ,0 ,VERTEXFUNCTION,0               ,0} /* PHI */
-#ifdef WITHFLOAT
 	,{"float_"      ,0 ,0             ,0               ,0} /* FLOATFUN */
 	,{"tofloat_"    ,0 ,0             ,0               ,0} /* TOFLOAT */
 	,{"torat_"      ,0 ,0             ,0               ,0} /* TORAT */
@@ -252,7 +251,9 @@ static struct fixedfun {
 	,{"mzvhalf_"    ,0 ,0             ,0               ,0} /* MZVHALF */
 	,{"agm_"        ,0 ,0             ,0               ,0} /* AGMFUNCTION */
 	,{"gamma_"      ,0 ,0             ,0               ,0} /* GAMMAFUN */
-#endif
+	,{"eexp_"       ,0 ,0             ,0               ,0} /* EXPFUNCTION */
+	,{"hpl_"        ,0 ,0             ,0               ,0} /* HPLFUNCTION */
+	,{"mpl_"        ,0 ,0             ,0               ,0} /* MPLFUNCTION */
 };
 
 FIXEDSET fixedsets[] = {

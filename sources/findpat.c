@@ -12,7 +12,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -58,7 +58,7 @@
 	to any of these sets.
 */
 
-WORD FindOnly(PHEAD WORD *term, WORD *pattern)
+int FindOnly(PHEAD WORD *term, WORD *pattern)
 {
 	GETBIDENTITY
 	WORD *t, *m;
@@ -416,7 +416,7 @@ EndLoop:;
 
 */
 
-WORD FindOnce(PHEAD WORD *term, WORD *pattern)
+int FindOnce(PHEAD WORD *term, WORD *pattern)
 {
 	GETBIDENTITY
 	WORD *t, *m;
@@ -1067,7 +1067,7 @@ WORD FindMulti(PHEAD WORD *term, WORD *pattern)
 
 */
 
-WORD FindRest(PHEAD WORD *term, WORD *pattern)
+int FindRest(PHEAD WORD *term, WORD *pattern)
 {
 	GETBIDENTITY
 	WORD *t, *m, *tt, wild, regular;

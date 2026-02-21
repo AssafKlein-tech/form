@@ -5,7 +5,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -114,7 +114,7 @@ int CatchDollar(int par)
 	AT.WorkPointer = oldwork;
 	AN.tryterm = 0; /* for now */
 	dbuffer = 0;
-	if ( ( retval = EndSort(BHEAD (WORD *)((VOID *)(&dbuffer)),2) ) < 0 ) { error = 1; }
+	if ( ( retval = EndSort(BHEAD (WORD *)((void *)(&dbuffer)),2) ) < 0 ) { error = 1; }
 	LowerSortLevel();
 	if ( retval <= 1 || dbuffer == 0 ) {
 		d->type = DOLZERO;
@@ -439,7 +439,7 @@ NoChangeOne:;
 			AT.WorkPointer = ww;
 		}
 		AN.tryterm = 0; /* for now */
-		if ( ( newsize = EndSort(BHEAD (WORD *)((VOID *)(&ss)),2) ) < 0 ) {
+		if ( ( newsize = EndSort(BHEAD (WORD *)((void *)(&ss)),2) ) < 0 ) {
 			AN.ncmod = oldncmod;
 			return(1);
 		}
@@ -1756,9 +1756,9 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 	olddefer = AR.DeferFlag;
 	AR.DeferFlag = 0;
 	while ( --numvar >= 0 ) {
-	  numdol = *ll++;
-	  d = Dollars + numdol;
-	  {
+		numdol = *ll++;
+		d = Dollars + numdol;
+		{
 #ifdef WITHPTHREADS
 		int nummodopt, dtype = -1;
 		if ( AS.MultiThreaded && ( AC.mparallelflag == PARALLELFLAG ) ) {
@@ -1778,7 +1778,16 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 		}
 #endif
 		newd = DolToTerms(BHEAD numdol);
-		if ( newd == 0 || newd->where[0] == 0 ) continue;
+		if ( newd == 0 ) {
+			continue;
+		}
+		if ( newd->where[0] == 0 ) {
+			// DolToTerms potentially allocates memory. Free it.
+			// The free below is inside the while loop.
+			if ( newd->factors ) M_free(newd->factors,"Dollar factors");
+			M_free(newd,"Copy of dollar variable");
+			continue;
+		}
 		r = newd->where;
 		NewSort(BHEAD0);
 		while ( *r ) {	/* Sum over the terms */
@@ -1796,7 +1805,7 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 			AT.WorkPointer = oldwork;
 		}
 		AN.tryterm = 0; /* for now */
-		if ( EndSort(BHEAD (WORD *)((VOID *)(&dbuffer)),2) < 0 ) { error = 1; break; }
+		if ( EndSort(BHEAD (WORD *)((void *)(&dbuffer)),2) < 0 ) { error = 1; break; }
 		if ( d->where && d->where != &(AM.dollarzero) ) M_free(d->where,"old buffer of dollar");
 		d->where = dbuffer;
 		if ( dbuffer == 0 || *dbuffer == 0 ) {
@@ -1822,7 +1831,7 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 #endif
 		if ( newd->factors ) M_free(newd->factors,"Dollar factors");
 		M_free(newd,"Copy of dollar variable");
-	  }
+		}
 	}
 idcall:;
 	AR.Cnumlhs = oldnumlhs;
@@ -2188,7 +2197,7 @@ WORD *TranslateExpression(UBYTE *s)
 	AR.Eside = oldEside;
 	AT.WorkPointer = w;
 	AN.tryterm = 0; /* for now */
-	if ( EndSort(BHEAD (WORD *)((VOID *)(&outbuffer)),2) < 0 ) { LowerSortLevel(); return(0); }
+	if ( EndSort(BHEAD (WORD *)((void *)(&outbuffer)),2) < 0 ) { LowerSortLevel(); return(0); }
 	LowerSortLevel();
 	C->Pointer = C->Buffer + oldcpointer;
 	C->numrhs = oldnumrhs;
@@ -3545,10 +3554,11 @@ nextj:;
 void CleanDollarFactors(DOLLARS d)
 {
 	int i;
-	if ( d->nfactors > 1 ) {
+	if ( d->nfactors >= 1 ) {
 		for ( i = 0; i < d->nfactors; i++ ) {
-			if ( d->factors[i].where )
-				M_free(d->factors[i].where,"dollar factors");
+			if ( d->factors )
+				if ( d->factors[i].where )
+					M_free(d->factors[i].where,"dollar factors");
 		}
 	}
 	if ( d->factors ) {

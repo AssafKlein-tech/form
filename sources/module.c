@@ -6,7 +6,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -254,7 +254,7 @@ int CoModOption(UBYTE *s)
  		#[ SetSpecialMode :
 */
 
-VOID SetSpecialMode(int moduletype, int specialtype)
+void SetSpecialMode(int moduletype, int specialtype)
 {
 	DUMMYUSE(moduletype); DUMMYUSE(specialtype);
 }
@@ -263,7 +263,7 @@ VOID SetSpecialMode(int moduletype, int specialtype)
  		#] SetSpecialMode : 
  		#[ MakeGlobal :
 
-VOID MakeGlobal()
+void MakeGlobal()
 {
 }
 
@@ -296,7 +296,7 @@ int ExecModule(int moduletype)
  		#[ ExecStore :
 */
 
-int ExecStore(VOID)
+int ExecStore(void)
 {
 	return(0);
 }
@@ -311,7 +311,7 @@ int ExecStore(VOID)
 			What to do with files we write to
 */
 
-VOID FullCleanUp(VOID)
+void FullCleanUp(void)
 {
 	int j;
 
@@ -659,6 +659,7 @@ UBYTE * DoModDollar(UBYTE *s, int type)
 	UBYTE *name, c;
 	WORD number;
 	MODOPTDOLLAR *md;
+	int nummodopt;
 	while ( *s == '$' ) {
 /*
 		Read the name of the dollar
@@ -671,8 +672,22 @@ UBYTE * DoModDollar(UBYTE *s, int type)
 			c = *s; *s = 0;
 			number = GetDollar(name);
 			if ( number < 0 ) {
+				UBYTE *s1;
 				number = AddDollar(s,0,0,0);
-				Warning("&Undefined $-variable in module statement");
+				s1 = strDup1((UBYTE *)"Undefined $-variable in module option; option ignored: $","Undefined $-variable in ModuleOption");
+				s1 =  AddToString(s1,name,0);
+				Warning((char *)s1);
+				M_free(s1,"Undefined $-variable in ModuleOption");
+			}
+			for ( nummodopt = 0; nummodopt < NumModOptdollars; nummodopt++ ) {
+				if ( number == ModOptdollars[nummodopt].number && type != ModOptdollars[nummodopt].type ) {
+					UBYTE *s1;
+					s1 = strDup1((UBYTE *)"Conflicting module options for $-variable; later option ignored: $","Conflicting $-variable in ModuleOption");
+					s1 = AddToString(s1,name,0);
+					Warning((char *)s1);
+					M_free(s1,"Conflicting $-variable in ModuleOption");
+					break;
+				}
 			}
 			md = (MODOPTDOLLAR *)FromList(&AC.ModOptDolList);
 			md->number = number;
@@ -777,7 +792,7 @@ int DonotinParallel(UBYTE *s)
  		#[ DoExecStatement :
 */
 
-int DoExecStatement(VOID)
+int DoExecStatement(void)
 {
 #ifdef WITHSYSTEM
 	FLUSHCONSOLE;
@@ -794,7 +809,7 @@ int DoExecStatement(VOID)
  		#[ DoPipeStatement :
 */
 
-int DoPipeStatement(VOID)
+int DoPipeStatement(void)
 {
 #ifdef WITHPIPE
 	FLUSHCONSOLE;

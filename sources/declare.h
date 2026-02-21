@@ -8,7 +8,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -67,39 +67,40 @@
 #define ParseSignedNumber(x,s) { int sgn; ParseSign(sgn,s)\
           ParseNumber(x,s) if ( sgn ) x = -x; }
 
-#define NCOPY(s,t,n) while ( --n >= 0 ) *s++ = *t++;
-
+/* (n) is necessary here, since the macro is sometimes passed dereferenced pointers for n */
+#define NCOPY(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
 /*#define NCOPY(s,t,n) { memcpy(s,t,n*sizeof(WORD)); s+=n; t+=n; n = -1; }*/
-#define NCOPYI(s,t,n) while ( --n >= 0 ) *s++ = *t++;
-#define NCOPYB(s,t,n) while ( --n >= 0 ) *s++ = *t++;
-#define NCOPYI32(s,t,n) while ( --n >= 0 ) *s++ = *t++;
-#define WCOPY(s,t,n) { int nn=n; WORD *ss=(WORD *)s, *tt=(WORD *)t; while ( --nn >= 0 ) *ss++=*tt++; }
+#define NCOPYI(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
+#define NCOPYB(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
+#define NCOPYI32(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
+#define WCOPY(s,t,n) { int nn=n; WORD *ss=(WORD *)s, *tt=(WORD *)t; while ( (nn)-- > 0 ) { *ss++ = *tt++; } }
+
 #define NeedNumber(x,s,err) { int sgn = 1;                               \
-		while ( *s == ' ' || *s == '\t' || *s == '-' || *s == '+' ) {    \
-			if ( *s == '-' ) sgn = -sgn; s++; }                          \
-		if ( chartype[*s] != 1 ) goto err;                               \
-		ParseNumber(x,s)                                                 \
-		if ( sgn < 0 ) (x) = -(x); while ( *s == ' ' || *s == '\t' ) s++;\
+		while ( *s == ' ' || *s == '\t' || *s == '-' || *s == '+' ) {      \
+			if ( *s == '-' ) {sgn = -sgn;} s++; }                           \
+		if ( chartype[*s] != 1 ) goto err;                                 \
+		ParseNumber(x,s)                                                   \
+		if ( sgn < 0 ) {(x) = -(x);} while ( *s == ' ' || *s == '\t' ) s++;\
 	}
 #define SKIPBLANKS(s) { while ( *(s) == ' ' || *(s) == '\t' ) (s)++; }
 #define FLUSHCONSOLE if ( AP.InOutBuf > 0 ) CharOut(LINEFEED)
 
-#define SKIPBRA1(s) { int lev1=0; s++; while(*s) { if(*s=='[')lev1++; \
-					else if(*s==']'&&--lev1<0)break; s++;} }
-#define SKIPBRA2(s) { int lev2=0; s++; while(*s) { if(*s=='{')lev2++; \
-					else if(*s=='}'&&--lev2<0)break; \
-					else if(*s=='[')SKIPBRA1(s) s++;} }
-#define SKIPBRA3(s) { int lev3=0; s++; while(*s) { if(*s=='(')lev3++; \
-					else if(*s==')'&&--lev3<0)break; \
-					else if(*s=='{')SKIPBRA2(s) \
-					else if(*s=='[')SKIPBRA1(s) s++;} }
-#define SKIPBRA4(s) { int lev4=0; s++; while(*s) { if(*s=='(')lev4++; \
-					else if(*s==')'&&--lev4<0)break; \
-					else if(*s=='[')SKIPBRA1(s) s++;} }
-#define SKIPBRA5(s) { int lev5=0; s++; while(*s) { if(*s=='{')lev5++; \
-					else if(*s=='}'&&--lev5<0)break; \
-					else if(*s=='(')SKIPBRA4(s) \
-					else if(*s=='[')SKIPBRA1(s) s++;} }
+#define SKIPBRA1(s) { int lev1=0; s++; while(*s) { if(*s=='['){lev1++;} \
+					else {if(*s==']'&&--lev1<0){break;}} s++;} }
+#define SKIPBRA2(s) { int lev2=0; s++; while(*s) { if(*s=='{'){lev2++;} \
+					else {if(*s=='}'&&--lev2<0){break;} \
+					else {if(*s=='['){SKIPBRA1(s)}}} s++;} }
+#define SKIPBRA3(s) { int lev3=0; s++; while(*s) { if(*s=='('){lev3++;} \
+					else {if(*s==')'&&--lev3<0){break;} \
+					else {if(*s=='{'){SKIPBRA2(s)} \
+					else {if(*s=='['){SKIPBRA1(s)}}}} s++;} }
+#define SKIPBRA4(s) { int lev4=0; s++; while(*s) { if(*s=='('){lev4++;} \
+					else {if(*s==')'&&--lev4<0){break;} \
+					else {if(*s=='['){SKIPBRA1(s)}}} s++;} }
+#define SKIPBRA5(s) { int lev5=0; s++; while(*s) { if(*s=='{'){lev5++;} \
+					else {if(*s=='}'&&--lev5<0){break;} \
+					else {if(*s=='('){SKIPBRA4(s)} \
+					else {if(*s=='['){SKIPBRA1(s)}}}} s++;} }
 
 /*
 #define CYCLE1(a,i) {WORD iX,jX; iX=*a; for(jX=1;jX<i;jX++)a[jX-1]=a[jX]; a[i-1]=iX;}
@@ -107,7 +108,7 @@
 #define CYCLE1(t,a,i) {t iX=*a; WORD jX; for(jX=1;jX<i;jX++)a[jX-1]=a[jX]; a[i-1]=iX;}
 
 #define AddToCB(c,wx) if(c->Pointer>=c->Top) \
-		DoubleCbuffer(c-cbuf,c->Pointer,21); \
+		{DoubleCbuffer(c-cbuf,c->Pointer,21);} \
 		*(c->Pointer)++ = wx;
 
 #define EXCHINOUT { FILEHANDLE *ffFi = AR.outfile; \
@@ -185,6 +186,7 @@
  
 #define PREV(x) prevorder?prevorder:x
 
+#define Terminate(x) do { TerminateImpl(x, __FILE__, __LINE__, __FUNCTION__); } while(0)
 #define SETERROR(x) { Terminate(-1); return(-1); }
 
 /* use this macro to avoid the unused parameter warning */
@@ -239,7 +241,7 @@
 #define ISZEROPOS(pp) ( (pp).p1 == 0 )
 #define ISPOSPOS(pp) ( (pp).p1 > 0 )
 #define ISNEGPOS(pp) ( (pp).p1 < 0 )
-extern VOID TELLFILE(int,POSITION *);
+extern void TELLFILE(int,POSITION *);
 
 #define TOLONG(x) ((LONG)(x))
 
@@ -382,19 +384,19 @@ TP=T+1;while(TP<TT){if(*TP==AR.PolyFun){TP[2]|=(DIRTYFLAG|MUSTCLEANPRF);}TP+=TP[
  */
 static inline unsigned int IntAbs(int x)
 {
-	if ( x >= 0 ) return x;
+	if ( x >= 0 ) return (unsigned int)x;
 	return(-((unsigned int)x));
 }
 
 static inline UWORD WordAbs(WORD x)
 {
-	if ( x >= 0 ) return x;
+	if ( x >= 0 ) return (UWORD)x;
 	return(-((UWORD)x));
 }
 
 static inline ULONG LongAbs(LONG x)
 {
-	if ( x >= 0 ) return x;
+	if ( x >= 0 ) return (ULONG)x;
 	return(-((ULONG)x));
 }
 
@@ -408,8 +410,8 @@ static inline ULONG LongAbs(LONG x)
  */
 static inline int UnsignedToInt(unsigned int x)
 {
-	extern void Terminate(int);
-	if ( x <= INT_MAX ) return(x);
+	extern void TerminateImpl(int, const char*, int, const char*) NORETURN;
+	if ( x <= INT_MAX ) return((int)x);
 	if ( x >= (unsigned int)INT_MIN )
 		return((int)(x - (unsigned int)INT_MIN) + INT_MIN);
 	Terminate(1);
@@ -418,8 +420,8 @@ static inline int UnsignedToInt(unsigned int x)
 
 static inline WORD UWordToWord(UWORD x)
 {
-	extern void Terminate(int);
-	if ( x <= WORD_MAX_VALUE ) return(x);
+	extern void TerminateImpl(int, const char*, int, const char*) NORETURN;
+	if ( x <= WORD_MAX_VALUE ) return((WORD)x);
 	if ( x >= (UWORD)WORD_MIN_VALUE )
 		return((WORD)(x - (UWORD)WORD_MIN_VALUE) + WORD_MIN_VALUE);
 	Terminate(1);
@@ -428,8 +430,8 @@ static inline WORD UWordToWord(UWORD x)
 
 static inline LONG ULongToLong(ULONG x)
 {
-	extern void Terminate(int);
-	if ( x <= LONG_MAX_VALUE ) return(x);
+	extern void TerminateImpl(int, const char*, int, const char*) NORETURN;
+	if ( x <= LONG_MAX_VALUE ) return((LONG)x);
 	if ( x >= (ULONG)LONG_MIN_VALUE )
 		return((LONG)(x - (ULONG)LONG_MIN_VALUE) + LONG_MIN_VALUE);
 	Terminate(1);
@@ -506,8 +508,8 @@ extern WORD **DebugHeap1, **DebugHeap2;
  *	All functions (well, nearly all) are declared here.
  */
 
-extern VOID   StartVariables(VOID);
-extern VOID   setSignalHandlers(VOID);
+extern void   StartVariables(void);
+extern void   setSignalHandlers(void);
 extern UBYTE *CodeToLine(WORD,UBYTE *);
 extern UBYTE *AddArrayIndex(WORD ,UBYTE *);
 extern INDEXENTRY *FindInIndex(WORD,FILEDATA *,WORD,WORD);
@@ -515,214 +517,211 @@ extern INDEXENTRY *NextFileIndex(POSITION *);
 extern WORD  *PasteTerm(PHEAD WORD,WORD *,WORD *,WORD,WORD);
 extern UBYTE *StrCopy(UBYTE *,UBYTE *);
 extern UBYTE *WrtPower(UBYTE *,WORD);
-extern WORD   AccumGCD(PHEAD UWORD *,WORD *,UWORD *,WORD);
-extern VOID   AddArgs(PHEAD WORD *,WORD *,WORD *);
-extern WORD   AddCoef(PHEAD WORD **,WORD **);
-extern WORD   AddLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   AddPLon(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   AddPoly(PHEAD WORD **,WORD **);
-extern WORD   AddRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern VOID   AddToLine(UBYTE *);
-extern WORD   AddWild(PHEAD WORD,WORD,WORD);
-extern WORD   BigLong(UWORD *,WORD,UWORD *,WORD);
-extern WORD   BinomGen(PHEAD WORD *,WORD,WORD **,WORD,WORD,WORD,WORD,WORD,UWORD *,WORD);
-extern WORD   CheckWild(PHEAD WORD,WORD,WORD,WORD *);
-extern WORD   Chisholm(PHEAD WORD *,WORD);
-extern WORD   CleanExpr(WORD);
-extern VOID   CleanUp(WORD);
-extern VOID   ClearWild(PHEAD0);
-extern WORD   CompareFunctions(WORD *,WORD *);
-extern WORD   Commute(WORD *,WORD *);
+extern int    AccumGCD(PHEAD UWORD *,WORD *,UWORD *,WORD);
+extern void   AddArgs(PHEAD WORD *,WORD *,WORD *);
+extern int    AddCoef(PHEAD WORD **,WORD **);
+extern int    AddLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    AddPLon(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    AddPoly(PHEAD WORD **,WORD **);
+extern int    AddRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern void   AddToLine(UBYTE *);
+extern int    AddWild(PHEAD WORD,WORD,WORD);
+extern int    BigLong(UWORD *,WORD,UWORD *,WORD);
+extern int    BinomGen(PHEAD WORD *,WORD,WORD **,WORD,WORD,WORD,WORD,WORD,UWORD *,WORD);
+extern int    CheckWild(PHEAD WORD,WORD,WORD,WORD *);
+extern int    Chisholm(PHEAD WORD *,WORD);
+extern int    CleanExpr(WORD);
+extern void   CleanUp(WORD);
+extern void   ClearWild(PHEAD0);
+extern int    CompareFunctions(WORD *,WORD *);
+extern int    Commute(WORD *,WORD *);
 extern WORD   DetCommu(WORD *);
 extern WORD   DoesCommu(WORD *);
 extern int    CompArg(WORD *,WORD *);
 extern WORD   CompCoef(WORD *, WORD *);
-extern WORD   CompGroup(PHEAD WORD,WORD **,WORD *,WORD *,WORD);
+extern int    CompGroup(PHEAD WORD,WORD **,WORD *,WORD *,WORD);
 extern WORD   Compare1(PHEAD WORD *,WORD *,WORD);
 extern WORD   CountDo(WORD *,WORD *);
 extern WORD   CountFun(WORD *,WORD *);
 extern WORD   DimensionSubterm(WORD *);
 extern WORD   DimensionTerm(WORD *);
 extern WORD   DimensionExpression(PHEAD WORD *);
-extern WORD   Deferred(PHEAD WORD *,WORD);
-extern WORD   DeleteStore(WORD);
+extern int    Deferred(PHEAD WORD *,WORD);
+extern int    DeleteStore(WORD);
 extern WORD   DetCurDum(PHEAD WORD *);
-extern VOID   DetVars(WORD *,WORD);
-extern WORD   Distribute(DISTRIBUTE *,WORD);
-extern WORD   DivLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *,UWORD *,WORD *);
-extern WORD   DivRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   Divvy(PHEAD UWORD *,WORD *,UWORD *,WORD);
-extern WORD   DoDelta(WORD *);
-extern WORD   DoDelta3(PHEAD WORD *,WORD);
-extern WORD   TestPartitions(WORD *, PARTI *);
-extern WORD   DoPartitions(PHEAD WORD *,WORD);
+extern void   DetVars(WORD *,WORD);
+extern int    Distribute(DISTRIBUTE *,WORD);
+extern int    DivLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *,UWORD *,WORD *);
+extern int    DivRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    Divvy(PHEAD UWORD *,WORD *,UWORD *,WORD);
+extern int    DoDelta(WORD *);
+extern int    DoDelta3(PHEAD WORD *,WORD);
+extern int    TestPartitions(WORD *, PARTI *);
+extern int    DoPartitions(PHEAD WORD *,WORD);
 extern int    CoCanonicalize(UBYTE *);
 extern int    DoCanonicalize(PHEAD WORD *, WORD *);
-extern WORD   GenTopologies(PHEAD WORD *,WORD);
-extern WORD   GenDiagrams(PHEAD WORD *,WORD);
+extern int    GenDiagrams(PHEAD WORD *,WORD);
 extern int    DoTopologyCanonicalize(PHEAD WORD *,WORD,WORD,WORD *);
 extern int    DoShattering(PHEAD WORD *,WORD *,WORD *,WORD);
-extern WORD   GenerateTopologies(PHEAD WORD,WORD,WORD,WORD);
-extern WORD   DoTableExpansion(WORD *,WORD);
-extern WORD   DoDistrib(PHEAD WORD *,WORD);
-extern WORD   DoShuffle(WORD *,WORD,WORD,WORD);
-extern WORD   DoPermutations(PHEAD WORD *,WORD);
+extern int    DoTableExpansion(WORD *,WORD);
+extern int    DoDistrib(PHEAD WORD *,WORD);
+extern int    DoShuffle(WORD *,WORD,WORD,WORD);
+extern int    DoPermutations(PHEAD WORD *,WORD);
 extern int    Shuffle(WORD *, WORD *, WORD *);
 extern int    FinishShuffle(WORD *);
-extern WORD   DoStuffle(WORD *,WORD,WORD,WORD);
+extern int    DoStuffle(WORD *,WORD,WORD,WORD);
 extern int    Stuffle(WORD *, WORD *, WORD *);
 extern int    FinishStuffle(WORD *);
 extern WORD  *StuffRootAdd(WORD *, WORD *, WORD *);
-extern WORD   TestUse(WORD *,WORD);
+extern int    TestUse(WORD *,WORD);
 extern DBASE *FindTB(UBYTE *);
 extern int    CheckTableDeclarations(DBASE *);
-extern WORD   Apply(WORD *,WORD);
+extern void   Apply(WORD *,WORD);
 extern int    ApplyExec(WORD *,int,WORD);
-extern WORD   ApplyReset(WORD);
-extern WORD   TableReset(VOID);
-extern VOID   ReWorkT(WORD *,WORD *,WORD);
+extern void   ApplyReset(WORD);
+extern void   TableReset(void);
+extern void   ReWorkT(WORD *,WORD *,WORD);
 extern WORD   GetIfDollarNum(WORD *, WORD *);
 extern int    FindVar(WORD *,WORD *);
-extern WORD   DoIfStatement(PHEAD WORD *,WORD *);
-extern WORD   DoOnePow(PHEAD WORD *,WORD,WORD,WORD *,WORD *,WORD,WORD *);
+extern int    DoIfStatement(PHEAD WORD *,WORD *);
+extern int    DoOnePow(PHEAD WORD *,WORD,WORD,WORD *,WORD *,WORD,WORD *);
 extern void   DoRevert(WORD *,WORD *);
-extern WORD   DoSumF1(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   DoSumF2(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   DoTheta(PHEAD WORD *);
+extern int    DoSumF1(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    DoSumF2(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    DoTheta(PHEAD WORD *);
 extern LONG   EndSort(PHEAD WORD *,int);
-extern WORD   EntVar(WORD,UBYTE *,WORD,WORD,WORD,WORD);
-extern WORD   EpfCon(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   EpfFind(PHEAD WORD *,WORD *);
+extern int    EntVar(WORD,UBYTE *,WORD,WORD,WORD,WORD);
+extern int    EpfCon(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    EpfFind(PHEAD WORD *,WORD *);
 extern WORD   EpfGen(WORD,WORD *,WORD *,WORD *,WORD);
-extern WORD   EqualArg(WORD *,WORD,WORD);
-extern WORD   Evaluate(UBYTE **);
+extern int    EqualArg(WORD *,WORD,WORD);
 extern int    Factorial(PHEAD WORD,UWORD *,WORD *);
 extern int    Bernoulli(WORD,UWORD *,WORD *);
 extern int    FactorIn(PHEAD WORD *,WORD);
 extern int    FactorInExpr(PHEAD WORD *,WORD);
-extern WORD   FindAll(PHEAD WORD *,WORD *,WORD,WORD *);
+extern int    FindAll(PHEAD WORD *,WORD *,WORD,WORD *);
 extern WORD   FindMulti(PHEAD WORD *,WORD *);
-extern WORD   FindOnce(PHEAD WORD *,WORD *);
-extern WORD   FindOnly(PHEAD WORD *,WORD *);
-extern WORD   FindRest(PHEAD WORD *,WORD *);
-extern WORD   FindSpecial(WORD *);
+extern int    FindOnce(PHEAD WORD *,WORD *);
+extern int    FindOnly(PHEAD WORD *,WORD *);
+extern int    FindRest(PHEAD WORD *,WORD *);
+extern void   FindSpecial(WORD *);
 extern WORD   FindrNumber(WORD,VARRENUM *);
-extern VOID   FiniLine(VOID);
-extern WORD   FiniTerm(PHEAD WORD *,WORD *,WORD *,WORD,WORD);
-extern WORD   FlushOut(POSITION *,FILEHANDLE *,int);
-extern VOID   FunLevel(PHEAD WORD *);
-extern VOID   AdjustRenumScratch(PHEAD0);
-extern VOID   GarbHand(VOID);
-extern WORD   GcdLong(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   LcmLong(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern VOID   GCD(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern void   FiniLine(void);
+extern int    FiniTerm(PHEAD WORD *,WORD *,WORD *,WORD,WORD);
+extern int    FlushOut(POSITION *,FILEHANDLE *,int);
+extern void   FunLevel(PHEAD WORD *);
+extern void   AdjustRenumScratch(PHEAD0);
+extern void   GarbHand(void);
+extern int    GcdLong(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    LcmLong(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern void   GCD(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
 extern ULONG  GCD2(ULONG,ULONG);
-extern WORD   Generator(PHEAD WORD *,WORD);
-extern WORD   GetBinom(UWORD *,WORD *,WORD,WORD);
+extern int    Generator(PHEAD WORD *,WORD);
+extern int    GetBinom(UWORD *,WORD *,WORD,WORD);
 extern WORD   GetFromStore(WORD *,POSITION *,RENUMBER,WORD *,WORD);
-extern WORD   GetLong(UBYTE *,UWORD *,WORD *);
+extern int    GetLong(UBYTE *,UWORD *,WORD *);
 extern WORD   GetMoreTerms(WORD *);
-extern WORD   GetMoreFromMem(WORD *,WORD **);
+extern int    GetMoreFromMem(WORD *,WORD **);
 extern WORD   GetOneTerm(PHEAD WORD *,FILEHANDLE *,POSITION *,int);
 extern RENUMBER GetTable(WORD,POSITION *,WORD);
 extern WORD   GetTerm(PHEAD WORD *);
-extern WORD   Glue(PHEAD WORD *,WORD *,WORD *,WORD);
-extern WORD   InFunction(PHEAD WORD *,WORD *);
-extern VOID   IniLine(WORD);
-extern WORD   IniVars(VOID);
-extern VOID   Initialize(VOID);
-extern WORD   InsertTerm(PHEAD WORD *,WORD,WORD,WORD *,WORD *,WORD);
-extern VOID   LongToLine(UWORD *,WORD);
-extern WORD   MakeDirty(WORD *,WORD *,WORD);
-extern VOID   MarkDirty(WORD *,WORD);
-extern VOID   PolyFunDirty(PHEAD WORD *);
-extern VOID   PolyFunClean(PHEAD WORD *);
-extern WORD   MakeModTable(VOID);
-extern WORD   MatchE(PHEAD WORD *,WORD *,WORD *,WORD);
+extern int    Glue(PHEAD WORD *,WORD *,WORD *,WORD);
+extern int    InFunction(PHEAD WORD *,WORD *);
+extern void   IniLine(WORD);
+extern void   IniVars(void);
+extern int    InsertTerm(PHEAD WORD *,WORD,WORD,WORD *,WORD *,WORD);
+extern void   LongToLine(UWORD *,WORD);
+extern int    MakeDirty(WORD *,WORD *,WORD);
+extern void   MarkDirty(WORD *,WORD);
+extern void   PolyFunDirty(PHEAD WORD *);
+extern void   PolyFunClean(PHEAD WORD *);
+extern int    MakeModTable(void);
+extern int    MatchE(PHEAD WORD *,WORD *,WORD *,WORD);
 extern int    MatchCy(PHEAD WORD *,WORD *,WORD *,WORD);
 extern int    FunMatchCy(PHEAD WORD *,WORD *,WORD *,WORD);
 extern int    FunMatchSy(PHEAD WORD *,WORD *,WORD *,WORD);
 extern int    MatchArgument(PHEAD WORD *,WORD *);
-extern WORD   MatchFunction(PHEAD WORD *,WORD *,WORD *);
-extern WORD   MergePatches(WORD);
-extern WORD   MesCerr(char *, UBYTE *);
-extern WORD   MesComp(char *, UBYTE *, UBYTE *);
-extern WORD   Modulus(WORD *);
-extern VOID   MoveDummies(PHEAD WORD *,WORD);
-extern WORD   MulLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   MulRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern WORD   Mully(PHEAD UWORD *,WORD *,UWORD *,WORD);
-extern WORD   MultDo(PHEAD WORD *,WORD *);
-extern WORD   NewSort(PHEAD0);
-extern WORD   ExtraSymbol(WORD,WORD,WORD,WORD *,WORD *);
-extern WORD   Normalize(PHEAD WORD *);
-extern WORD   BracketNormalize(PHEAD WORD *);
-extern VOID   DropCoefficient(PHEAD WORD *);
-extern VOID   DropSymbols(PHEAD WORD *);
+extern int    MatchFunction(PHEAD WORD *,WORD *,WORD *);
+extern int    MergePatches(WORD);
+extern int    MesCerr(char *, UBYTE *);
+extern int    MesComp(char *, UBYTE *, UBYTE *);
+extern int    Modulus(WORD *);
+extern void   MoveDummies(PHEAD WORD *,WORD);
+extern int    MulLong(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    MulRat(PHEAD UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern int    Mully(PHEAD UWORD *,WORD *,UWORD *,WORD);
+extern int    MultDo(PHEAD WORD *,WORD *);
+extern int    NewSort(PHEAD0);
+extern int    ExtraSymbol(WORD,WORD,WORD,WORD *,WORD *);
+extern int    Normalize(PHEAD WORD *);
+extern int    BracketNormalize(PHEAD WORD *);
+extern void   DropCoefficient(PHEAD WORD *);
+extern void   DropSymbols(PHEAD WORD *);
 extern int    PutInside(PHEAD WORD *, WORD *);
-extern WORD   OpenTemp(VOID);
-extern VOID   Pack(UWORD *,WORD *,UWORD *,WORD );
+extern void   OpenTemp(void);
+extern void   Pack(UWORD *,WORD *,UWORD *,WORD );
 extern LONG   PasteFile(PHEAD WORD,WORD *,POSITION *,WORD **,RENUMBER,WORD *,WORD);
-extern WORD   Permute(PERM *,WORD);
-extern WORD   PermuteP(PERMP *,WORD);
-extern WORD   PolyFunMul(PHEAD WORD *);
-extern WORD   PopVariables(VOID);
-extern WORD   PrepPoly(PHEAD WORD *,WORD);
-extern WORD   Processor(VOID);
-extern WORD   Product(UWORD *,WORD *,WORD);
-extern VOID   PrtLong(UWORD *,WORD,UBYTE *);
-extern VOID   PrtTerms(VOID);
+extern int    Permute(PERM *,WORD);
+extern int    PermuteP(PERMP *,WORD);
+extern int    PolyFunMul(PHEAD WORD *);
+extern int    PopVariables(void);
+extern int    PrepPoly(PHEAD WORD *,WORD);
+extern int    Processor(void);
+extern int    Product(UWORD *,WORD *,WORD);
+extern void   PrtLong(UWORD *,WORD,UBYTE *);
+extern void   PrtTerms(void);
 extern void   PrintDeprecation(const char *,const char *);
-extern VOID   PrintRunningTime(VOID);
-extern LONG   GetRunningTime(VOID);
-extern WORD   PutBracket(PHEAD WORD *);
+extern void   PrintFeatureList(void);
+extern void   PrintRunningTime(void);
+extern LONG   GetRunningTime(void);
+extern int    PutBracket(PHEAD WORD *);
 extern LONG   PutIn(FILEHANDLE *,POSITION *,WORD *,WORD **,int);
-extern WORD   PutInStore(INDEXENTRY *,WORD);
+extern int    PutInStore(INDEXENTRY *,WORD);
 extern WORD   PutOut(PHEAD WORD *,POSITION *,FILEHANDLE *,WORD);
 extern UWORD  Quotient(UWORD *,WORD *,WORD);
-extern WORD   RaisPow(PHEAD UWORD *,WORD *,UWORD);
-extern VOID   RaisPowCached (PHEAD WORD, WORD, UWORD **, WORD *);
+extern int    RaisPow(PHEAD UWORD *,WORD *,UWORD);
+extern void   RaisPowCached (PHEAD WORD, WORD, UWORD **, WORD *);
 extern WORD   RaisPowMod (WORD, WORD, WORD);
 extern int    NormalModulus(UWORD *,WORD *);
-extern int    MakeInverses(VOID);
+extern int    MakeInverses(void);
 extern int    GetModInverses(WORD,WORD,WORD *,WORD *);
 extern int    GetLongModInverses(PHEAD UWORD *, WORD, UWORD *, WORD, UWORD *, WORD *, UWORD *, WORD *);
-extern VOID   RatToLine(UWORD *,WORD);
-extern WORD   RatioFind(PHEAD WORD *,WORD *);
-extern WORD   RatioGen(PHEAD WORD *,WORD *,WORD,WORD);
+extern void   RatToLine(UWORD *,WORD);
+extern int    RatioFind(PHEAD WORD *,WORD *);
+extern int    RatioGen(PHEAD WORD *,WORD *,WORD,WORD);
 extern WORD   ReNumber(PHEAD WORD *);
 extern WORD   ReadSnum(UBYTE **);
 extern WORD   Remain10(UWORD *,WORD *);
 extern WORD   Remain4(UWORD *,WORD *);
-extern WORD   ResetScratch(VOID);
-extern WORD   ResolveSet(PHEAD WORD *,WORD *,WORD *);
-extern WORD   RevertScratch(VOID);
-extern WORD   ScanFunctions(PHEAD WORD *,WORD *,WORD);
-extern VOID   SeekScratch(FILEHANDLE *,POSITION *);
-extern VOID   SetEndScratch(FILEHANDLE *,POSITION *);
-extern VOID   SetEndHScratch(FILEHANDLE *,POSITION *);
-extern WORD   SetFileIndex(VOID);
-extern WORD   Sflush(FILEHANDLE *);
-extern WORD   Simplify(PHEAD UWORD *,WORD *,UWORD *,WORD *);
-extern WORD   SortWild(WORD *,WORD);
-extern FILE  *LocateBase(char **,char **);
+extern int    ResetScratch(void);
+extern int    ResolveSet(PHEAD WORD *,WORD *,WORD *);
+extern int    RevertScratch(void);
+extern int    ScanFunctions(PHEAD WORD *,WORD *,WORD);
+extern void   SeekScratch(FILEHANDLE *,POSITION *);
+extern void   SetEndScratch(FILEHANDLE *,POSITION *);
+extern void   SetEndHScratch(FILEHANDLE *,POSITION *);
+extern int    SetFileIndex(void);
+extern int    Sflush(FILEHANDLE *);
+extern int    Simplify(PHEAD UWORD *,WORD *,UWORD *,WORD *);
+extern int    SortWild(WORD *,WORD);
+extern FILE  *LocateBase(char **,char **,char *);
 extern LONG   SplitMerge(PHEAD WORD **,LONG);
-extern WORD   StoreTerm(PHEAD WORD *);
-extern VOID   SubPLon(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
-extern VOID   Substitute(PHEAD WORD *,WORD *,WORD);
-extern WORD   SymFind(PHEAD WORD *,WORD *);
-extern WORD   SymGen(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    StoreTerm(PHEAD WORD *);
+extern void   SubPLon(UWORD *,WORD,UWORD *,WORD,UWORD *,WORD *);
+extern void   Substitute(PHEAD WORD *,WORD *,WORD);
+extern int    SymFind(PHEAD WORD *,WORD *);
+extern int    SymGen(PHEAD WORD *,WORD *,WORD,WORD);
 extern WORD   Symmetrize(PHEAD WORD *,WORD *,WORD,WORD,WORD);
 extern int    FullSymmetrize(PHEAD WORD *,int);
-extern WORD   TakeModulus(UWORD *,WORD *,UWORD *,WORD,WORD);
-extern WORD   TakeNormalModulus(UWORD *,WORD *,UWORD *,WORD,WORD);
-extern VOID   TalToLine(UWORD);
-extern WORD   TenVec(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   TenVecFind(PHEAD WORD *,WORD *);
-extern WORD   TermRenumber(WORD *,RENUMBER,WORD);
-extern VOID   TestDrop(VOID);
-extern VOID   PutInVflags(WORD);
-extern WORD   TestMatch(PHEAD WORD *,WORD *);
+extern int    TakeModulus(UWORD *,WORD *,UWORD *,WORD,WORD);
+extern int    TakeNormalModulus(UWORD *,WORD *,UWORD *,WORD,WORD);
+extern void   TalToLine(UWORD);
+extern int    TenVec(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    TenVecFind(PHEAD WORD *,WORD *);
+extern int    TermRenumber(WORD *,RENUMBER,WORD);
+extern void   TestDrop(void);
+extern void   PutInVflags(WORD);
+extern int    TestMatch(PHEAD WORD *,WORD *);
 extern WORD   TestSub(PHEAD WORD *,WORD);
 extern LONG   TimeCPU(WORD);
 extern LONG   TimeElapsed(WORD);
@@ -731,66 +730,65 @@ extern LONG   TimeWallClock(WORD);
 extern LONG   Timer(int);
 extern int    GetTimerInfo(LONG **,LONG **);
 extern void   WriteTimerInfo(LONG *,LONG *);
-extern LONG   GetWorkerTimes(VOID);
-extern WORD   ToStorage(EXPRESSIONS,POSITION *);
-extern VOID   TokenToLine(UBYTE *);
-extern WORD   Trace4(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   Trace4Gen(PHEAD TRACES *,WORD);
-extern WORD   Trace4no(WORD,WORD *,TRACES *);
-extern WORD   TraceFind(PHEAD WORD *,WORD *);
-extern WORD   TraceN(PHEAD WORD *,WORD *,WORD,WORD);
-extern WORD   TraceNgen(PHEAD TRACES *,WORD);
+extern LONG   GetWorkerTimes(void);
+extern int    ToStorage(EXPRESSIONS,POSITION *);
+extern void   TokenToLine(UBYTE *);
+extern int    Trace4(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    Trace4Gen(PHEAD TRACES *,WORD);
+extern int    Trace4no(WORD,WORD *,TRACES *);
+extern int    TraceFind(PHEAD WORD *,WORD *);
+extern int    TraceN(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    TraceNgen(PHEAD TRACES *,WORD);
 extern WORD   TraceNno(WORD,WORD *,TRACES *);
-extern WORD   Traces(PHEAD WORD *,WORD *,WORD,WORD);
+extern int    Traces(PHEAD WORD *,WORD *,WORD,WORD);
 extern WORD   Trick(WORD *,TRACES *);
-extern WORD   TryDo(PHEAD WORD *,WORD *,WORD);
-extern VOID   UnPack(UWORD *,WORD,WORD *,WORD *);
-extern WORD   VarStore(UBYTE *,WORD,WORD,WORD);
+extern int    TryDo(PHEAD WORD *,WORD *,WORD);
+extern void   UnPack(UWORD *,WORD,WORD *,WORD *);
+extern int    VarStore(UBYTE *,WORD,WORD,WORD);
 extern WORD   WildFill(PHEAD WORD *,WORD *,WORD *);
-extern WORD   WriteAll(VOID);
-extern WORD   WriteOne(UBYTE *,int,int,WORD);
-extern VOID   WriteArgument(WORD *);
-extern WORD   WriteExpression(WORD *,LONG);
-extern WORD   WriteInnerTerm(WORD *,WORD);
-extern VOID   WriteLists(VOID);
-extern VOID   WriteSetup(VOID);
-extern VOID   WriteStats(POSITION *,WORD,WORD);
-extern WORD   WriteSubTerm(WORD *,WORD);
-extern WORD   WriteTerm(WORD *,WORD *,WORD,WORD,WORD);
-extern WORD   execarg(PHEAD WORD *,WORD);
-extern WORD   execterm(PHEAD WORD *,WORD);
-extern VOID   SpecialCleanup(PHEAD0);
-extern void   SetMods(VOID);
-extern void   UnSetMods(VOID);
+extern int    WriteAll(void);
+extern int    WriteOne(UBYTE *,int,int,WORD);
+extern void   WriteArgument(WORD *);
+extern int    WriteExpression(WORD *,LONG);
+extern int    WriteInnerTerm(WORD *,WORD);
+extern void   WriteLists(void);
+extern void   WriteSetup(void);
+extern void   WriteStats(POSITION *,WORD,WORD);
+extern int    WriteSubTerm(WORD *,WORD);
+extern int    WriteTerm(WORD *,WORD *,WORD,WORD,WORD);
+extern int    execarg(PHEAD WORD *,WORD);
+extern int    execterm(PHEAD WORD *,WORD);
+extern void   SpecialCleanup(PHEAD0);
+extern void   SetMods(void);
+extern void   UnSetMods(void);
  
 /*---------------------------------------------------------------------*/
 
-extern WORD   DoExecute(WORD,WORD);
-extern VOID   SetScratch(FILEHANDLE *,POSITION *);
-extern VOID   Warning(char *);
-extern VOID   HighWarning(char *);
+extern int    DoExecute(WORD,WORD);
+extern void   SetScratch(FILEHANDLE *,POSITION *);
+extern void   Warning(char *);
+extern void   HighWarning(char *);
 extern int    SpareTable(TABLES);
 
 extern UBYTE *strDup1(UBYTE *,char *);
-extern VOID  *Malloc(LONG);
-extern VOID  *Malloc1(LONG,const char *);
+extern void  *Malloc1(LONG,const char *);
 extern int    DoTail(int,UBYTE **);
-extern int    OpenInput(VOID);
+extern int    OpenInput(void);
 extern int    PutPreVar(UBYTE *,UBYTE *,UBYTE *,int);
-extern VOID   Error0(char *);
-extern VOID   Error1(char *,UBYTE *);
-extern VOID   Error2(char *,char *,UBYTE *);
+extern void   Error0(char *);
+extern void   Error1(char *,UBYTE *);
+extern void   Error2(char *,char *,UBYTE *);
 extern UBYTE  ReadFromStream(STREAM *);
 extern UBYTE  GetFromStream(STREAM *);
 extern UBYTE  LookInStream(STREAM *);
 extern STREAM *OpenStream(UBYTE *,int,int,int);
 extern int    LocateFile(UBYTE **,int);
 extern STREAM *CloseStream(STREAM *);
-extern VOID   PositionStream(STREAM *,LONG);
+extern void   PositionStream(STREAM *,LONG);
 extern int    ReverseStatements(STREAM *);
 extern int    ProcessOption(UBYTE *,UBYTE *,int);
-extern int    DoSetups(VOID);
-extern VOID   Terminate(int);
+extern int    DoSetups(void);
+extern void   TerminateImpl(int, const char *,int, const char *) NORETURN;
 extern NAMENODE *GetNode(NAMETREE *,UBYTE *);
 extern int    AddName(NAMETREE *,UBYTE *,WORD,WORD,int *);
 extern int    GetName(NAMETREE *,UBYTE *,WORD *,int);
@@ -801,13 +799,13 @@ extern int    GetAutoName(UBYTE *,WORD *);
 extern int    GetVar(UBYTE *,WORD *,WORD *,int,int);
 extern int    MakeDubious(NAMETREE *,UBYTE *,WORD *);
 extern int    GetOName(NAMETREE *,UBYTE *,WORD *,int);
-extern VOID   DumpTree(NAMETREE *);
-extern VOID   DumpNode(NAMETREE *,WORD,WORD);
-extern VOID   LinkTree(NAMETREE *,WORD,WORD);
-extern VOID   CopyTree(NAMETREE *,NAMETREE *,WORD,WORD);
+extern void   DumpTree(NAMETREE *);
+extern void   DumpNode(NAMETREE *,WORD,WORD);
+extern void   LinkTree(NAMETREE *,WORD,WORD);
+extern void   CopyTree(NAMETREE *,NAMETREE *,WORD,WORD);
 extern int    CompactifyTree(NAMETREE *,WORD);
-extern NAMETREE *MakeNameTree(VOID);
-extern VOID   FreeNameTree(NAMETREE *);
+extern NAMETREE *MakeNameTree(void);
+extern void   FreeNameTree(NAMETREE *);
 extern int    AddExpression(UBYTE *,int,int);
 extern int    AddSymbol(UBYTE *,int,int,int,int);
 extern int    AddDollar(UBYTE *,WORD,WORD *,LONG);
@@ -830,33 +828,33 @@ extern int    OpenAddFile(char *);
 extern int    ReOpenFile(char *);
 extern int    CreateFile(char *);
 extern int    CreateLogFile(char *);
-extern VOID   CloseFile(int);
+extern void   CloseFile(int);
 extern int    CopyFile(char *, char *);
-extern int    CreateHandle(VOID);
+extern int    CreateHandle(void);
 extern LONG   ReadFile(int,UBYTE *,LONG);
 extern LONG   ReadPosFile(PHEAD FILEHANDLE *,UBYTE *,LONG,POSITION *);
 extern LONG   WriteFileToFile(int,UBYTE *,LONG);
-extern VOID   SeekFile(int,POSITION *,int);
+extern void   SeekFile(int,POSITION *,int);
 extern LONG   TellFile(int);
 extern void   FlushFile(int);
 extern int    GetPosFile(int,fpos_t *);
 extern int    SetPosFile(int,fpos_t *);
-extern VOID   SynchFile(int);
-extern VOID   TruncateFile(int);
+extern void   SynchFile(int);
+extern void   TruncateFile(int);
 extern int    GetChannel(char *,int);
 extern int    GetAppendChannel(char *);
 extern int    CloseChannel(char *);
-extern VOID   inictable(VOID);
+extern void   inictable(void);
 extern KEYWORD *findcommand(UBYTE *);
-extern int    inicbufs(VOID);
-extern VOID   StartFiles(VOID);
-extern UBYTE *MakeDate(VOID);
-extern VOID   PreProcessor(VOID);
-extern VOID  *FromList(LIST *);
-extern VOID  *From0List(LIST *);
-extern VOID  *FromVarList(LIST *);
-extern int    DoubleList(VOID ***,int *,int,char *);
-extern int    DoubleLList(VOID ***,LONG *,int,char *);
+extern int    inicbufs(void);
+extern void   StartFiles(void);
+extern UBYTE *MakeDate(void);
+extern void   PreProcessor(void);
+extern void  *FromList(LIST *);
+extern void  *From0List(LIST *);
+extern void  *FromVarList(LIST *);
+extern int    DoubleList(void ***,int *,int,char *);
+extern int    DoubleLList(void ***,LONG *,int,char *);
 extern void   DoubleBuffer(void **,void **,int,char *);
 extern void   ExpandBuffer(void **,LONG *,int);
 extern LONG   iexp(LONG,int);
@@ -876,21 +874,21 @@ extern void   ToGeneral(WORD *,WORD *,WORD);
 extern WORD   ToPolyFunGeneral(PHEAD WORD *);
 extern int    ToFast(WORD *,WORD *);
 extern SETUPPARAMETERS *GetSetupPar(UBYTE *);
-extern int    RecalcSetups(VOID);
-extern int    AllocSetups(VOID);
+extern int    RecalcSetups(void);
+extern int    AllocSetups(void);
 extern SORTING *AllocSort(LONG,LONG,LONG,LONG,int,int,LONG,int);
-extern VOID   AllocSortFileName(SORTING *);
+extern void   AllocSortFileName(SORTING *);
 extern UBYTE *LoadInputFile(UBYTE *,int);
-extern UBYTE  GetInput(VOID);
-extern VOID   ClearPushback(VOID);
+extern UBYTE  GetInput(void);
+extern void   ClearPushback(void);
 extern UBYTE  GetChar(int);
-extern VOID   CharOut(UBYTE);
-extern VOID   UnsetAllowDelay(VOID);
-extern VOID   PopPreVars(int);
-extern VOID   IniModule(int);
-extern VOID   IniSpecialModule(int);
+extern void   CharOut(UBYTE);
+extern void   UnsetAllowDelay(void);
+extern void   PopPreVars(int);
+extern void   IniModule(int);
+extern void   IniSpecialModule(int);
 extern int    ModuleInstruction(int *,int *);
-extern int    PreProInstruction(VOID);
+extern int    PreProInstruction(void);
 extern int    LoadInstruction(int);
 extern int    LoadStatement(int);
 extern KEYWORD *FindKeyWord(UBYTE *,KEYWORD *,int);
@@ -936,7 +934,7 @@ extern int    DoPreShow(UBYTE *);
 extern int    DoPreExchange(UBYTE *);
 extern int    DoSystem(UBYTE *);
 extern int    DoPipe(UBYTE *);
-extern VOID   StartPrepro(VOID);
+extern void   StartPrepro(void);
 extern int    DoIfdef(UBYTE *,int);
 extern int    DoIfydef(UBYTE *);
 extern int    DoIfndef(UBYTE *);
@@ -963,12 +961,12 @@ extern int    DoPreSortReallocate(UBYTE *);
 extern int    DoCommentChar(UBYTE *);
 extern int    DoPrcExtension(UBYTE *);
 extern int    DoPreReset(UBYTE *);
-extern VOID   WriteString(int,UBYTE *,int);
-extern VOID   WriteUnfinString(int,UBYTE *,int);
+extern void   WriteString(int,UBYTE *,int);
+extern void   WriteUnfinString(int,UBYTE *,int);
 extern UBYTE *AddToString(UBYTE *,UBYTE *,int);
-extern UBYTE *PreCalc(VOID);
+extern UBYTE *PreCalc(void);
 extern UBYTE *PreEval(UBYTE *,LONG *);
-extern VOID   NumToStr(UBYTE *,LONG);
+extern void   NumToStr(UBYTE *,LONG);
 extern int    PreCmp(int,int,UBYTE *,int,int,UBYTE *,int);
 extern int    PreEq(int,int,UBYTE *,int,int,UBYTE *,int);
 extern UBYTE *pParseObject(UBYTE *,int *,LONG *);
@@ -977,38 +975,38 @@ extern int    EvalPreIf(UBYTE *);
 extern int    PreLoad(PRELOAD *,UBYTE *,UBYTE *,int,char *);
 extern int    PreSkip(UBYTE *,UBYTE *,int);
 extern UBYTE *EndOfToken(UBYTE *);
-extern VOID   SetSpecialMode(int,int);
-extern VOID   MakeGlobal(VOID);
+extern void   SetSpecialMode(int,int);
+extern void   MakeGlobal(void);
 extern int    ExecModule(int);
-extern int    ExecStore(VOID);
-extern VOID   FullCleanUp(VOID);
-extern int    DoExecStatement(VOID);
-extern int    DoPipeStatement(VOID);
+extern int    ExecStore(void);
+extern void   FullCleanUp(void);
+extern int    DoExecStatement(void);
+extern int    DoPipeStatement(void);
 extern int    DoPolyfun(UBYTE *);
 extern int    DoPolyratfun(UBYTE *);
 extern int    CompileStatement(UBYTE *);
 extern UBYTE *ToToken(UBYTE *);
 extern int    GetDollar(UBYTE *);
-extern int    MesWork(VOID);
+extern void   MesWork(void) NORETURN;
 extern int    MesPrint(const char *,...);
 extern int    MesCall(char *);
 extern UBYTE *NumCopy(WORD,UBYTE *);
 extern char  *LongCopy(LONG,char *);
 extern char  *LongLongCopy(off_t *,char *);
-extern VOID   ReserveTempFiles(int);
-extern VOID   PrintTerm(WORD *,char *);
-extern VOID   PrintTermC(WORD *,char *);
-extern VOID   PrintSubTerm(WORD *,char *);
-extern VOID   PrintWords(WORD *,LONG);
+extern void   ReserveTempFiles(int);
+extern void   PrintTerm(WORD *,char *);
+extern void   PrintTermC(WORD *,char *);
+extern void   PrintSubTerm(WORD *,char *);
+extern void   PrintWords(WORD *,LONG);
 extern void   PrintSeq(WORD *,char *);
 extern int    ExpandTripleDots(int);
 extern LONG   ComPress(WORD **,LONG *);
-extern VOID   StageSort(FILEHANDLE *);
+extern void   StageSort(FILEHANDLE *);
 
 #define M_alloc(x)      malloc((size_t)(x))
 
-extern void   M_free(VOID *,const char *);
-extern void   ClearWildcardNames(VOID);
+extern void   M_free(void *,const char *);
+extern void   ClearWildcardNames(void);
 extern int    AddWildcardName(UBYTE *);
 extern int    GetWildcardName(UBYTE *);
 extern void   Globalize(int);
@@ -1021,7 +1019,7 @@ extern WORD  *AddLHS(int);
 extern WORD  *AddRHS(int,int);
 extern int    AddNtoL(int,WORD *);
 extern int    AddNtoC(int,int,WORD *,int);
-extern VOID   DoubleIfBuffers(VOID);
+extern void   DoubleIfBuffers(void);
 extern STREAM *CreateStream(UBYTE *);
 
 extern int    setonoff(UBYTE *,int *,int,int);
@@ -1036,7 +1034,7 @@ extern WORD  *TakeArgContent(PHEAD WORD *, WORD *);
 extern WORD  *MakeInteger(PHEAD WORD *,WORD *,WORD *);
 extern WORD  *MakeMod(PHEAD WORD *,WORD *,WORD *);
 extern WORD   FindArg(PHEAD WORD *);
-extern WORD   InsertArg(PHEAD WORD *,WORD *,int);
+extern int    InsertArg(PHEAD WORD *,WORD *,int);
 extern int    CleanupArgCache(PHEAD WORD);
 extern int    ArgSymbolMerge(WORD *, WORD *);
 extern int    ArgDotproductMerge(WORD *, WORD *);
@@ -1136,7 +1134,6 @@ extern int    CoOn(UBYTE *);
 extern int    CoOnce(UBYTE *);
 extern int    CoOnly(UBYTE *);
 extern int    CoOptimizeOption(UBYTE *);
-extern int    CoOptimize(UBYTE *);
 extern int    CoPolyFun(UBYTE *);
 extern int    CoPolyRatFun(UBYTE *);
 extern int    CoPrint(UBYTE *);
@@ -1158,6 +1155,7 @@ extern int    CoPushHide(UBYTE *);
 extern int    CoPopHide(UBYTE *);
 extern int    CoHide(UBYTE *);
 extern int    CoIntoHide(UBYTE *);
+extern int    CoNoIntoHide(UBYTE *);
 extern int    CoNoHide(UBYTE *);
 extern int    CoUnHide(UBYTE *);
 extern int    CoNoUnHide(UBYTE *);
@@ -1224,7 +1222,7 @@ extern int    simp4token(SBYTE *);
 extern int    simp5token(SBYTE *,int);
 extern int    simp6token(SBYTE *,int);
 extern UBYTE *SkipAName(UBYTE *);
-extern int    TestTables(VOID);
+extern int    TestTables(void);
 extern int    GetLabel(UBYTE *);
 extern int    CoIdExpression(UBYTE *,int);
 extern int    CoAssign(UBYTE *);
@@ -1275,29 +1273,11 @@ extern int    GetDolNum(PHEAD WORD *, WORD *);
 extern void   AddPotModdollar(WORD);
  
 extern int    Optimize(WORD, int);
-extern int    ClearOptimize(VOID);
-extern int    LoadOpti(WORD);
-extern int    PutObject(WORD *,int);
-extern void   CleanOptiBuffer(VOID);
-extern int    PrintOptima(WORD);
-extern int    FindScratchName(VOID);
-extern WORD   MaxPowerOpti(LONG);
-extern WORD   HuntNumFactor(LONG,WORD *,int);
-extern WORD   HuntFactor(LONG,WORD *,int);
-extern void   HuntPairs(LONG,WORD);
-extern void   HuntBrackets(LONG);
-extern int    AddToOpti(WORD *,int);
-extern LONG   TestNewSca(LONG,WORD *,WORD *);
-extern void   NormOpti(WORD *);
-extern void   SortOpti(LONG);
-extern void   SplitOpti(WORD **,LONG);
-extern void   CombiOpti(VOID);
+extern int    ClearOptimize(void);
 extern int    TakeLongRoot(UWORD *,WORD *,WORD);
 extern int    TakeRatRoot(UWORD *,WORD *,WORD);
 extern int    MakeRational(WORD ,WORD , WORD *, WORD *);
 extern int    MakeLongRational(PHEAD UWORD *,WORD ,UWORD *,WORD ,UWORD *,WORD *);
-extern void   HuntPowers(LONG,WORD);
-extern void   HuntNumBrackets(LONG);
 extern void   ClearTableTree(TABLES);
 extern int    InsTableTree(TABLES,WORD *);
 extern void   RedoTableTree(TABLES,int);
@@ -1306,22 +1286,22 @@ extern void   finishcbuf(WORD);
 extern void   clearcbuf(WORD);
 extern void   CleanUpSort(int);
 extern FILEHANDLE *AllocFileHandle(WORD,char *);
-extern VOID   DeAllocFileHandle(FILEHANDLE *);
-extern VOID   LowerSortLevel(VOID);
+extern void   DeAllocFileHandle(FILEHANDLE *);
+extern void   LowerSortLevel(void);
 extern WORD  *PolyRatFunSpecial(PHEAD WORD *, WORD *);
-extern VOID   SimpleSplitMergeRec(WORD *,WORD,WORD *);
-extern VOID   SimpleSplitMerge(WORD *,WORD);
+extern void   SimpleSplitMergeRec(WORD *,WORD,WORD *);
+extern void   SimpleSplitMerge(WORD *,WORD);
 extern WORD   BinarySearch(WORD *,WORD,WORD);
 extern int    InsideDollar(PHEAD WORD *,WORD);
 extern DOLLARS DolToTerms(PHEAD WORD);
 extern WORD   EvalDoLoopArg(PHEAD WORD *,WORD);
 extern int    SetExprCases(int,int,int);
 extern int    TestSelect(WORD *,WORD *);
-extern VOID   SubsInAll(PHEAD0);
-extern VOID   TransferBuffer(int,int,int);
+extern void   SubsInAll(PHEAD0);
+extern void   TransferBuffer(int,int,int);
 extern int    TakeIDfunction(PHEAD WORD *);
-extern int    MakeSetupAllocs(VOID);
-extern int    TryFileSetups(VOID);
+extern int    MakeSetupAllocs(void);
+extern int    TryFileSetups(void);
 extern void   ExchangeExpressions(int,int);
 extern void   ExchangeDollars(int,int);
 extern int    GetFirstBracket(WORD *,int);
@@ -1338,16 +1318,16 @@ extern WORD   *TranslateExpression(UBYTE *);
 extern int    IsSetMember(WORD *,WORD);
 extern int    IsMultipleOf(WORD *,WORD *);
 extern int    TwoExprCompare(WORD *,WORD *,int);
-extern void   UpdatePositions(VOID);
-extern void   M_check(VOID);
-extern void   M_print(VOID);
-extern void   M_check1(VOID);
+extern void   UpdatePositions(void);
+extern void   M_check(void);
+extern void   M_print(void);
+extern void   M_check1(void);
 extern void   PrintTime(UBYTE *);
 
 extern POSITION *FindBracket(WORD,WORD *);
-extern VOID   PutBracketInIndex(PHEAD WORD *,POSITION *);
+extern void   PutBracketInIndex(PHEAD WORD *,POSITION *);
 extern void   ClearBracketIndex(WORD);
-extern VOID   OpenBracketIndex(WORD);
+extern void   OpenBracketIndex(WORD);
 extern int    DoNoParallel(UBYTE *);
 extern int    DoParallel(UBYTE *);
 extern int    DoModSum(UBYTE *);
@@ -1367,10 +1347,10 @@ extern int    ArgumentExplode(PHEAD WORD *,WORD *);
 extern int    DenToFunction(WORD *,WORD);
  
 extern WORD   HowMany(PHEAD WORD *,WORD *);
-extern VOID   RemoveDollars(VOID);
+extern void   RemoveDollars(void);
 extern LONG   CountTerms1(PHEAD0);
 extern LONG   TermsInBracket(PHEAD WORD *,WORD);
-extern int    Crash(VOID);
+extern int    Crash(void);
 
 extern char  *str_dup(char *);
 extern void   convertblock(INDEXBLOCK *,INDEXBLOCK *,int);
@@ -1383,7 +1363,7 @@ extern int    WriteIndex(DBASE *);
 extern int    WriteIniInfo(DBASE *);
 extern int    ReadIniInfo(DBASE *);
 extern int    AddToIndex(DBASE *,MLONG);
-extern DBASE *GetDbase(char *);
+extern DBASE *GetDbase(char *,MLONG);
 extern DBASE *OpenDbase(char *);
 extern char  *ReadObject(DBASE *,MLONG,char *);
 extern char  *ReadijObject(DBASE *,MLONG,MLONG,char *);
@@ -1391,7 +1371,6 @@ extern int    ExistsObject(DBASE *,MLONG,char *);
 extern int    DeleteObject(DBASE *,MLONG,char *);
 extern int    WriteObject(DBASE *,MLONG,char *,char *,MLONG);
 extern MLONG  AddObject(DBASE *,MLONG,char *,char *);
-extern int    Cleanup(DBASE *);
 extern DBASE *NewDbase(char *,MLONG);
 extern void   FreeTableBase(DBASE *);
 extern int    ComposeTableNames(DBASE *);
@@ -1399,7 +1378,7 @@ extern int    PutTableNames(DBASE *);
 extern MLONG  AddTableName(DBASE *,char *,TABLES);
 extern MLONG  GetTableName(DBASE *,char *);
 extern MLONG  FindTableNumber(DBASE *,char *);
-extern int    TryEnvironment(VOID);
+extern int    TryEnvironment(void);
 
 #ifdef WITHZLIB
 extern int    SetupOutputGZIP(FILEHANDLE *);
@@ -1411,53 +1390,53 @@ extern void   ClearSortGZIP(FILEHANDLE *f);
 #endif
 
 #ifdef WITHPTHREADS
-extern VOID   BeginIdentities(VOID);
-extern int    WhoAmI(VOID);
+extern void   BeginIdentities(void);
+extern int    WhoAmI(void);
 extern int    StartAllThreads(int);
-extern void   StartHandleLock(VOID);
-extern VOID   TerminateAllThreads(VOID);
-extern int    GetAvailableThread(VOID);
-extern int    ConditionalGetAvailableThread(VOID);
+extern void   StartHandleLock(void);
+extern void   TerminateAllThreads(void);
+extern int    GetAvailableThread(void);
+extern int    ConditionalGetAvailableThread(void);
 extern int    BalanceRunThread(PHEAD int,WORD *,WORD);
 extern void   WakeupThread(int,int);
-extern int    MasterWait(VOID);
-extern int    InParallelProcessor(VOID);
+extern int    MasterWait(void);
+extern int    InParallelProcessor(void);
 extern int    ThreadsProcessor(EXPRESSIONS,WORD,WORD);
-extern int    MasterMerge(VOID);
+extern int    MasterMerge(void);
 extern int    PutToMaster(PHEAD WORD *);
-extern void   SetWorkerFiles(VOID);
+extern void   SetWorkerFiles(void);
 extern int    MakeThreadBuckets(int,int);
 extern int    SendOneBucket(int);
 extern int    LoadOneThread(int,int,THREADBUCKET *,int);
 extern void  *RunSortBot(void *);
-extern void   MasterWaitAllSortBots(VOID);
+extern void   MasterWaitAllSortBots(void);
 extern int    SortBotMerge(PHEAD0);
 extern int    SortBotOut(PHEAD WORD *);
-extern void   DefineSortBotTree(VOID);
-extern int    SortBotMasterMerge(VOID);
+extern void   DefineSortBotTree(void);
+extern int    SortBotMasterMerge(void);
 extern int    SortBotWait(int);
-extern void   StartIdentity(VOID);
+extern void   StartIdentity(void);
 extern void   FinishIdentity(void *);
 extern int    SetIdentity(int *);
 extern ALLPRIVATES *InitializeOneThread(int);
 extern void   FinalizeOneThread(int);
-extern void   ClearAllThreads(VOID);
+extern void   ClearAllThreads(void);
 extern void  *RunThread(void *);
 extern void   IAmAvailable(int);
 extern int    ThreadWait(int);
 extern int    ThreadClaimedBlock(int);
 extern int    GetThread(int);
 extern int    UpdateOneThread(int);
-extern void   MasterWaitAll(VOID);
-extern void   MasterWaitAllBlocks(VOID);
+extern void   MasterWaitAll(void);
+extern void   MasterWaitAllBlocks(void);
 extern int    MasterWaitThread(int);
 extern void   WakeupMasterFromThread(int,int);
-extern int    LoadReadjusted(VOID);
+extern int    LoadReadjusted(void);
 extern int    IniSortBlocks(int);
 extern int    UpdateSortBlocks(int);
 extern int    TreatIndexEntry(PHEAD LONG);
 extern WORD   GetTerm2(PHEAD WORD *);
-extern void	SetHideFiles(VOID);
+extern void   SetHideFiles(void);
 
 #endif
 
@@ -1475,11 +1454,11 @@ extern int    openExternalChannel(UBYTE *,int,UBYTE *,UBYTE *);
 extern int    initPresetExternalChannels(UBYTE *, int);
 extern int    closeExternalChannel(int);
 extern int    selectExternalChannel(int);
-extern int    getCurrentExternalChannel(VOID);
-extern VOID   closeAllExternalChannels(VOID);
+extern int    getCurrentExternalChannel(void);
+extern void   closeAllExternalChannels(void);
 
 typedef int (*WRITEBUFTOEXTCHANNEL)(char *,size_t);
-typedef int (*GETCFROMEXTCHANNEL)(VOID);
+typedef int (*GETCFROMEXTCHANNEL)(void);
 typedef int (*SETTERMINATORFOREXTERNALCHANNEL)(char *);
 typedef int (*SETKILLMODEFOREXTERNALCHANNEL)(int,int);
 typedef LONG (*WRITEFILE)(int,UBYTE *,LONG);
@@ -1495,15 +1474,15 @@ extern int    writeToChannel(int,UBYTE *,HANDLERS*);
 extern LONG   WriteToExternalChannel(int,UBYTE *,LONG);
 #endif
 extern int    writeBufToExtChannelOk(char *,size_t);
-extern int    getcFromExtChannelOk(VOID);
+extern int    getcFromExtChannelOk(void);
 extern int    setKillModeForExternalChannelOk(int,int);
 extern int    setTerminatorForExternalChannelOk(char *);
-extern int    getcFromExtChannelFailure(VOID);
+extern int    getcFromExtChannelFailure(void);
 extern int    setKillModeForExternalChannelFailure(int,int);
 extern int    setTerminatorForExternalChannelFailure(char *);
 extern int    writeBufToExtChannelFailure(char *,size_t);
 
-extern int    ReleaseTB(VOID);
+extern int    ReleaseTB(void);
 
 extern int    SymbolNormalize(WORD *);
 extern int    TestFunFlag(PHEAD WORD *);
@@ -1516,75 +1495,75 @@ extern UWORD  iranf(PHEAD UWORD);
 extern void   iniwranf(PHEAD0);
 extern UBYTE *PreRandom(UBYTE *);
 
-extern WORD *PolyNormPoly (PHEAD WORD);
+extern WORD  *PolyNormPoly(PHEAD WORD);
 extern WORD  *EvaluateGcd(PHEAD WORD *);
-extern int TreatPolyRatFun(PHEAD WORD *);
+extern int    TreatPolyRatFun(PHEAD WORD *);
 
-extern WORD   ReadSaveHeader(VOID);
-extern WORD   ReadSaveIndex(FILEINDEX *);
-extern WORD   ReadSaveExpression(UBYTE *,UBYTE *,LONG *,LONG *);
+extern int    ReadSaveHeader(void);
+extern LONG   ReadSaveIndex(FILEINDEX *);
+extern LONG   ReadSaveExpression(UBYTE *,UBYTE *,LONG *,LONG *);
 extern UBYTE *ReadSaveTerm32(UBYTE *,UBYTE *,UBYTE **,UBYTE *,UBYTE *,int);
-extern WORD   ReadSaveVariables(UBYTE *,UBYTE *,LONG *,LONG *,INDEXENTRY *,LONG *);
-extern WORD   WriteStoreHeader(WORD);
+extern LONG   ReadSaveVariables(UBYTE *,UBYTE *,LONG *,LONG *,INDEXENTRY *,LONG *);
+extern LONG   WriteStoreHeader(WORD);
 
-extern void   InitRecovery(VOID);
-extern int    CheckRecoveryFile(VOID);
-extern void   DeleteRecoveryFile(VOID);
-extern char  *RecoveryFilename(VOID);
+extern void   InitRecovery(void);
+extern int    CheckRecoveryFile(void);
+extern void   DeleteRecoveryFile(void);
+extern char  *RecoveryFilename(void);
 extern int    DoRecovery(int *);
 extern void   DoCheckpoint(int);
 
-extern VOID NumberMallocAddMemory(PHEAD0);
-extern VOID CacheNumberMallocAddMemory(PHEAD0);
-extern VOID TermMallocAddMemory(PHEAD0);
+extern void NumberMallocAddMemory(PHEAD0);
+extern void CacheNumberMallocAddMemory(PHEAD0);
+extern void TermMallocAddMemory(PHEAD0);
 #ifndef MEMORYMACROS
 extern WORD *TermMalloc2(PHEAD char *text);
-extern VOID TermFree2(PHEAD WORD *term,char *text);
+extern void TermFree2(PHEAD WORD *term,char *text);
 extern UWORD *NumberMalloc2(PHEAD char *text);
 extern UWORD *CacheNumberMalloc2(PHEAD char *text);
-extern VOID NumberFree2(PHEAD UWORD *NumberMem,char *text);
-extern VOID CacheNumberFree2(PHEAD UWORD *NumberMem,char *text);
+extern void NumberFree2(PHEAD UWORD *NumberMem,char *text);
+extern void CacheNumberFree2(PHEAD UWORD *NumberMem,char *text);
 #endif
 
 extern void ExprStatus(EXPRESSIONS);
-extern VOID iniTools(VOID);
+extern void iniTools(void);
 extern int TestTerm(WORD *);
 
-extern WORD RunTransform(PHEAD WORD *term, WORD *params);
-extern WORD RunEncode(PHEAD WORD *fun, WORD *args, WORD *info);
-extern WORD RunDecode(PHEAD WORD *fun, WORD *args, WORD *info);
-extern WORD RunReplace(PHEAD WORD *fun, WORD *args, WORD *info);
-extern WORD RunImplode(WORD *fun, WORD *args);
-extern WORD RunExplode(PHEAD WORD *fun, WORD *args);
+extern int RunTransform(PHEAD WORD *term, WORD *params);
+extern int RunEncode(PHEAD WORD *fun, WORD *args, WORD *info);
+extern int RunDecode(PHEAD WORD *fun, WORD *args, WORD *info);
+extern int RunReplace(PHEAD WORD *fun, WORD *args, WORD *info);
+extern int RunImplode(WORD *fun, WORD *args);
+extern int RunExplode(PHEAD WORD *fun, WORD *args);
 extern int TestArgNum(int n, int totarg, WORD *args);
 extern WORD PutArgInScratch(WORD *arg,UWORD *scrat);
 extern UBYTE *ReadRange(UBYTE *s, WORD *out, int par);
-extern int  FindRange(PHEAD WORD *,WORD *,WORD *,WORD);
-extern WORD RunPermute(PHEAD WORD *fun, WORD *args, WORD *info);
-extern WORD RunReverse(PHEAD WORD *fun, WORD *args);
-extern WORD RunCycle(PHEAD WORD *fun, WORD *args, WORD *info);
-extern WORD RunAddArg(PHEAD WORD *fun, WORD *args);
-extern WORD RunMulArg(PHEAD WORD *fun, WORD *args);
-extern WORD RunIsLyndon(PHEAD WORD *fun, WORD *args, int par);
+extern int FindRange(PHEAD WORD *,WORD *,WORD *,WORD);
+extern int RunPermute(PHEAD WORD *fun, WORD *args, WORD *info);
+extern int RunReverse(PHEAD WORD *fun, WORD *args);
+extern int RunCycle(PHEAD WORD *fun, WORD *args, WORD *info);
+extern int RunAddArg(PHEAD WORD *fun, WORD *args);
+extern int RunMulArg(PHEAD WORD *fun, WORD *args);
+extern int RunIsLyndon(PHEAD WORD *fun, WORD *args, int par);
 extern WORD RunToLyndon(PHEAD WORD *fun, WORD *args, int par);
-extern WORD RunDropArg(PHEAD WORD *fun, WORD *args);
-extern WORD RunSelectArg(PHEAD WORD *fun, WORD *args);
-extern WORD RunDedup(PHEAD WORD *fun, WORD *args);
-extern WORD RunZtoHArg(PHEAD WORD *fun, WORD *args);
-extern WORD RunHtoZArg(PHEAD WORD *fun, WORD *args);
+extern int RunDropArg(PHEAD WORD *fun, WORD *args);
+extern int RunSelectArg(PHEAD WORD *fun, WORD *args);
+extern int RunDedup(PHEAD WORD *fun, WORD *args);
+extern int RunZtoHArg(PHEAD WORD *fun, WORD *args);
+extern int RunHtoZArg(PHEAD WORD *fun, WORD *args);
 
 extern int NormPolyTerm(PHEAD WORD *);
 extern WORD ComparePoly(WORD *, WORD *, WORD);
 extern int ConvertToPoly(PHEAD WORD *, WORD *,WORD *,WORD);
 extern int LocalConvertToPoly(PHEAD WORD *, WORD *, WORD,WORD);
 extern int ConvertFromPoly(PHEAD WORD *, WORD *, WORD, WORD, WORD, WORD);
-extern WORD FindSubterm(WORD *);
-extern WORD FindLocalSubterm(PHEAD WORD *, WORD);
+extern int FindSubterm(WORD *);
+extern int FindLocalSubterm(PHEAD WORD *, WORD);
 extern void PrintSubtermList(int,int);
 extern void PrintExtraSymbol(int,WORD *,int);
-extern WORD FindSubexpression(WORD *);
+extern int FindSubexpression(WORD *);
 
-extern void UpdateMaxSize(VOID);
+extern void UpdateMaxSize(void);
 
 extern int CoToPolynomial(UBYTE *);
 extern int CoFromPolynomial(UBYTE *);
@@ -1597,19 +1576,13 @@ extern int CoEndDo(UBYTE *);
 extern int ExtraSymFun(PHEAD WORD *,WORD);
 extern int PruneExtraSymbols(WORD);
 extern int IniFbuffer(WORD);
-extern void IniFbufs(VOID);
+extern void IniFbufs(void);
 extern int GCDfunction(PHEAD WORD *,WORD);
 extern WORD *GCDfunction3(PHEAD WORD *,WORD *);
-extern WORD *GCDfunction4(PHEAD WORD *,WORD *);
 extern int ReadPolyRatFun(PHEAD WORD *);
 extern int FromPolyRatFun(PHEAD WORD *, WORD **, WORD **);
-extern void PRFnormalize(PHEAD WORD *);
-extern WORD *PRFadd(PHEAD WORD *, WORD *);
 extern WORD *PolyDiv(PHEAD WORD *,WORD *,char *);
-extern WORD *PolyGCD(PHEAD WORD *,WORD *);
-extern WORD *PolyAdd(PHEAD WORD *,WORD *);
 extern void GCDclean(PHEAD WORD *, WORD *);
-extern int RatFunNormalize(PHEAD WORD *);
 extern WORD *TakeSymbolContent(PHEAD WORD *,WORD *);
 extern int GCDterms(PHEAD WORD *,WORD *,WORD *);
 extern WORD *PutExtraSymbols(PHEAD WORD *,WORD,int *);
@@ -1640,13 +1613,28 @@ extern int   poly_factorize_expression(EXPRESSIONS);
 extern int   poly_unfactorize_expression(EXPRESSIONS);
 extern void  poly_free_poly_vars(PHEAD const char *);
 
-extern VOID optimize_print_code (int);
+#ifdef WITHFLINT
+extern void  flint_final_cleanup_thread(void);
+extern void  flint_final_cleanup_master(void);
+extern WORD* flint_div(PHEAD WORD *, WORD *, const WORD);
+extern int   flint_factorize_argument(PHEAD WORD *, WORD *);
+extern WORD* flint_factorize_dollar(PHEAD WORD *);
+extern WORD* flint_gcd(PHEAD WORD *, WORD *, const WORD);
+extern WORD* flint_inverse(PHEAD WORD *, WORD *);
+extern WORD* flint_mul(PHEAD WORD *, WORD *);
+extern WORD* flint_ratfun_add(PHEAD WORD *, WORD *);
+extern int   flint_ratfun_normalize(PHEAD WORD *);
+extern WORD* flint_rem(PHEAD WORD *, WORD *, const WORD);
+extern void  flint_check_version(void);
+#endif
+
+extern void optimize_print_code (int);
 
 #ifdef WITHPTHREADS
-extern void find_Horner_MCTS_expand_tree(VOID);
-extern void find_Horner_MCTS_expand_tree_threaded(VOID);
-extern void optimize_expression_given_Horner(VOID);
-extern void optimize_expression_given_Horner_threaded(VOID);
+extern void find_Horner_MCTS_expand_tree(void);
+extern void find_Horner_MCTS_expand_tree_threaded(void);
+extern void optimize_expression_given_Horner(void);
+extern void optimize_expression_given_Horner_threaded(void);
 #endif
  
 extern int DoPreAdd(UBYTE *s);
@@ -1654,18 +1642,17 @@ extern int DoPreUseDictionary(UBYTE *s);
 extern int DoPreCloseDictionary(UBYTE *s);
 extern int DoPreOpenDictionary(UBYTE *s);
 extern void RemoveDictionary(DICTIONARY *dict);
-extern void UnSetDictionary(VOID);
+extern void UnSetDictionary(void);
 extern int SetDictionaryOptions(UBYTE *options);
-extern int SelectDictionary(UBYTE *name,UBYTE *options);
 extern int AddToDictionary(DICTIONARY *dict,UBYTE *left,UBYTE *right);
 extern int AddDictionary(UBYTE *name);
 extern int FindDictionary(UBYTE *name);
-extern UBYTE *IsExponentSign(VOID);
-extern UBYTE *IsMultiplySign(VOID);
-extern VOID TransformRational(UWORD *a, WORD na);
+extern UBYTE *IsExponentSign(void);
+extern UBYTE *IsMultiplySign(void);
+extern void TransformRational(UWORD *a, WORD na);
 extern void WriteDictionary(DICTIONARY *);
 extern void ShrinkDictionary(DICTIONARY *);
-extern void MultiplyToLine(VOID);
+extern void MultiplyToLine(void);
 extern UBYTE *FindSymbol(WORD num);
 extern UBYTE *FindVector(WORD num);
 extern UBYTE *FindIndex(WORD num);
@@ -1682,12 +1669,9 @@ extern int CoCopySpectator(UBYTE *inp);
 extern int PutInSpectator(WORD *,WORD);
 extern void ClearSpectators(WORD);
 extern WORD GetFromSpectator(WORD *,WORD);
-extern void FlushSpectators(VOID);
+extern void FlushSpectators(void);
 
 extern WORD *PreGCD(PHEAD WORD *, WORD *,int);
-extern WORD *FindCommonVariables(PHEAD int,int);
-extern VOID AddToSymbolList(PHEAD WORD);
-extern int AddToListPoly(PHEAD0);
 extern int InvPoly(PHEAD WORD *,WORD,WORD);
 
 extern int ReadFromScratch(FILEHANDLE *,POSITION *,UBYTE *,POSITION *);
@@ -1699,9 +1683,9 @@ extern int DoPrePrependPath(UBYTE *);
 extern int DoSwitch(PHEAD WORD *, WORD *);
 extern int DoEndSwitch(PHEAD WORD *, WORD *);
 extern SWITCHTABLE *FindCase(WORD, WORD);
-extern VOID SwitchSplitMergeRec(SWITCHTABLE *, WORD, SWITCHTABLE *);
-extern VOID SwitchSplitMerge(SWITCHTABLE *, WORD);
-extern int DoubleSwitchBuffers(VOID);
+extern void SwitchSplitMergeRec(SWITCHTABLE *, WORD, SWITCHTABLE *);
+extern void SwitchSplitMerge(SWITCHTABLE *, WORD);
+extern int DoubleSwitchBuffers(void);
 
 extern int DistrN(int, int *, int, int *);
 
@@ -1712,7 +1696,6 @@ extern UBYTE *SkipName(UBYTE *);
 extern UBYTE *ConstructName(UBYTE *,UBYTE);
 extern int DoSetUserFlag(UBYTE *);
 extern int DoClearUserFlag(UBYTE *);
-extern int DoUserFlag(UBYTE *,int);
 
 VERTEX *CreateVertex(MODEL *);
 UBYTE *ReadParticle(UBYTE *, VERTEX *,MODEL *, int);
@@ -1728,38 +1711,42 @@ int CoCreateAllLoops(UBYTE *);
 int CoCreateAllPaths(UBYTE *);
 int CoCreateAll(UBYTE *);
 
-WORD AllLoops(PHEAD WORD *,WORD);
+int AllLoops(PHEAD WORD *,WORD);
 LONG StartLoops(PHEAD WORD *,WORD,LONG,WORD,WORD *,WORD,WORD *,WORD);
 LONG GenLoops(PHEAD WORD *,WORD,LONG,WORD,WORD *,WORD,WORD *,WORD);
 void LoopOutput(PHEAD WORD *,WORD,WORD *,WORD);
-WORD AllPaths(PHEAD WORD *,WORD);
+int AllPaths(PHEAD WORD *,WORD);
 LONG GenPaths(PHEAD WORD *,WORD,LONG,WORD,WORD *,WORD,WORD *,WORD);
 void PathOutput(PHEAD WORD *,WORD,WORD *,WORD);
 
 #ifdef WITHFLOAT
 int DoStartFloat(UBYTE *);
 int DoEndFloat(UBYTE *);
-void SetupMZVTables(VOID);
-void SetupMPFTables(VOID);
-void ClearMZVTables(VOID);
+int SetFloatPrecision(WORD);
+void SetupMZVTables(void);
+void SetupMPFTables(void);
+void ClearMZVTables(void);
 int EvaluateEuler(PHEAD WORD *,WORD,WORD);
-int EvaluateMZVhalf(PHEAD WORD *,WORD,WORD);
 int EvaluateSqrt(PHEAD WORD *,WORD,WORD);
 int CoEvaluate(UBYTE *);
 int PrintFloat(WORD *fun,int numdigits);
 int CoToRat(UBYTE *);
 int CoToFloat(UBYTE *);
+int CoChop(UBYTE *);
 int ToRat(PHEAD WORD *,WORD);
 int ToFloat(PHEAD WORD *,WORD);
+int Chop(PHEAD WORD *, WORD);
 WORD FloatFunToRat(PHEAD UWORD *,WORD *);
-WORD AddWithFloat(PHEAD WORD **,WORD **);
-WORD MergeWithFloat(PHEAD WORD **,WORD **);
-void ClearfFloat(VOID);
+int AddWithFloat(PHEAD WORD **,WORD **);
+int MergeWithFloat(PHEAD WORD **,WORD **);
+void ClearfFloat(void);
 int TestFloat(WORD *);
 SBYTE *ReadFloat(SBYTE *);
 UBYTE *CheckFloat(UBYTE *,int *);
 void SetfFloatPrecision(LONG);
 int EvaluateFun(PHEAD WORD *, WORD, WORD *);
+int CoStrictRounding(UBYTE *);
+int StrictRounding(PHEAD WORD *, WORD, WORD, WORD);
 #endif
 
 /*

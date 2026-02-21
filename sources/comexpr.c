@@ -7,7 +7,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -828,7 +828,7 @@ IllLeft:MesPrint("&Illegal LHS");
 		AN.RepPoint = AT.RepCount + 1;
         ow = (WORD *)(((UBYTE *)(AT.WorkPointer)) + AM.MaxTer);
 		mm = s; ww = ow; i = *mm;
-		while ( --i >= 0 ) *ww++ = *mm++; AT.WorkPointer = ww;
+		while ( --i >= 0 ) {*ww++ = *mm++;} AT.WorkPointer = ww;
 		AC.lhdollarflag = 0; oldEside = AR.Eside; AR.Eside = LHSIDE;
 		AR.Cnumlhs = C->numlhs;
 		AR.PolyFun = 0;

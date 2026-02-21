@@ -470,58 +470,8 @@ See also & functions (\ref{substafunctions}), nfunctions (\ref{substanfunctions}
 \noindent This statement declares commuting\index{commuting} 
 functions\index{functions!commuting}. The name of a 
 function can be followed by some information that specifies additional 
-properties of the preceding function. These can be (name indicates the 
-name of the function to be declared): \vspace{4mm}
-
-\leftvitem{4.1cm}{name{\hash}r}
-\rightvitem{12cm}{The function is considered to be a real\index{real} function (default).}
-
-\leftvitem{4.1cm}{name{\hash}c}
-\rightvitem{12cm}{The function is considered to be a complex\index{complex} function. This means 
-that internally two spaces are reserved. One for the variable name and one 
-for its complex conjugate name{\hash}.}
-
-\leftvitem{4.1cm}{name{\hash}i}
-\rightvitem{12cm}{The function is considered to be imaginary\index{imaginary}.}
-
-\leftvitem{4.1cm}{name(s[ymmetric])}
-\rightvitem{12cm}{The function is totally symmetric\index{symmetric}. This means that during 
-normalization {\FORM} will order the arguments according to its internal 
-notion of order by trying permutations. The result will depend on the order 
-of declaration of variables.}
-
-\leftvitem{4.1cm}{name(a[ntisymmetric])}
-\rightvitem{12cm}{The function is totally antisymmetric\index{antisymmetric}. This means that 
-during normalization {\FORM} will order the arguments according to its 
-internal notion of order and if the resulting permutation of arguments is 
-odd the coefficient of the term will change sign. The order will depend on 
-the order of declaration of variables.}
-
-\leftvitem{4.1cm}{name(c[yclesymmetric])}
-\rightvitem{12cm}{The function is cycle\index{cycle symmetric} symmetric in 
-all its arguments. This means that during normalization {\FORM} will order 
-the arguments according to its internal notion of order by trying cyclic 
-permutations. The result will depend on the order of declaration of 
-variables.}
-
-\leftvitem{4.1cm}{name(r[cyclesymmetric)
-
-name(r[cyclic])
-
-name(r[eversecyclic])}
-\rightvitem{12cm}{The function is reverse\index{reverse cycle symmetric} 
-cycle symmetric in all its arguments. This means that during normalization 
-{\FORM} will order the arguments according to its internal notion of order 
-by trying cyclic permutations and/or a complete reverse order of all 
-arguments. The result will depend on the order of declaration of 
-variables.}
-
-\noindent The complexity properties and the symmetric properties can be 
-combined. In that case the complexity properties should come first as in
-\begin{verbatim}
-    CFunction f1#i(antisymmetric);
-\end{verbatim}
-\vspace{10mm}
+properties of the preceding function, which are the same as
+those for functions (see \ref{substafunctions}). \vspace{10mm}
 
 %--#] cfunctions : 
 %--#[ chainin :
@@ -600,6 +550,18 @@ made to optimize with respect to the number of $\gamma_5$ matrices left.}
 more details, see chapter \ref{gammaalgebra} on gamma\index{gamma algebra} algebra. \vspace{10mm}
 
 %--#] chisholm : 
+%--#[ chop :
+\section{chop}
+\label{substaevaluate}
+
+\noindent \begin{tabular}{ll}
+Type & Executable statement\\
+Syntax & chop $<$threshold$>$; \\ 
+\end{tabular} \vspace{4mm}
+
+\noindent See chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] chop : 
 %--#[ cleartable :
 
 \section{cleartable}
@@ -826,11 +788,11 @@ the case, because there can be a complicated network of contracted indices.
 \label{substacopyspectator}
 
 \noindent \begin{tabular}{ll}
-Type & Executable statement\\
-Syntax & copyspectator {\tt<}exprname = spectator;{\tt>};
+Type & Definition statement\\
+Syntax & copyspectator {\tt<}exprname{\tt>} = {\tt<}spectator{\tt>};
 \end{tabular} \vspace{4mm}
 
-\noindent See chapter\ref{spectators} on spectators.
+\noindent See chapter~\ref{spectators} on spectators.
 \vspace{10mm}
 
 %--#] copyspectator : 
@@ -840,11 +802,11 @@ Syntax & copyspectator {\tt<}exprname = spectator;{\tt>};
 \label{substacreatespectator}
 
 \noindent \begin{tabular}{ll}
-Type & Executable statement\\
-Syntax & createspectator {\tt<}spectatorname, "filename";{\tt>};
+Type & Declaration statement\\
+Syntax & createspectator {\tt<}spectatorname{\tt>}, "{\tt<}filename{\tt>}";
 \end{tabular} \vspace{4mm}
 
-\noindent See chapter\ref{spectators} on spectators.
+\noindent See chapter~\ref{spectators} on spectators.
 \vspace{10mm}
 
 %--#] createspectator : 
@@ -1295,11 +1257,11 @@ statement. \vspace{10mm}
 \label{substaemptyspectator}
 
 \noindent \begin{tabular}{ll}
-Type & Executable statement\\
-Syntax & emptyspectator {\tt<}spectator;{\tt>};
+Type & Specification statement\\
+Syntax & emptyspectator {\tt<}spectator{\tt>};
 \end{tabular} \vspace{4mm}
 
-\noindent See chapter\ref{spectators} on spectators.
+\noindent See chapter~\ref{spectators} on spectators.
 \vspace{10mm}
 
 %--#] emptyspectator : 
@@ -1478,6 +1440,18 @@ statement and its corresponding endwhile\index{endwhile} statement must be part 
 module. \vspace{10mm}
 
 %--#] endwhile : 
+%--#[ evaluate :
+\section{evaluate}
+\label{substaevaluate}
+
+\noindent \begin{tabular}{ll}
+Type & Executable statement\\
+Syntax & evaluate [$<$function(s)$>$][,$<$symbol(s)$>$]; \\ 
+\end{tabular} \vspace{4mm}
+
+\noindent See chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] evaluate : 
 %--#[ exit :
 
 \section{exit}
@@ -1902,6 +1876,9 @@ be used for the precision.}
 \rightvitem{13cm}{Output format is switched back to rational numbers (in 
 contrast to floating point output). This is the default.}
 
+\leftvitem{3.5cm}{floatprecision\index{floatprecision}\index{format!floatprecision} \hfill \\ \null{\tt[}$<$off$>\!|\!<$number$>${\tt]}}
+\rightvitem{13cm}{See chapter~\ref{floatingpoint} on the floating point capability.}
+
 \leftvitem{3.5cm}{nospaces\index{nospaces}\index{format!nospaces}}
 \rightvitem{13cm}{The output is printed without the spaces that make the 
 output slightly more readable. This gives a more compact output.}
@@ -2046,12 +2023,14 @@ symbols and replaces them back by their original meaning.
 \noindent \begin{tabular}{ll}
 Type & Declaration statement\\
 Syntax & f[unctions] {\tt<}list of functions to be declared{\tt>}; \\
-See also & cfunctions (\ref{substacfunctions}), 
+See also & cfunctions (\ref{substacfunctions}),
+           nfunctions (\ref{substanfunctions}),
            tensors (\ref{substatensors}),
+           ctensors (\ref{substactensors}),
            ntensors (\ref{substantensors}), \\ &
            table (\ref{substatable}),
-           ntable (\ref{substantable}),
-           ctable (\ref{substactable})
+           ctable (\ref{substactable}),
+           ntable (\ref{substantable})
 \end{tabular} \vspace{4mm}
 
 \noindent Used to declare one or more functions\index{functions}. The functions declared 
@@ -2105,13 +2084,13 @@ to its internal notion of order by trying cyclic permutations and/or a
 complete reverse order of all arguments. The result will depend on the 
 order of declaration of variables.}
 
-\leftvitem{4.1cm}{name<number
+\leftvitem{4.1cm}{name$<$number
 
-name<=number
+name$<=$number
 
-name>number
+name$>$number
 
-name>=number}
+name$>=$number}
 \rightvitem{12cm}{The function has a restriction on the number of 
 arguments. If the number of arguments of an occurrence of the function is 
 not fulfilling the condition during normalization {\FORM} will set the term 
@@ -2390,6 +2369,7 @@ the if(match()) construction. It would not make sense there anyway.}
     id,all,$t*replace_(<p1,p1?>,...,<p5,p5?>) =
          $t*replace(<p1,q1>,...,<p5,q5>);
     Print +s;
+    ModuleOption noparallel; * suppresses noparallel warning with TFORM
     .end
 
    F =
@@ -2743,7 +2723,7 @@ Syntax & inparallel; \\
 \end{tabular} \vspace{4mm}
 
 \noindent This statement is only active in the context of 
-\TFORM\index{TFORM}. It causes 
+\TFORM\index{TFORM} and \ParFORM\index{ParFORM}. It causes 
 (small) expressions to be executed side by side. Normally the terms of 
 expressions are distributed over the processors and the expressions are 
 executed one by one. This isn't very efficient for small expressions 
@@ -3459,6 +3439,35 @@ Here all active expressions will be transferred to the hide file except for
 the expressions \verb:F1: and \verb:F2:. \vspace{10mm}
 
 %--#] nhide : 
+%--#[ nintohide :
+
+\section{nintohide}
+\label{substanintohide}
+
+\noindent \begin{tabular}{ll}
+Type & Specification statement\\
+Syntax & nintohide; \\
+       & nintohide {\tt<}list of expressions{\tt>};
+\\ See also & hide (\ref{substahide}),
+              unhide (\ref{substaunhide}),
+              nunhide (\ref{substanunhide}),
+              pushhide (\ref{substapushhide}),
+              pophide (\ref{substapophide}),
+              intohide (\ref{substaintohide})
+\end{tabular} \vspace{4mm}
+
+\noindent In its first variety\index{nintohide} this statement undoes all
+intohide\index{intohide} plans that exist thus far in the current module. In the
+second variety it does this only for the specified active\index{active}
+expressions. See the intohide statement in \ref{substaintohide}. Example:
+\begin{verbatim}
+   Intohide;
+   Nintohide F1,F2;
+\end{verbatim}
+Here all active expressions will be transferred to the hide file at the end of the
+current module, except for the expressions \verb:F1: and \verb:F2:. \vspace{10mm}
+
+%--#] nhide : 
 %--#[ normalize :
 
 \section{normalize}
@@ -3515,7 +3524,7 @@ Syntax & notinparallel; \\
 \end{tabular} \vspace{4mm}
 
 \noindent This statement is only active in the context of 
-\TFORM\index{TFORM}. It vetoes (small) expressions to be executed side by 
+\TFORM\index{TFORM} and \ParFORM\index{ParFORM}. It vetoes (small) expressions to be executed side by 
 side. For a complete explanation of this type of running one should look at 
 the InParallel~\ref{substainparallel} statement. Because the default is 
 that expressions are executed one by one, the major use of this statement 
@@ -3758,6 +3767,10 @@ and their keywords are:
 \leftvitem{3.5cm}{allwarnings\index{off!allwarnings}}
 \rightvitem{13cm}{Turns off the printing of all warnings.}
 
+\leftvitem{3.5cm}{backtrace\index{off!backtrace}}
+\rightvitem{13cm}{Disables the printing of a stack trace on termination. This
+is the default for normal form builds.}
+
 \leftvitem{3.5cm}{checkpoint\index{off!checkpoint}}
 \rightvitem{13cm}{Deactivates the checkpoint mechanism. See
 \ref{checkpoints}.}
@@ -3768,9 +3781,24 @@ and their keywords are:
 \leftvitem{3.5cm}{finalstats\index{off!finalstats}}
 \rightvitem{13cm}{Turns off the last line of statistics that is normally 
 printed at the end of the run (introduced in version 3.2).}
+
+\leftvitem{3.5cm}{flint\index{off!flint}}
+\rightvitem{13cm}{Disables the interface to FLINT; use FORM's built-in
+polynomial routines.}
+
+\leftvitem{3.5cm}{grccverbose\index{off!grccverbose}}
+\rightvitem{13cm}{Disables extra print statements from the diagram generator.
+This is the default.}
  
 \leftvitem{3.5cm}{highfirst\index{off!highfirst}}
 \rightvitem{13cm}{Puts the sorting in a low first mode.}
+
+\leftvitem{3.5cm}{humanstatistics\index{off!humanstats}}
+\rightvitem{13cm}{Disables the printing of human-readable numbers and
+units in the statistics. This is the default.}
+
+\leftvitem{3.5cm}{humanstats\index{off!humanstats}}
+\rightvitem{13cm}{Same as `Off humanstatistics;'}
 
 \leftvitem{3.5cm}{insidefirst\index{off!insidefirst}}
 \rightvitem{13cm}{Not active at the moment.}
@@ -3894,6 +3922,12 @@ are printed as well. Default is off. }
 \rightvitem{13cm}{Puts the printing of warnings in a mode in which all 
 warnings, even the very unimportant warnings are printed.}
 
+\leftvitem{3.5cm}{backtrace\index{on!backtrace}}
+\rightvitem{13cm}{Attempt to print a stack trace on termination, to assist with
+debugging. This is off by default for normal form builds and on by default for
+the debug binaries (vorm, tvorm, parvorm). For best results eu-addr2line or
+addr2line should be installed on the system.}
+
 \leftvitem{3.5cm}{checkpoint\index{on!checkpoint}}
 \rightvitem{13cm}{Activates the checkpoint mechanism that allows for
 the recovery of a crashed \FORM\ session. See \ref{checkpoints} for
@@ -3903,14 +3937,28 @@ detailed information.}
 \rightvitem{13cm}{Turns compression mode on. This compression is a 
 relatively simple compression that hardly costs extra computer time but 
 saves roughly a factor two in disk storage. The old statement was `compress 
-on' but this should be avoided in the future. This setting is the default.}
+on' but this should be avoided in the future. This setting is the default if
+\FORM\ has not been compiled with gzip or zstd support.}
 
 \leftvitem{3.5cm}{compress,gzip\index{gzip}}
-\rightvitem{13cm}{This option should be followed by a comma or a space and 
+\rightvitem{13cm}{This setting is the default, if \FORM\ has been compiled
+with gzip support but not with zstd support.
+This option may be followed by a comma or a space and 
 a single digit. It activates the gzip compression for the sort file. This 
 compression can make the intermediate sort file considerably shorter at the 
-cost of some CPU time. This option can be used when disk space is at a 
-premium. The digit indicates the compression level. Zero means no 
+cost of some CPU time.
+The digit indicates the compression level. Zero means no 
+compression and 9 is the highest level. The default level is 6. Above that 
+the compression becomes very slow and doesn't gain very much extra.}
+
+\leftvitem{3.5cm}{compress,zstd\index{zstd}}
+\rightvitem{13cm}{This setting is the default, if \FORM\ has been compiled with
+zstd support.
+This option may be followed by a comma or a space and 
+a single digit. It activates the zstd compression for the sort file. This 
+compression performs better than gzip, both in terms of compression/
+decompression rates and compression ratio.
+The digit indicates the compression level. Zero means no 
 compression and 9 is the highest level. The default level is 6. Above that 
 the compression becomes very slow and doesn't gain very much extra.}
 
@@ -3927,10 +3975,40 @@ follows is zero, statistics are never printed when sorting the small buffer.}
 \leftvitem{3.5cm}{finalstats\index{on!finalstats}}
 \rightvitem{13cm}{Determines whether \FORM\ prints a final line of run time 
 statistics at the end of the run. Default is on.}
+
+\leftvitem{3.5cm}{flint\index{on!flint}}
+\rightvitem{13cm}{Enables the interface to FLINT for polynomial operations.
+This is the default if \FORM\ has been compiled with FLINT support.
+Currently this supports
+PolyRatFun\index{polyratfun} (\ref{substapolyratfun}),
+FactArg\index{factarg} (\ref{substafactarg}),
+FactDollar\index{factdollar}\index{prefactdollar} (\ref{prefactdollar},
+\ref{substafactdollar}),
+div\_\index{div\_}\index{function!div\_} (\ref{fundiv}),
+rem\_\index{rem\_}\index{function!rem\_} (\ref{funrem}),
+mul\_\index{mul\_}\index{function!mul\_} (\ref{funmul}),
+gcd\_\index{gcd\_}\index{function!gcd\_} (\ref{fungcd}),
+and inverse\_\index{inverse\_}\index{function!inverse\_} (\ref{funinverse}).
+\FORM\ still uses its built-in routines for Factorize\index{factorize}
+(\ref{substafactorize})
+and when using Modulus\index{modulus} (\ref{substamodulus}) mode.
+Note that occasionally the overall sign of gcd\_ may differ from that of the
+built-in routine.}
+
+\leftvitem{3.5cm}{grccverbose\index{on!grccverbose}}
+\rightvitem{13cm}{Enable extra print statements from the diagram generator.
+Useful for debugging error messages. Default is off.}
  
 \leftvitem{3.5cm}{highfirst\index{on!highfirst}}
 \rightvitem{13cm}{In this mode polynomials are sorted in a way that high 
 powers come before low powers.}
+
+\leftvitem{3.5cm}{humanstatistics\index{on!humanstats}}
+\rightvitem{13cm}{If enabled, human-readable numbers and units are included
+in the statistics printing. Disabled by default.}
+
+\leftvitem{3.5cm}{humanstats\index{on!humanstats}}
+\rightvitem{13cm}{Same as the above humanstatistics.}
 
 %\leftvitem{3.5cm}{indentspace\index{on!indentspace}}
 %\rightvitem{13cm}{Not active at the moment.}
@@ -4704,11 +4782,11 @@ dollar variable\index{\$-variable} (see \ref{dollars}). \vspace{10mm}
 \label{substaremovespectator}
 
 \noindent \begin{tabular}{ll}
-Type & Executable statement\\
-Syntax & removespectator {\tt<}spectator;{\tt>};
+Type & Specification statement\\
+Syntax & removespectator {\tt<}spectator{\tt>};
 \end{tabular} \vspace{4mm}
 
-\noindent See chapter\ref{spectators} on spectators.
+\noindent See chapter~\ref{spectators} on spectators.
 \vspace{10mm}
 
 %--#] removespectator : 
@@ -5251,6 +5329,18 @@ indicating the arguments that should be treated. If no arguments are
 specified all arguments will be treated. \vspace{10mm}
 
 %--#] splitlastarg : 
+%--#[ strictrounding :
+\section{strictrounding}
+\label{substaevaluate}
+
+\noindent \begin{tabular}{ll}
+Type & Executable statement\\
+Syntax & strictrounding [$<$precision$>$]; \\ 
+\end{tabular} \vspace{4mm}
+
+\noindent See chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] strictrounding : 
 %--#[ stuffle :
 %
 \section{stuffle}
@@ -5785,6 +5875,18 @@ section on \TFORM\ (\ref{tform}). To find out what its value is, use the
 `ON,setup;' statement (\ref{substaon} and \ref{setup}). \vspace{10mm}
 
 %--#] threadbucketsize : 
+%--#[ tofloat :
+\section{tofloat}
+\label{substatofloat}
+
+\noindent \begin{tabular}{ll}
+Type & Executable statement\\
+Syntax & tofloat;
+\end{tabular} \vspace{4mm}
+
+\noindent See chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] tofloat : 
 %--#[ topolynomial :
 
 \section{topolynomial}
@@ -5818,6 +5920,18 @@ replaced.
 \vspace{10mm}
 
 %--#] topolynomial : 
+%--#[ torational :
+\section{torational}
+\label{substatorational}
+
+\noindent \begin{tabular}{ll}
+Type & Executable statement\\
+Syntax & torational;
+\end{tabular} \vspace{4mm}
+
+\noindent See chapter~\ref{floatingpoint} on the floating point capability.
+ 
+%--#] torational : 
 %--#[ tospectator :
 
 \section{tospectator}
@@ -5825,10 +5939,10 @@ replaced.
 
 \noindent \begin{tabular}{ll}
 Type & Executable statement\\
-Syntax & tospectator {\tt<}spectator;{\tt>};
+Syntax & tospectator {\tt<}spectator{\tt>};
 \end{tabular} \vspace{4mm}
 
-\noindent See chapter\ref{spectators} on spectators.
+\noindent See chapter~\ref{spectators} on spectators.
 \vspace{10mm}
 
 %--#] tospectator : 

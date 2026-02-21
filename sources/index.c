@@ -7,7 +7,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -328,7 +328,7 @@ found:
 	DON'T forget AR.SortType to be put into e->bracketinfo->SortType
 */
 
-VOID PutBracketInIndex(PHEAD WORD *term, POSITION *newpos)
+void PutBracketInIndex(PHEAD WORD *term, POSITION *newpos)
 {
 	GETBIDENTITY
 	BRACKETINDEX *bi, *b1, *b2, *b3;
@@ -575,7 +575,7 @@ void ClearBracketIndex(WORD numexp)
 	Note: This routine is thread-safe
 */
 
-VOID OpenBracketIndex(WORD nexpr)
+void OpenBracketIndex(WORD nexpr)
 {
 	EXPRESSIONS e = Expressions + nexpr;
 	BRACKETINFO *bi;

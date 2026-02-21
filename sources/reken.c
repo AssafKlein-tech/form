@@ -10,7 +10,7 @@
  */
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -52,7 +52,7 @@
 /*
   	#] Includes : 
   	#[ RekenRational :
- 		#[ Pack :			VOID Pack(a,na,b,nb)
+ 		#[ Pack :			void Pack(a,na,b,nb)
 
 	Packs the contents of the numerator a and the denominator b into
 	one normalized fraction a.
@@ -69,7 +69,7 @@
   fflush(stdout); } }
 #endif
 
-VOID Pack(UWORD *a, WORD *na, UWORD *b, WORD nb)
+void Pack(UWORD *a, WORD *na, UWORD *b, WORD nb)
 {
 	WORD c, sgn = 1, i;
 	UWORD *to,*from;
@@ -100,14 +100,14 @@ VOID Pack(UWORD *a, WORD *na, UWORD *b, WORD nb)
 
 /*
  		#] Pack : 
- 		#[ UnPack :			VOID UnPack(a,na,denom,numer)
+ 		#[ UnPack :			void UnPack(a,na,denom,numer)
 
 	Determines the sizes of the numerator and the denominator in the
 	normalized fraction a with length na.
 
 */
 
-VOID UnPack(UWORD *a, WORD na, WORD *denom, WORD *numer)
+void UnPack(UWORD *a, WORD na, WORD *denom, WORD *numer)
 {
 	UWORD *pos;
 	WORD i, sgn = na;
@@ -133,7 +133,7 @@ VOID UnPack(UWORD *a, WORD na, WORD *denom, WORD *numer)
 
 */
 
-WORD Mully(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
+int Mully(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
 {
 	GETBIDENTITY
 	UWORD *d, *e;
@@ -179,7 +179,7 @@ MullyEr:
 
 */
 
-WORD Divvy(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
+int Divvy(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
 {
 	GETBIDENTITY
 	UWORD *d,*e;
@@ -217,7 +217,7 @@ DivvyEr:
  		#[ AddRat :			WORD AddRat(a,na,b,nb,c,nc)
 */
 
-WORD AddRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int AddRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	GETBIDENTITY
 	UWORD *d, *e, *f, *g;
@@ -385,7 +385,7 @@ AddRer1:
 
 */
 
-WORD MulRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int MulRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	WORD i;
 	WORD sgn = 1;
@@ -511,10 +511,11 @@ WORD MulRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 
 */
 
-WORD DivRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int DivRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	GETBIDENTITY
 	WORD i, j;
+	int ret;
 	UWORD *xd,*xe,xx;
 	if ( !nb ) {
 		MLOCK(ErrorMessageLock);
@@ -525,10 +526,10 @@ WORD DivRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 	j = i = (nb >= 0)? nb: -nb;
 	xd = b; xe = b + i;
 	do { xx = *xd; *xd++ = *xe; *xe++ = xx; } while ( --j > 0 );
-	j = MulRat(BHEAD a,na,b,nb,c,nc);
+	ret = MulRat(BHEAD a,na,b,nb,c,nc);
 	xd = b; xe = b + i;
 	do { xx = *xd; *xd++ = *xe; *xe++ = xx; } while ( --i > 0 );
-	return(j);
+	return(ret);
 }
 
 /*
@@ -541,7 +542,7 @@ WORD DivRat(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 
 */
 
-WORD Simplify(PHEAD UWORD *a, WORD *na, UWORD *b, WORD *nb)
+int Simplify(PHEAD UWORD *a, WORD *na, UWORD *b, WORD *nb)
 {
 	GETBIDENTITY
 	UWORD *x1,*x2,*x3;
@@ -658,7 +659,7 @@ SimpErr:
 		the GCD of the numerators divided by the GCD of the denominators
 */
 
-WORD AccumGCD(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
+int AccumGCD(PHEAD UWORD *a, WORD *na, UWORD *b, WORD nb)
 {
 	GETBIDENTITY
 	WORD nna,nnb,numa,numb,dena,denb,numc,denc;
@@ -716,7 +717,7 @@ int TakeRatRoot(UWORD *a, WORD *n, WORD power)
 
 */
 
-WORD AddLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int AddLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	WORD sgn, res;
 	if ( na < 0 ) {
@@ -761,7 +762,7 @@ WORD AddLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 	c can be a or b.
 */
 
-WORD AddPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int AddPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	UWORD carry = 0, e, nd = 0;
 	while ( na && nb ) {
@@ -807,14 +808,14 @@ WORD AddPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 
 /*
  		#] AddPLon : 
- 		#[ SubPLon :		VOID SubPLon(a,na,b,nb,c,nc)
+ 		#[ SubPLon :		void SubPLon(a,na,b,nb,c,nc)
 
 	Subtracts b from a. Assumes that a > b. Result in c.
 	c can be a or b.
 
 */
 
-VOID SubPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+void SubPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	UWORD borrow = 0, e, nd = 0;
 	while ( nb ) {
@@ -852,7 +853,7 @@ VOID SubPLon(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 
 */
 
-WORD MulLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int MulLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	WORD sgn = 1;
 	UWORD i, *ic, *ia;
@@ -955,7 +956,7 @@ MulLov:
 
 */
 
-WORD BigLong(UWORD *a, WORD na, UWORD *b, WORD nb)
+int BigLong(UWORD *a, WORD na, UWORD *b, WORD nb)
 {
 	a += na;
 	b += nb;
@@ -983,8 +984,8 @@ WORD BigLong(UWORD *a, WORD na, UWORD *b, WORD nb)
 
 */
 
-WORD DivLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c,
-             WORD *nc, UWORD *d, WORD *nd)
+int DivLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c,
+            WORD *nc, UWORD *d, WORD *nd)
 {
 	WORD sgna = 1, sgnb = 1, ne, nf, ng, nh;
 	WORD i, ni;
@@ -1239,7 +1240,7 @@ WORD DivLong(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c,
 	The method that is used works with a bitdecomposition of b.
 */
 
-WORD RaisPow(PHEAD UWORD *a, WORD *na, UWORD b)
+int RaisPow(PHEAD UWORD *a, WORD *na, UWORD b)
 {
 	GETBIDENTITY
 	WORD i, nu;
@@ -1307,7 +1308,7 @@ RaisOvl:
  *   - Caching is done in AT.small_power[]. This array is extended
  *     if necessary.
  */
-VOID RaisPowCached (PHEAD WORD x, WORD n, UWORD **c, WORD *nc) {
+void RaisPowCached (PHEAD WORD x, WORD n, UWORD **c, WORD *nc) {
 
 	int i,j;
 	WORD new_small_power_maxx, new_small_power_maxn, ID;
@@ -1451,7 +1452,7 @@ int NormalModulus(UWORD *a,WORD *na)
  *	becomes too difficult and the table too long.
  */
 
-int MakeInverses(VOID)
+int MakeInverses(void)
 {
 	WORD n = AC.cmod[0], i, inv2;
 	if ( AC.ncmod != 1 ) return(1);
@@ -1596,7 +1597,7 @@ int GetLongModInverses(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *ia, WO
 
 */
 
-WORD Product(UWORD *a, WORD *na, WORD b)
+int Product(UWORD *a, WORD *na, WORD b)
 {
 	WORD i, sgn = 1;
 	RLONG t, u;
@@ -1717,13 +1718,13 @@ WORD Remain4(UWORD *a, WORD *na)
 
 /*
  		#] Remain4 : 
- 		#[ PrtLong :		VOID PrtLong(a,na,s)
+ 		#[ PrtLong :		void PrtLong(a,na,s)
 
 	Puts the long number a in string s.
 
 */
 
-VOID PrtLong(UWORD *a, WORD na, UBYTE *s)
+void PrtLong(UWORD *a, WORD na, UBYTE *s)
 {
 	GETIDENTITY
 	WORD q, i;
@@ -1785,7 +1786,7 @@ VOID PrtLong(UWORD *a, WORD na, UBYTE *s)
 	is accumulated.
 */
 
-WORD GetLong(UBYTE *s, UWORD *a, WORD *na)
+int GetLong(UBYTE *s, UWORD *a, WORD *na)
 {
 /*
 	UWORD digit;
@@ -1850,7 +1851,7 @@ WORD GetLong(UBYTE *s, UWORD *a, WORD *na)
 		else naa = 1;            \
 	}
 
-VOID GCD(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+void GCD(UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	int ja = 0, jb = 0, j;
 	UWORD *r,*t;
@@ -2002,7 +2003,7 @@ toobad:
   	#[ Old Routine :
 */
 
-WORD GcdLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int GcdLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	GETBIDENTITY
 	if ( !na || !nb ) {
@@ -2287,7 +2288,7 @@ GcdErr:
 	of GCDMAX.
 */
 
-WORD GcdLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int GcdLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
 	GETBIDENTITY
 	UWORD x,y,z;
@@ -2678,7 +2679,7 @@ GcdErr:
  		#[ GetBinom :		WORD GetBinom(a,na,i1,i2)
 */
 
-WORD GetBinom(UWORD *a, WORD *na, WORD i1, WORD i2)
+int GetBinom(UWORD *a, WORD *na, WORD i1, WORD i2)
 {
 	GETIDENTITY
 	WORD j, k, l;
@@ -2712,9 +2713,9 @@ CalledFrom:
 		in c. c is allowed to be equal to a.
 */
 
-WORD LcmLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
+int LcmLong(PHEAD UWORD *a, WORD na, UWORD *b, WORD nb, UWORD *c, WORD *nc)
 {
-	WORD error = 0;
+	int error = 0;
 	UWORD *d = NumberMalloc("LcmLong");
 	UWORD *e = NumberMalloc("LcmLong");
 	UWORD *f = NumberMalloc("LcmLong");
@@ -2923,7 +2924,7 @@ int MakeLongRational(PHEAD UWORD *a, WORD na, UWORD *m, WORD nm, UWORD *b, WORD 
 	UWORD *x4 = NumberMalloc("MakeRational");
 	UWORD *y1 = NumberMalloc("MakeRational");
 	UWORD *y2 = NumberMalloc("MakeRational");
-	WORD nroot,nx1,nx2,nx3,nx4,ny1,ny2,retval = 0;
+	WORD nroot,nx1,nx2,nx3,nx4,ny1,ny2 = 0,retval = 0;
 	WORD sign = 1;
 /*
 	Step 1: Take the square root of m
@@ -3113,7 +3114,7 @@ WORD CompCoef(WORD *term1, WORD *term2)
 
 */
 
-WORD Modulus(WORD *term)
+int Modulus(WORD *term)
 {
 	WORD *t;
 	WORD n1;
@@ -3160,7 +3161,7 @@ WORD Modulus(WORD *term)
 		This may not be a good idea. To be checked.
 */
 
-WORD TakeModulus(UWORD *a, WORD *na, UWORD *cmodvec, WORD ncmod, WORD par)
+int TakeModulus(UWORD *a, WORD *na, UWORD *cmodvec, WORD ncmod, WORD par)
 {
 	GETIDENTITY
 	UWORD *c, *d, *e, *f, *g, *h;
@@ -3332,7 +3333,7 @@ ModErr:
 		added by Jan [01-09-2010]
 */
 
-WORD TakeNormalModulus (UWORD *a, WORD *na, UWORD *c, WORD nc, WORD par)
+int TakeNormalModulus (UWORD *a, WORD *na, UWORD *c, WORD nc, WORD par)
 {
 	WORD n;
 	WORD nhalfc;
@@ -3374,7 +3375,7 @@ WORD TakeNormalModulus (UWORD *a, WORD *na, UWORD *c, WORD nc, WORD par)
  		#[ MakeModTable :	WORD MakeModTable()
 */
 
-WORD MakeModTable(VOID)
+int MakeModTable(void)
 {
 	LONG size, i, j, n;
 	n = ABS(AC.ncmod);
@@ -3743,7 +3744,7 @@ WORD Moebius(PHEAD WORD nn)
 {
 	WORD i,n = nn, x;
 	LONG newsize;
-	char *newtable, mu;
+	SBYTE *newtable, mu;
 #if ( BITSINWORD == 32 )
 	if ( AR.notfirstprime == 0 ) StartPrimeList(BHEAD0);
 #endif
@@ -3756,7 +3757,7 @@ WORD Moebius(PHEAD WORD nn)
 		if ( AR.moebiustablesize <= 0 ) { newsize = (LONG)nn + 20; }
 		else { newsize = (LONG)nn*2; }
 		if ( newsize > MAXPOSITIVE ) newsize = MAXPOSITIVE;
-		newtable = (char *)Malloc1(newsize*sizeof(char),"Moebius");
+		newtable = (SBYTE *)Malloc1(newsize*sizeof(SBYTE),"Moebius");
 		for ( i = 0; i < AR.moebiustablesize; i++ ) newtable[i] = AR.moebiustable[i];
 		for ( ; i < newsize; i++ ) newtable[i] = 2;
 		if ( AR.moebiustablesize > 0 ) M_free(AR.moebiustable,"Moebius");

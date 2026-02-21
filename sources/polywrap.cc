@@ -7,7 +7,7 @@
 
 /* #[ License : */
 /*
- *   Copyright (C) 1984-2023 J.A.M. Vermaseren
+ *   Copyright (C) 1984-2026 J.A.M. Vermaseren
  *   When using this file you are requested to refer to the publication
  *   J.A.M.Vermaseren "New features of FORM" math-ph/0010025
  *   This is considered a matter of courtesy as the development was paid
@@ -123,6 +123,13 @@ WORD poly_determine_modulus (PHEAD bool multi_error, bool is_fun_arg, string mes
  */
 WORD *poly_gcd(PHEAD WORD *a, WORD *b, WORD fit) {
 
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		WORD *ret = flint_gcd(BHEAD a, b, fit);
+		return ret;
+	}
+#endif
+
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_gcd" << endl;
 #endif
@@ -146,6 +153,7 @@ WORD *poly_gcd(PHEAD WORD *a, WORD *b, WORD fit) {
 	
 	// Extract variables
 	vector<WORD *> e;
+	e.reserve(2);
 	e.push_back(a);
 	e.push_back(b);
 	poly::get_variables(BHEAD e, false, true);
@@ -166,7 +174,8 @@ WORD *poly_gcd(PHEAD WORD *a, WORD *b, WORD fit) {
 	if ( fit ) {
 		if ( newsize*sizeof(WORD) >= (size_t)(AM.MaxTer) ) {
 			MLOCK(ErrorMessageLock);
-			MesPrint("poly_gcd: Term too complex. Maybe increasing MaxTermSize can help");
+			MesPrint("poly_gcd: Term too complex (%d words). Maybe increasing MaxTermSize (%d words) can help",
+				newsize, AM.MaxTer/sizeof(WORD));
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
 		}
@@ -202,6 +211,7 @@ WORD *poly_divmod(PHEAD WORD *a, WORD *b, int divmod, WORD fit) {
 
 	// get variables
 	vector<WORD *> e;
+	e.reserve(2);
 	e.push_back(a);
 	e.push_back(b);
 	poly::get_variables(BHEAD e, false, false);
@@ -351,7 +361,8 @@ WORD *poly_divmod(PHEAD WORD *a, WORD *b, int divmod, WORD fit) {
 		if ( fit ) {
 			if ( ressize*sizeof(WORD) > (size_t)(AM.MaxTer) ) {
 				MLOCK(ErrorMessageLock);
-				MesPrint("poly_divmod: Term too complex. Maybe increasing MaxTermSize can help");
+				MesPrint("poly_divmod: Term too complex (%d words). Maybe increasing MaxTermSize (%d words) can help",
+					ressize, AM.MaxTer/sizeof(WORD));
 				MUNLOCK(ErrorMessageLock);
 				Terminate(-1);
 			}
@@ -423,6 +434,13 @@ WORD *poly_divmod(PHEAD WORD *a, WORD *b, int divmod, WORD fit) {
 */
 WORD *poly_div(PHEAD WORD *a, WORD *b, WORD fit) {
 
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		WORD *ret = flint_div(BHEAD a, b, fit);
+		return ret;
+	}
+#endif
+
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_div" << endl;
 #endif
@@ -443,6 +461,13 @@ WORD *poly_div(PHEAD WORD *a, WORD *b, WORD fit) {
 	terminated sequence of terms (or just zero).
 */
 WORD *poly_rem(PHEAD WORD *a, WORD *b, WORD fit) {
+
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		WORD *ret = flint_rem(BHEAD a, b, fit);
+		return ret;
+	}
+#endif
 
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_rem" << endl;
@@ -606,7 +631,14 @@ void poly_sort(PHEAD WORD *a) {
  *   - Calls poly::operators and polygcd::gcd
  */
 WORD *poly_ratfun_add (PHEAD WORD *t1, WORD *t2) {
- 
+
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		WORD *ret = flint_ratfun_add(BHEAD t1, t2);
+		return ret;
+	}
+#endif
+
 	if ( AR.PolyFunExp == 1 ) return PolyRatFunSpecial(BHEAD t1, t2);
 
 #ifdef DEBUG
@@ -617,6 +649,7 @@ WORD *poly_ratfun_add (PHEAD WORD *t1, WORD *t2) {
 	
 	// Extract variables
 	vector<WORD *> e;
+	e.reserve(4);
 	
 	for (WORD *t=t1+FUNHEAD; t<t1+t1[1];) {
 		e.push_back(t);
@@ -626,6 +659,8 @@ WORD *poly_ratfun_add (PHEAD WORD *t1, WORD *t2) {
 		e.push_back(t);
 		NEXTARG(t);
 	}
+
+	assert(e.size() == 4);
 
 	poly::get_variables(BHEAD e, true, true);
 	
@@ -666,12 +701,19 @@ WORD *poly_ratfun_add (PHEAD WORD *t1, WORD *t2) {
 	// Fix sign
 	if (den.sign() == -1) { num*=poly(BHEAD -1); den*=poly(BHEAD -1); }
 
-	// Check size
-	if (num.size_of_form_notation() + den.size_of_form_notation() + 3 >= AM.MaxTer/(int)sizeof(WORD)) {
+	// Check size: include FUNHEAD for the prf itself, an ARGHEAD each for num and den,
+	// and 3 for the final coeff "1/1". We don't know here what the rest of the term looks like,
+	// but it certainly has at least its total size (so +1):
+	if ((num.size_of_form_notation() + den.size_of_form_notation() + FUNHEAD + 2*ARGHEAD + 3 + 1)
+		> AM.MaxTer/(int)sizeof(WORD)) {
+
 		MLOCK(ErrorMessageLock);
 		MesPrint ("ERROR: PolyRatFun doesn't fit in a term");
-		MesPrint ("(1) num size = %d, den size = %d,  MaxTer = %d",num.size_of_form_notation(),
-				den.size_of_form_notation(),AM.MaxTer);
+		MesPrint ("(1) num size = %d, den size = %d, rest = %d, MaxTermSize = %d words",
+				num.size_of_form_notation()+ARGHEAD,
+				den.size_of_form_notation()+ARGHEAD,
+				FUNHEAD + 3 + 1,
+				AM.MaxTer/sizeof(WORD));
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
 	}
@@ -725,6 +767,13 @@ WORD *poly_ratfun_add (PHEAD WORD *t1, WORD *t2) {
  *   - Calls poly::operators and polygcd::gcd
  */
 int poly_ratfun_normalize (PHEAD WORD *term) {
+
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		flint_ratfun_normalize(BHEAD term);
+		return 0;
+	}
+#endif
 
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_ratfun_normalize" << endl;
@@ -811,12 +860,18 @@ int poly_ratfun_normalize (PHEAD WORD *term) {
 	// Fix sign
 	if (den1.sign() == -1) { num1*=poly(BHEAD -1); den1*=poly(BHEAD -1); }
 
-	// Check size
-	if (num1.size_of_form_notation() + den1.size_of_form_notation() + 3 >= AM.MaxTer/(int)sizeof(WORD)) {
+	// Check size: include FUNHEAD for the prf itself, an ARGHEAD each for num and den,
+	// s-term for the copied term so far, and 3 for final coeff "1/1"
+	if ((num1.size_of_form_notation() + den1.size_of_form_notation() + FUNHEAD + 2*ARGHEAD
+		+ s-term + 3) > AM.MaxTer/(int)sizeof(WORD)) {
+
 		MLOCK(ErrorMessageLock);
 		MesPrint ("ERROR: PolyRatFun doesn't fit in a term");
-		MesPrint ("(2) num size = %d, den size = %d,  MaxTer = %d",num1.size_of_form_notation(),
-				den1.size_of_form_notation(),AM.MaxTer);
+		MesPrint ("(2) num size = %d, den size = %d, rest = %d, MaxTermSize = %d words",
+				num1.size_of_form_notation()+ARGHEAD,
+				den1.size_of_form_notation()+ARGHEAD,
+				FUNHEAD + s-term + 3,
+				AM.MaxTer/sizeof(WORD));
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
 	}
@@ -973,7 +1028,8 @@ WORD *poly_factorize (PHEAD WORD *argin, WORD *argout, bool with_arghead, bool i
 		// check size
 		if (len >= AM.MaxTer) {
 			MLOCK(ErrorMessageLock);
-			MesPrint ("ERROR: factorization doesn't fit in a term");
+			MesPrint ("ERROR: factorization doesn't fit in a term (len = %d, MaxTermSize = %d words)",
+				len/sizeof(WORD), AM.MaxTer/sizeof(WORD));
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
 		}
@@ -1059,6 +1115,13 @@ int poly_factorize_argument(PHEAD WORD *argin, WORD *argout) {
 	cout << "*** [" << thetime() << "]  CALL : poly_factorize_argument" << endl;
 #endif
 
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		flint_factorize_argument(BHEAD argin, argout);
+		return 0;
+	}
+#endif
+
 	poly_factorize(BHEAD argin,argout,true,true);
 	return 0;
 }
@@ -1084,6 +1147,12 @@ WORD *poly_factorize_dollar (PHEAD WORD *argin) {
 
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_factorize_dollar" << endl;
+#endif
+
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		return flint_factorize_dollar(BHEAD argin);
+	}
 #endif
 
 	return poly_factorize(BHEAD argin,NULL,false,false);
@@ -1351,7 +1420,7 @@ int poly_factorize_expression(EXPRESSIONS expr) {
 
 					// sort and store in buffer
 					WORD *buffer;
-					if (EndSort(BHEAD (WORD *)((VOID *)(&buffer)),2) < 0) return -1;
+					if (EndSort(BHEAD (WORD *)((void *)(&buffer)),2) < 0) return -1;
 					
 					LONG bufsize=0;
 					for (WORD *t=buffer; *t!=0; t+=*t)
@@ -1673,12 +1742,19 @@ int poly_unfactorize_expression(EXPRESSIONS expr)
 
 WORD *poly_inverse(PHEAD WORD *arga, WORD *argb) {
 
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		return flint_inverse(BHEAD arga, argb);
+	}
+#endif
+
 #ifdef DEBUG
 	cout << "*** [" << thetime() << "]  CALL : poly_inverse" << endl;
 #endif
-	
+
 	// Extract variables
 	vector<WORD *> e;
+	e.reserve(2);
 	e.push_back(arga);
 	e.push_back(argb);
 	poly::get_variables(BHEAD e, false, true);
@@ -1689,104 +1765,173 @@ WORD *poly_inverse(PHEAD WORD *arga, WORD *argb) {
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
 	}
-	
+
+	poly finalden(BHEAD 1), finalres(BHEAD 1);
+	int ressize = 0;
+	WORD *res = NULL;
+
 	// Convert to polynomials
-	poly a(poly::argument_to_poly(BHEAD arga, false, true));
+	poly dena(BHEAD 0); // We need to keep the overall denominator of arga, to multiply the result
+	poly a(poly::argument_to_poly(BHEAD arga, false, true, &dena));
 	poly b(poly::argument_to_poly(BHEAD argb, false, true));
 
-	// Check for modulus calculus
-	WORD modp=poly_determine_modulus(BHEAD true, true, "polynomial inverse");
-	a.setmod(modp,1);
-	b.setmod(modp,1);
-	
-	if (modp == 0) {
-		vector<int> x(1,0);
-		modp = polyfact::choose_prime(a.integer_lcoeff()*b.integer_lcoeff(), x);
+	// Divide out the integer content, FORM has not already done this.
+	poly content_a(BHEAD 0), content_b(BHEAD 0);
+	content_a = polygcd::integer_content(a);
+	content_b = polygcd::integer_content(b);
+	a /= content_a;
+	b /= content_b;
+
+	poly invamodp(BHEAD 0), invbmodp(BHEAD 0);
+	WORD modp = 0;
+
+	// Special cases:
+	// Possibly strange that we give 1 for inverse_(x1,1) but here we take MMA's convention.
+	if ((a.is_one() && b.is_one()) || a.is_one()) {
+		finalres = poly(BHEAD 1);
 	}
-
-	poly amodp(a,modp,1);
-	poly bmodp(b,modp,1);	
-
-	// Calculate gcd
-	vector<poly> xgcd(polyfact::extended_gcd_Euclidean_lifted(amodp,bmodp));
-	poly invamodp(xgcd[0]);
-	poly invbmodp(xgcd[1]);
-	
-	if (!((invamodp * amodp) % bmodp).is_one()) {
-		MLOCK(ErrorMessageLock);
-		MesPrint ((char*)"ERROR: polynomial inverse does not exist");
-		MUNLOCK(ErrorMessageLock);
-		Terminate(-1);		
+	else if (b.is_one()) {
+		finalres = poly(BHEAD 0);
 	}
+	else {
+		// Check for modulus calculus
+		modp=poly_determine_modulus(BHEAD true, true, "polynomial inverse");
+		const bool mod_calc = modp==0 ? false : true;
+		a.setmod(modp,1);
+		b.setmod(modp,1);
 
-	// estimate of the size of the Form notation; might be extended later
-	int ressize = invamodp.size_of_form_notation()+1;
-	WORD *res = (WORD *)Malloc1(ressize*sizeof(WORD), "poly_inverse");
-
-	// initialize polynomials to store the result
-	poly primepower(BHEAD modp);
-	poly inva(invamodp,modp,1);
-	poly invb(invbmodp,modp,1);
-
-	while (true) {
-		// convert to Form notation 
-		int j=0;
-		WORD n=0;		
-		for (int i=1; i<inva[0]; i+=inva[i]) {
-
-			// check whether res should be extended
-			while (ressize < j + 2*ABS(inva[i+inva[i]-1]) + (inva[i+1]>0?4:0) + 3) {
-				int newressize = 2*ressize;
-				
-				WORD *newres = (WORD *)Malloc1(newressize*sizeof(WORD), "poly_inverse");
-				WCOPY(newres, res, ressize);
-				M_free(res, "poly_inverse");
-				res = newres;
-				ressize = newressize;
+		// Check the gcd of a,b: if it is != 1, the inverse does not exist.
+		poly gcd(polygcd::gcd(a,b));
+		if (!gcd.is_one()) {
+			MLOCK(ErrorMessageLock);
+			if (mod_calc) {
+				MesPrint ((char*)"ERROR: polynomial inverse does not exist (mod %d)", modp);
 			}
-			
-			res[j] = 1;
-			if (inva[i+1]>0) {
-				res[j+res[j]++] = SYMBOL;
-				res[j+res[j]++] = 4;
-				res[j+res[j]++] = AN.poly_vars[0];
-				res[j+res[j]++] = inva[i+1];
+			else {
+				MesPrint ((char*)"ERROR: polynomial inverse does not exist");
 			}
-			MakeLongRational(BHEAD (UWORD *)&inva[i+2], inva[i+inva[i]-1],
-											 (UWORD*)&primepower.terms[3], primepower.terms[primepower.terms[1]],
-											 (UWORD *)&res[j+res[j]], &n);
-			res[j] += 2*ABS(n);
-			res[j+res[j]++] = SGN(n)*(2*ABS(n)+1);
-			j += res[j];
+			MUNLOCK(ErrorMessageLock);
+			Terminate(-1);
 		}
-		res[j]=0;
 
-		// if modulus calculus is set, this is the answer
-		if (a.modp != 0) break;
+		bool inv_exists = true;
+		do {
+			// If we are not using modulus calculus, find a suitable prime for xgcd:
+			if (!mod_calc) {
+				vector<int> x(1,0);
+				modp = polyfact::choose_prime(a.integer_lcoeff()*b.integer_lcoeff(), x, modp);
+			}
 
-		// otherwise check over integers
-		poly den(BHEAD 0);
-		poly check(poly::argument_to_poly(BHEAD res, false, true, &den));
-		if (poly::divides(b.integer_lcoeff(), check.integer_lcoeff())) {
-			check = check*a - den;
-			if (poly::divides(b, check)) break;
+			poly amodp(a,modp,1);
+			poly bmodp(b,modp,1);
+
+			// Calculate gcd
+			vector<poly> xgcd(polyfact::extended_gcd_Euclidean_lifted(amodp,bmodp));
+			invamodp = poly(xgcd[0]);
+			invbmodp = poly(xgcd[1]);
+
+			inv_exists = ((invamodp * amodp) % bmodp).is_one();
+			if (!inv_exists && mod_calc) {
+				// Control should not reach here!
+				MLOCK(ErrorMessageLock);
+				MesPrint ((char*)"ERROR: polynomial inverse does not exist (mod %d) B", modp);
+				MUNLOCK(ErrorMessageLock);
+				Terminate(-1);
+			}
+
+		// If the inverse does not exist and we are not working in modulus calculus,
+		// choose a new prime and try again. This loop should always terminate, as
+		// we have already checked that gcd(a,b) == 1.
+		} while (!inv_exists);
+
+		// estimate of the size of the Form notation; might be extended later
+		ressize = invamodp.size_of_form_notation()+1;
+		res = (WORD *)Malloc1(ressize*sizeof(WORD), "poly_inverse");
+
+		// initialize polynomials to store the result
+		poly primepower(BHEAD modp);
+		poly inva(invamodp,modp,1);
+		poly invb(invbmodp,modp,1);
+
+		while (true) {
+			// convert to Form notation
+			int j=0;
+			WORD n=0;
+			for (int i=1; i<inva[0]; i+=inva[i]) {
+
+				// check whether res should be extended
+				while (ressize < j + 2*ABS(inva[i+inva[i]-1]) + (inva[i+1]>0?4:0) + 3) {
+					int newressize = 2*ressize;
+
+					WORD *newres = (WORD *)Malloc1(newressize*sizeof(WORD), "poly_inverse");
+					WCOPY(newres, res, ressize);
+					M_free(res, "poly_inverse");
+					res = newres;
+					ressize = newressize;
+				}
+
+				res[j] = 1;
+				if (inva[i+1]>0) {
+					res[j+res[j]++] = SYMBOL;
+					res[j+res[j]++] = 4;
+					res[j+res[j]++] = AN.poly_vars[0];
+					res[j+res[j]++] = inva[i+1];
+				}
+				MakeLongRational(BHEAD (UWORD *)&inva[i+2], inva[i+inva[i]-1],
+												 (UWORD*)&primepower.terms[3], primepower.terms[primepower.terms[1]],
+												 (UWORD *)&res[j+res[j]], &n);
+				res[j] += 2*ABS(n);
+				res[j+res[j]++] = SGN(n)*(2*ABS(n)+1);
+				j += res[j];
+			}
+			res[j]=0;
+
+			// if modulus calculus is set, this is the answer
+			if (a.modp != 0) break;
+
+			// otherwise check over integers
+			poly den(BHEAD 0);
+			poly check(poly::argument_to_poly(BHEAD res, false, true, &den));
+			// Shortcut: if b's lcoeff doesn't divide the lcoeff of check*a,
+			// b certainly doesn't divide check*a:
+			if (poly::divides(b.integer_lcoeff(), check.integer_lcoeff()*a.integer_lcoeff())) {
+				check = check*a - den;
+				if (poly::divides(b, check)) break;
+			}
+
+			// if incorrect, lift with quadratic p-adic Newton's iteration.
+			poly error((poly(BHEAD 1) - a*inva - b*invb) / primepower);
+			poly errormodpp(error, modp, inva.modn);
+
+			inva.modn *= 2;
+			invb.modn *= 2;
+
+			poly dinva((inva * errormodpp) % b);
+			poly dinvb((invb * errormodpp) % a);
+
+			inva += dinva * primepower;
+			invb += dinvb * primepower;
+
+			primepower *= primepower;
 		}
-		
-		// if incorrect, lift with quadratic p-adic Newton's iteration.
-		poly error((poly(BHEAD 1) - a*inva - b*invb) / primepower);
-		poly errormodpp(error, modp, inva.modn);
 
-		inva.modn *= 2;
-		invb.modn *= 2;
-		
-		poly dinva((inva * errormodpp) % b);
-		poly dinvb((invb * errormodpp) % a);
-
-		inva += dinva * primepower;
-		invb += dinvb * primepower;
-		
-		primepower *= primepower;
+		// One more round trip from form -> poly -> form, to multiply by dena in an easy way
+		finalres = poly(poly::argument_to_poly(BHEAD res, false, true, &finalden));
 	}
+
+	finalres *= dena;
+	// The overall denominator additionally needs to be multiplied by content_a:
+	finalden *= content_a;
+	const WORD finalden_size = finalden.terms[finalden.terms[1]];
+	const int finalsize = finalres.size_of_form_notation_with_den(finalden_size)+1;
+	if (ressize < finalsize) {
+		if (res != NULL) {
+			M_free(res, "poly_inverse");
+		}
+		res = (WORD *)Malloc1(finalsize*sizeof(WORD), "poly_inverse");
+	}
+	poly::poly_to_argument_with_den(finalres, finalden_size,
+		(UWORD*)&(finalden.terms[finalden.terms[1] - ABS(finalden_size)]), res, false);
 
 	// clean up and reset modulo calculation
 	poly_free_poly_vars(BHEAD "AN.poly_vars_inverse");
@@ -1806,8 +1951,15 @@ WORD *poly_mul(PHEAD WORD *a, WORD *b) {
 	cout << "*** [" << thetime() << "]  CALL : poly_mul" << endl;
 #endif
 
+#ifdef WITHFLINT
+	if ( AC.FlintPolyFlag && AC.ncmod==0 ) {
+		return flint_mul(BHEAD a, b);
+	}
+#endif
+
 	// Extract variables
 	vector<WORD *> e;
+	e.reserve(2);
 	e.push_back(a);
 	e.push_back(b);
 	poly::get_variables(BHEAD e, false, false);  // TODO: any performance effect by sort_vars=true?
