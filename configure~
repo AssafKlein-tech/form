@@ -8838,7 +8838,7 @@ else
 fi
 
 
-# Check for Ruby >= 1.9 and test/unit.
+# Check for Ruby >= 2.0 and test/unit.
 # Extract the first word of "ruby", so it can be a program name with args.
 set dummy ruby; ac_word=$2
 { printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
@@ -8888,9 +8888,9 @@ fi
 ok=yes
 test "x$RUBY" = x && ok=no
 if test "x$ok" = xyes; then
-	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether ruby >= 1.9" >&5
-printf %s "checking whether ruby >= 1.9... " >&6; }
-	$RUBY -e 'exit(1) if RUBY_VERSION < "1.9.0"' >/dev/null 2>&1 || ok=no
+	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: checking whether ruby >= 2.0" >&5
+printf %s "checking whether ruby >= 2.0... " >&6; }
+	$RUBY -e 'exit(1) if RUBY_VERSION < "2.0.0"' >/dev/null 2>&1 || ok=no
 	{ printf "%s\n" "$as_me:${as_lineno-$LINENO}: result: $ok" >&5
 printf "%s\n" "$ok" >&6; }
 fi

@@ -75,3 +75,11 @@ doc/manual/version.tex
 
 doc/devref/devref/
 doc/manual/manual/
+h_h_h_h_h.out
+test_heavy_serial.out
+test3.out
+extern/zstd
+test_heavy.out
+procedures.h
+tests/Adquanta/GR_heavy_h5_83.frm
+
