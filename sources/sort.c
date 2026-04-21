@@ -85,6 +85,7 @@ extern LONG numfrees;
 	#[ SortUtilities :
 		#[ WriteStats :				void WriteStats(lspace,par,checkLogType)
 */
+ 
 char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
@@ -100,7 +101,7 @@ static int patch = 0;
 static inline BOOL PF_LowMRsort() {
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
 }
-#ifndef ILP32
+#ifndef BITSINWORD == 16
 static const UWORD R[256] = {
  	0x8f3b5e2a, 0xc1840d77, 0x4abe12f9, 0xbd7e39c3, 0x73da904e, 0x2f9e1b78, 0xe4a1c653, 0x9c0d2fa1,
     0x1f37b5d4, 0xa6c3942e, 0xd9134a8f, 0x5be27fd6, 0x84a9c130, 0xfe67320d, 0x671d90ce, 0x3ac4e2b1,
@@ -1761,10 +1762,10 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				end -= ABS(end[-1]);
 				UWORD term_hash = 0;
 				start++;
-#ifdef ILP32
+#ifdef BITSINWORD == 16
 				while( start < end ) {
 					UWORD w = (UWORD)(*start++);    
-					term_hash = (term_hash << 19) | (term_hash >> (BITSINWORD - 19));
+					term_hash = (term_hash << 13) | (term_hash >> (BITSINWORD - 13));
 					term_hash ^= w;
 				}
 #elif defined __AVX512F__
@@ -1850,7 +1851,7 @@ nocompress:
 				first = 2;
 			}
 /*					Sabotage getting into the coefficient next time */
-			r[-(ABS(r[-1]))] = 0;				
+			r[-(ABS(r[-1]))] = 0;
 			WORD* top = AR.ComprTop;
 #ifdef WITHMPI
 				if(lowmr_sort)	
@@ -4693,7 +4694,7 @@ EndOfAll:
 	if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
 #endif
 		(S->fPatchN)++;
-	S->fPatches[S->fPatchN] = position;
+		S->fPatches[S->fPatchN] = position;
 	}
 	if ( par == 0 && fout != AR.outfile ) {
 /*

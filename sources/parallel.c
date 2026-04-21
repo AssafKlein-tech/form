@@ -567,7 +567,10 @@ newterms:
 			while ( m2 >= lastterm ) *m1-- = *m2--;
 			lastterm = m1 + 1;
 		}
-		else{
+		else {
+/*
+			copy beginning of term to the next buffer so that it ends at m1
+*/
 			m2 = rbuf->full[a] - 1;
 			while ( m2 >= term ) *m1-- = *m2--;
 			rbuf->fill[next] = term = m1 + 1;
@@ -599,7 +602,7 @@ newterms:
 		}
 /*
 			now safely make next buffer active
-*/		
+*/
 		a = rbuf->active = next;
 	}
 
@@ -985,6 +988,9 @@ int PF_EndSort(void)
 			MesPrint("[%d] ERROR in endsort: Failed to allocate send buffer", PF.me);
 			return -1;
 		}
+/*
+ 		#] the slaves have to initialize their sendbuffer : 
+*/
 		MesPrint("[%d] PF_EndSort: Send buffer allocated successfully (size=%ld)", PF.me, size);
 		
 		AR.CompressPointer = AR.CompressBuffer;
