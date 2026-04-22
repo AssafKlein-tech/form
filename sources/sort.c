@@ -1917,8 +1917,9 @@ nocompress:
 		ret = i;
 		ADDPOS(*position,i*sizeof(WORD));
 #ifdef WITHMPI
-		PF_BUFFER *sbuf = PF.sbufs[dst];
+		PF_BUFFER *sbuf = NULL;
 		if (lowmr_sort) {
+			sbuf = PF.sbufs[dst];
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
 			if( fi->POfill + i >= fi->POstop ) {
@@ -1936,6 +1937,7 @@ nocompress:
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
 			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
+				if (!sbuf) sbuf = PF.sbufs[dst];
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];

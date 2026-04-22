@@ -27,9 +27,19 @@ make -C sources parform
 make
 ```
 
+**`make parvorm` is currently broken** — its source lists are commented out in
+`sources/Makefile`, so the link line mangles flags (e.g. `-lz` → `lz: command not
+found`) and the rule exits with `Error 127 (ignored)`. For a debug build of
+parform, force a rebuild of the normal target with debug flags instead:
+
+```bash
+rm -f sources/parform-*.o sources/parform
+make -C sources parform CFLAGS="-g -O0"
+```
+
 **Configure flags of note:**
 - `--enable-parform` — build `parform` (MPI) — required for MRmpi
-- `--enable-debug` — build debug variant `parvorm`
+- `--enable-debug` — build debug variant `parvorm` (see note above — currently broken)
 - `--with-zstd` — zstd compression
 - `--enable-coverage`, `--enable-profile` — coverage/profiling builds
 

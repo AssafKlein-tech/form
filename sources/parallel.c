@@ -983,16 +983,14 @@ int PF_EndSort(void)
 */
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
 			return 0; //mappers won't enter
-		MesPrint("[%d] PF_EndSort: Slave allocating send buffer", PF.me);
 		if ((size = PF_allocateSbuf()) == 0 ) {
 			MesPrint("[%d] ERROR in endsort: Failed to allocate send buffer", PF.me);
 			return -1;
 		}
 /*
- 		#] the slaves have to initialize their sendbuffer : 
+ 		#] the slaves have to initialize their sendbuffer :
 */
-		MesPrint("[%d] PF_EndSort: Send buffer allocated successfully (size=%ld)", PF.me, size);
-		
+
 		AR.CompressPointer = AR.CompressBuffer;
 		*AR.CompressPointer = 0;
 		return(0);
