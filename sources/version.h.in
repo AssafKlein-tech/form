@@ -1,0 +1,8 @@
+#define REPO_VERSION        "5.0.0"
+#define REPO_VERSION_DESC   "v5.0.0-60-ga20728c-dirty"
+#define REPO_REVISION       "v5.0.0-60-ga20728c-dirty"
+#define REPO_DATE           "Apr 23 2026"
+#define REPO_MAJOR_VERSION  5
+#define REPO_MINOR_VERSION  0
+#define REPO_PATCH_VERSION  0
+#define REPO_VERSION_SUFFIX ""

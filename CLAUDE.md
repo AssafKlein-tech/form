@@ -58,6 +58,39 @@ mpirun -np 9 parform small_test_red.frm   # uses 'on mapreduce;' inside the .frm
 
 `tests/simple_tests/` contains hand-crafted `.frm` scripts for MRmpi. `tests/iostat/` contains I/O measurement scripts.
 
+After any change to `sort.c` / `parallel.c` / `mpi.c`, the correctness check is to diff the run output against the same `.frm` script with `off mapreduce;` — the two must produce identical final FORM output.
+
+## Production runs (Adquanta cluster)
+
+`runs/Adquanta/` holds the PBS jobs for the real workload. Two siblings:
+- [runs/Adquanta/form_spin_test.pbs](runs/Adquanta/form_spin_test.pbs) — non-MR baseline (150 ranks, `Spin2_h5_45.frm`)
+- [runs/Adquanta/form_spin_test_mr.pbs](runs/Adquanta/form_spin_test_mr.pbs) — MR variant (180 ranks with `-r15`, `Spin2_h5_45_mr.frm`, `PF_SBUFS=PF_RBUFS=3`)
+
+Both write run logs to `tmp/test_spin_*.{o,e}`. When the user references "the org run" or "the mr run" they usually mean the most recent log files there.
+
+Cluster-side env vars (set in the PBS jobs):
+- `FORMTMP=/gtmp` — local tmp, NOT NFS — sort files must not go to NFS or the run dies on I/O.
+- `FORM_IGNORE_DEPRECATION=1` — silences ParFORM deprecation warning.
+- `OMPI_MCA_btl_tcp_eager_limit=1048576` and friends — let MR shuffle messages bypass rendezvous handshake.
+
+## Runtime tuning (MRmpi)
+
+| Env var | Default | Cap | Purpose |
+|---|---|---|---|
+| `PF_SBUFS` | 2 | 10 | Cyclic send-buffer slots per (mapper, destination) |
+| `PF_RBUFS` | 2 | 4 | Cyclic receive-buffer slots per (reducer, source mapper) |
+| `PF_LOG` | 0 | — | ParFORM logging verbosity |
+| `PF_STATS` | 10 | — | Stats interval |
+
+Caps and parsing live in [sources/parallel.c:2409-2422](sources/parallel.c#L2409). **Gotcha:** `PF_RBUFS` clamps silently — there is no warning if you set it above the cap. `PF_ReducerInit` only pre-posts ONE IRecv per source at init, so even with `numrbufs > 1` only one message per mapper is in flight at a time. See the sort skill for what each buffer actually does.
+
+## Reference: skills
+
+Two skill files in `.claude/skills/` carry deep reference material — load them when working in their domain:
+
+- `.claude/skills/sort/SKILL.md` — full sort-pipeline reference (regular FORM / TFORM / ParFORM / MRmpi). Read this BEFORE touching `sort.c`, `parallel.c`, or `mpi.c`.
+- `.claude/skills/term/SKILL.md` — FORM term memory layout, coefficient extraction, delta compression wire format. Read this when reading or writing term bytes (hash routing, compression, scratch-file format).
+
 ## Architecture
 
 ### Expression Pipeline

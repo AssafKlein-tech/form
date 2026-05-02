@@ -708,8 +708,11 @@ newsrc:
 			MesPrint("[%d] PF_StoreBuffer: Error in term %d sss= %d, ss = %d full = %d", PF.me, *ss, sss, ss, rbuf->full[a]);
 			return(-1);
 		}
-		while (ss != sss ){
-			*lfill++ = *ss++;
+		{
+			size_t n = (size_t)(sss - ss);
+			memcpy(lfill, ss, n * sizeof(WORD));
+			lfill += n;
+			ss = sss;
 		}
 	}
 	*lfill++ = 0;
@@ -2415,7 +2418,7 @@ int PF_Init(int *argc, char ***argv)
 		}
 		if ( PF.numsbufs > 10 ) PF.numsbufs = 10;
 		if ( PF.numsbufs <  1 ) PF.numsbufs = 1;
-		if ( PF.numrbufs >  2 ) PF.numrbufs = 2;
+		if ( PF.numrbufs >  4 ) PF.numrbufs = 4;
 		if ( PF.numrbufs <  1 ) PF.numrbufs = 1;
 
 		if ( ( c = getenv("PF_STATS") ) ) {

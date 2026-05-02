@@ -2018,7 +2018,7 @@ nocompress:
 #endif
 				}
 			  }
-			} 
+			}
 			if ( first ) { // if compressed the first two WORDS are the negetive size of the copy and the size left for the term
 				if ( first == 2 ) *p++ = k;
 				else *p++ = j;

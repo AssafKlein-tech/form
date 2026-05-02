@@ -857,11 +857,11 @@ int DoExecute(WORD par, WORD skip)
 	 */
 	AS.printflag = 1;
 	// if parallel execution is desabled, make sure the master has all the necessary data. (no distributed data)
-	if ( AC.mparallelflag != PARALLELFLAG  && (AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST)){
-		if (PF.me== MASTER) 
-			MesPrint("\n**Must be parrallel to collect distributed inputs.**\n\n");
-		return (-1);
-	}
+	//if ( AC.mparallelflag != PARALLELFLAG  && (AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST)){
+	//	if (PF.me== MASTER) 
+	//		MesPrint("\n**Must be parrallel to collect distributed inputs.**\n\n");
+	//	return (-1);
+	//}
 	// if it's the last module we cannot have distributed output
 	//if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE; //fixme later
 	if ((AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) && AC.mMRflag == MAPREDUCE) {AC.sMRflag =  MAPREDUCE_FIRST;}

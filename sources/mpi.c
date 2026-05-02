@@ -294,14 +294,23 @@ int PF_ISendSbuf(int to, int tag)
 {
 	PF_BUFFER *s = (PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE) ? PF.sbufs[to] : PF.sbufs[0];
 	int a = s->active;
-	int size = s->fill[a] - s->buff[a];
+	LONG msg_size = s->fill[a] - s->buff[a];
+	int size;
 	int r = 0;
 
 	static int finished;
 
+	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) {
+		fprintf(stderr,"[%d] PF_ISendSbuf: invalid msg_size %lld (to=%d tag=%d)\n",
+		        PF.me,(long long)msg_size,to,tag);
+		fflush(stderr);
+		return(-1);
+	}
+	size = (int)msg_size;
+
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
-		if (first == 0){ 
+		if (first == 0){
 			PF_Send(MASTER, PF_BUFFER_MSGTAG);
 			first =  1;
 		}

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(module load *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '\\a' > /dev/tty 2>/dev/null"
+          }
+        ]
+      }
+    ]
+  }
+}

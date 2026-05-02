@@ -182,3 +182,55 @@ In `PutOut()` for a reducer, `PF_LowMRsort()` is **false** (reducer rank >= numm
 - Hash invariant: terms with the same symbolic structure always reach the same reducer → reducer sums their coefficients immediately, **zero duplicates reach the master**
 - Master fan-in = numreducers < (numtasks − 1)
 - No duplicate terms written to sort files across mappers for the same symbolic expression
+
+### Caveat: lowmr_sort fires during EndSort, not generation
+
+`PF_LowMRsort()` is checked inside `PutOut()`, and `PutOut()` is the per-term sink during the **final merge** in `EndSort` ([sort.c:888](sources/sort.c#L888)). That means a mapper still runs the full local three-tier pipeline first — small buffer → patches → potentially `MergePatches(1)` writing to the local sort file `S->file`. Only when EndSort streams those merged terms back through `PutOut` does shuffle traffic begin. So mappers can spill to disk before the shuffle starts; the "less disk I/O" goal is only fully realized when the mapper's working set fits in `lBuffer` and never hits `S->file`.
+
+---
+
+## Cyclic send/receive buffers and tuning
+
+### Send buffers (mapper side) — `PF.sbufs[k]`
+
+One per destination (reducer rank or master rank). Each holds `PF.numsbufs` slots cycled via `sbuf->active`. While slot `active` is being filled (write path in `PutOut`), prior slots may still be in flight as `MPI_Isend` requests; `PF_WISendSbuf` waits on `request[active]` before reusing it.
+
+- Default `numsbufs = 2`, env `PF_SBUFS`, clamped to [1, 10] at [parallel.c:2419](sources/parallel.c#L2419).
+
+### Receive buffers (reducer side) — `PF.rbufs[src]`
+
+One per source mapper. Each holds `PF.numrbufs` slots cycled via `rbuf->active`. Used by `PF_StoreBuffer` ([parallel.c:630](sources/parallel.c#L630)) — incoming `PF_SHUFFLE_MSGTAG` lands into the active slot, the slot is drained directly into the reducer's large buffer as a new patch, and the *next* slot's IRecv is posted then.
+
+- Default `numrbufs = 2`, env `PF_RBUFS`, clamped to [1, 4] at [parallel.c:2421](sources/parallel.c#L2421).
+- **Init only pre-posts ONE IRecv per source** (the `active` slot) at [parallel.c:2206-2218](sources/parallel.c#L2206). Other slots' `MPI_Request` stays `MPI_REQUEST_NULL` until the active message is consumed and the next IRecv is posted. So even with `numrbufs = 4`, a single mapper has at most one in-flight receive at a time — additional slots only help by overlapping reducer-side processing with the next IRecv post, not by buffering multiple in-flight messages from the same mapper.
+
+### Per-term invariant in PF_StoreBuffer
+
+While walking the received buffer, each term-start pointer `sss` is validated at [parallel.c:707](sources/parallel.c#L707):
+```c
+if ( sss > rbuf->full[a] || sss <= rbuf->fill[a] ) { /* error */ }
+```
+Where `rbuf->fill[a]` = patch start written into the large buffer, `rbuf->full[a]` = patch end. Useful invariant when debugging garbled wire data.
+
+### `msg_size` invariant on the send side
+
+`PF_ISendSbuf` ([mpi.c:293](sources/mpi.c#L293)) computes `LONG msg_size = s->fill[a] - s->buff[a]` and aborts if negative. Seeing `PF_ISendSbuf: invalid msg_size -1` means `fill` was set below `buff` — typically a bug in the writer that drives `PutOut`'s spill path or in `FlushOut`'s reset of `fill` to `buff` before a partial flush.
+
+### `FlushOut(patch=1)` behavior
+
+[sort.c:2056](sources/sort.c#L2056), called from `MergePatches(1)` on a mapper. Loops over **every** reducer and emits a `PF_BUFFER_MSGTAG` whether or not the per-reducer buffer has new data — the gating condition `sbuf->fill[active] >= sbuf->stop[active] || patch` is true for all destinations once `patch=1`. The `!patch` branch additionally writes a 0 terminator and uses `PF_ENDBUFFER_MSGTAG` for end-of-stream signalling.
+
+---
+
+## Debug build & smoke test
+
+```bash
+# Debug build of parform (parvorm rule is broken — see CLAUDE.md):
+rm -f sources/parform-*.o sources/parform
+make -C sources parform CFLAGS="-g -O0"
+
+# 9-process smoke test:
+cd tests/simple_tests && bash runall.sh
+```
+
+Smoke tests in [tests/simple_tests/](tests/simple_tests/) expect identical output between MR and non-MR runs — diff against a reference run with `off mapreduce;` to verify correctness after any sort.c / parallel.c / mpi.c change.

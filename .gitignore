@@ -1,4 +1,5 @@
 *.o
+*.e
 *.exe
 *.str
 *.txt
@@ -29,6 +30,7 @@ sources/parform
 sources/vorm
 sources/tvorm
 sources/parvorm
+runs/*
 
 form-*/
 form-*.tar.bz2
