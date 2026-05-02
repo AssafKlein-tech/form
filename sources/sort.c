@@ -2070,7 +2070,13 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
-				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] || patch){
+				/* On patch=1 (called from MergePatches) skip the send when this
+				   reducer's slot is empty - hash-skewed modules generate empties
+				   for many reducers and an empty Isend is pure overhead. The
+				   !patch branch below still emits the 0-terminator + ENDBUFFER
+				   tag that signals end-of-stream. */
+				int nonempty = sbuf->fill[sbuf->active] > sbuf->buff[sbuf->active];
+				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] || (patch && nonempty) ){
 					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				}

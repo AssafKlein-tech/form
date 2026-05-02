@@ -351,9 +351,13 @@ int PF_ISendSbuf(int to, int tag)
 		case PF_SHUFFLE_MSGTAG:
 		case PF_BUFFER_MSGTAG:
 		if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
-		while ( s->request[s->active] != MPI_REQUEST_NULL ) { // busy wait until the active buffer is free
+		/* Only the new active slot must be free for the next pack; other slots
+		   can complete lazily. MPI_Wait targets the one we need; replaces the
+		   prior MPI_Waitsome loop which spun re-entering until the right slot
+		   happened to be selected. */
+		if ( s->request[s->active] != MPI_REQUEST_NULL ) {
 			TimeElapsed(TIMESTART);
-			r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
+			r = MPI_Wait(&s->request[s->active], &s->retstat[0]);
 			TimeElapsed(TIMESTOP);
 			if ( r != MPI_SUCCESS ) return(r);
 		}

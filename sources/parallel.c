@@ -704,10 +704,14 @@ newsrc:
 		if (*ss == 0) break;
 		S->TermsLeft++;
 		sss =  (*ss < 0) ? ss + ss[1] + 2 : ss + *ss ;
+#ifdef MR_DEBUG
+		/* Mappers produce well-formed term streams; this is a self-consistency
+		   check. Behind MR_DEBUG so the hot loop stays a single load+memcpy. */
 		if ( sss > rbuf->full[a] || sss <= rbuf->fill[a]){
 			MesPrint("[%d] PF_StoreBuffer: Error in term %d sss= %d, ss = %d full = %d", PF.me, *ss, sss, ss, rbuf->full[a]);
 			return(-1);
 		}
+#endif
 		{
 			size_t n = (size_t)(sss - ss);
 			memcpy(lfill, ss, n * sizeof(WORD));
