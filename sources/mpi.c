@@ -1289,7 +1289,45 @@ static int PF_longAddChunk(int n, int mustRealloc)
 }
 
 /*
- 		#] PF_longAddChunk : 
+ 		#] PF_longAddChunk :
+ 		#[ PF_longEnsure :
+
+	Grow PF_longPackBuf to ensure at least `need` bytes capacity. Doubles capacity
+	on growth, never shrinks. Re-syncs cell pointers that index into the buffer
+	(those with bufpos >= 0). Used by the long-multi pack/broadcast paths to
+	support arbitrary message sizes without the chained-cell flaw described in
+	the explanations block above.
+*/
+static int PF_longEnsure(int need)
+{
+	UBYTE *newbuf;
+	int newcap;
+	if ( need <= PF_longPackTop ) return 0;
+	newcap = PF_longPackTop ? PF_longPackTop : PF_packsize;
+	while ( newcap < need ) {
+		if ( newcap >= INT_MAX/2 ) { newcap = INT_MAX; break; }
+		newcap *= 2;
+	}
+	/* Round up to a multiple of sizeof(int) for MPI_Pack alignment safety. */
+	newcap = (newcap + (int)sizeof(int) - 1) & ~((int)sizeof(int) - 1);
+	if ( ( newbuf = (UBYTE *)Malloc1(sizeof(UBYTE)*newcap,
+				"PF_longPackBuf grow") ) == NULL ) return -1;
+	if ( PF_longPackTop > 0 ) memcpy(newbuf, PF_longPackBuf, PF_longPackTop);
+	M_free(PF_longPackBuf, "PF_longPackBuf");
+	PF_longPackBuf = newbuf;
+	PF_longPackTop = newcap;
+	{
+		PF_LONGMULTI *c = PF_longMultiRoot;
+		while ( c ) {
+			if ( c->bufpos >= 0 ) c->buffer = PF_longPackBuf + c->bufpos;
+			c = c->next;
+		}
+	}
+	return 0;
+}
+
+/*
+ 		#] PF_longEnsure :
  		#[ PF_longMultiHowSplit :
 
 	"count" of "type" elements in an input buffer occupy "bytes" bytes.
@@ -1519,21 +1557,19 @@ static inline int PF_longSingleReset(int is_sender)
  */
 static inline int PF_longMultiReset(int is_sender)
 {
-	int ret = 0, theone = 1;
+	/* New wire format: a leading INT bcast carries the actual packed-byte
+	   count, followed by exactly that many MPI_PACKED bytes. The old
+	   `theone=1` first-int marker (used to signal single-vs-chunked) is
+	   no longer needed because the buffer is grown on demand and only one
+	   chunk is ever sent. */
+	(void)is_sender;
 	PF_longMultiRoot->packpos = 0;
-	if ( is_sender ) {
-		ret = MPI_Pack(&theone,1,MPI_INT,
-			PF_longPackBuf,PF_longPackTop,&(PF_longMultiRoot->packpos),PF_COMM);
-        PF_longPackN = 1;
-	}
-	else {
-		PF_longPackN = 0;
-	}
-	PF_longMultiRoot->nPacks = 0;   /* The auxiliary field is not counted */
+	PF_longPackN = 1;
+	PF_longMultiRoot->nPacks = 0;
 	PF_longMultiRoot->lastLen = 0;
 	PF_longMultiTop = PF_longMultiRoot;
 	PF_longMultiRoot->buffer = PF_longPackBuf;
-	return ret;
+	return 0;
 }
 
 /*
@@ -1762,6 +1798,7 @@ int PF_PrepareLongMultiPack(void)
 int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Datatype type)
 {
 	int ret, items;
+	(void)eSize;
 
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
@@ -1769,39 +1806,16 @@ int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Data
 	ret = MPI_Pack_size((int)count,type,PF_COMM,&items);
 	if ( ret != MPI_SUCCESS ) return(ret);
 
-	if ( PF_longMultiTop->packpos + items <= PF_packsize ) {
-		ret = MPI_Pack((void *)buffer,(int)count,type,PF_longMultiTop->buffer,
-		               PF_packsize,&(PF_longMultiTop->packpos),PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		PF_longMultiTop->nPacks++;
-		return(0);
+	/* Always pack into the root cell; grow PF_longPackBuf on demand. */
+	if ( PF_longMultiRoot->packpos + items > PF_longPackTop ) {
+		if ( PF_longEnsure(PF_longMultiRoot->packpos + items) ) return -1;
+		PF_longMultiRoot->buffer = PF_longPackBuf;
 	}
-/*
-		The data do not fit to the rest of the buffer.
-		There are two possibilities here: go to the next cell
-		immediately, or first try to pack some portion. The function
-		PF_longMultiHowSplit() returns the number of items could be
-		packed in the end of the current cell:
-*/
-	if ( ( items = PF_longMultiHowSplit((int)count,type,items) ) < 0 ) return(items);
-
-	if ( items > 0 ) {   /* store the head */
-		ret = MPI_Pack((void *)buffer,items,type,PF_longMultiTop->buffer,
-		               PF_packsize,&(PF_longMultiTop->packpos),PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		PF_longMultiTop->nPacks++;
-		PF_longMultiTop->lastLen = items;
-	}
-/*
-		Now the rest should be packed to the new cell.
-		Slide to the new cell:
-*/
-	if ( PF_longMultiPack2NextCell() ) return(-1);
-	PF_longPackN++;
-/*
-		Pack the rest to the next cell:
-*/
-	return(PF_LongMultiPackImpl((char *)buffer+items*eSize,count-items,eSize,type));
+	ret = MPI_Pack((void *)buffer,(int)count,type,PF_longMultiRoot->buffer,
+	               PF_longPackTop,&(PF_longMultiRoot->packpos),PF_COMM);
+	if ( ret != MPI_SUCCESS ) return(ret);
+	PF_longMultiRoot->nPacks++;
+	return 0;
 }
 
 /*
@@ -1821,64 +1835,18 @@ int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Data
 int PF_LongMultiUnpackImpl(void *buffer, size_t count, size_t eSize, MPI_Datatype type)
 {
 	int ret;
+	(void)eSize;
 
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
 
-	if ( PF_longPackN < 2 ) { /* Just unpack the buffer from the single cell */
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					count,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		return(0);
-	}
-/*
-		More than one cell is in use.
-*/
-	if ( ( PF_longMultiTop->nPacks > 1 )     /* the cell is not expired */
-		||          /* The last cell contains exactly required portion: */
-		( ( PF_longMultiTop->nPacks == 1 ) && ( PF_longMultiTop->lastLen == 0 ) )
-	) {    /* Just unpack the buffer from the current cell */
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					count,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		(PF_longMultiTop->nPacks)--;
-		return(0);
-	}
-	if ( ( PF_longMultiTop->nPacks == 1 ) && ( PF_longMultiTop->lastLen != 0 ) ) {
-/*
-			Unpack the head:
-*/
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					PF_longMultiTop->lastLen,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-/*
-			Decrement the counter by read items:
-*/
-		count -= PF_longMultiTop->lastLen;
-		if ( count <= 0 ) return(-1);  /*Something is wrong! */
-/*
-			Shift the output buffer position:
-*/
-		buffer = (char *)buffer + PF_longMultiTop->lastLen * eSize;
-		(PF_longMultiTop->nPacks)--;
-	}
-/*
-		Here PF_longMultiTop->nPacks == 0
-*/
-	if ( ( PF_longMultiTop = PF_longMultiTop->next ) == NULL ) return(-1);
-	return(PF_LongMultiUnpackImpl(buffer,count,eSize,type));
+	/* All data is in the single root cell; cell-spanning unpack code from the
+	   former chained-chunks design is no longer reachable. */
+	ret = MPI_Unpack(PF_longMultiRoot->buffer, PF_longPackTop,
+	                 &(PF_longMultiRoot->packpos),
+	                 buffer, (int)count, type, PF_COMM);
+	if ( ret != MPI_SUCCESS ) return(ret);
+	return 0;
 }
 
 /*
@@ -1906,94 +1874,42 @@ int PF_LongMultiUnpackImpl(void *buffer, size_t count, size_t eSize, MPI_Datatyp
  */
 int PF_LongMultiBroadcast(void)
 {
-	int ret, i;
+	int ret, total_bytes;
+
+	/* Wire format: a single MPI_Bcast of an INT carrying the total packed
+	   byte count, followed by a single MPI_Bcast of exactly that many
+	   MPI_PACKED bytes. The buffer grows on demand on both sides via
+	   PF_longEnsure(); there is no longer any chunked-cell prefix. */
 
 	if ( PF.me == MASTER ) {
-/*
-			PF_longPackN is the number of packed chunks. If it is more
-			than 1, we have to pack a new one and send it first
-*/
-		if ( PF_longPackN > 1 ) {
-			if ( PF_longMultiPreparePrefix() ) return(-1);
-			ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-			                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-/*
-				PF_longPackN was not incremented by PF_longMultiPreparePrefix()!
-*/
+		total_bytes = PF_longMultiRoot->packpos;
+		ret = MPI_Bcast(&total_bytes, 1, MPI_INT, MASTER, PF_COMM);
+		if ( ret != MPI_SUCCESS ) return ret;
+		if ( total_bytes > 0 ) {
+			ret = MPI_Bcast(PF_longMultiRoot->buffer, total_bytes,
+			                MPI_PACKED, MASTER, PF_COMM);
+			if ( ret != MPI_SUCCESS ) return ret;
 		}
-/*
-			Now we start from the beginning:
-*/
-		PF_longMultiTop = PF_longMultiRoot;
-/*
-			Just broadcast all the chunks:
-*/
-		for ( i = 0; i < PF_longPackN; i++ ) {
-			ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-			                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-			PF_longMultiTop = PF_longMultiTop->next;
-		}
-		return(0);
+		return 0;
 	}
-/*
-		else - the slave
-*/
-	PF_longMultiReset(0);
-/*
-		Get the first chunk; it can be either the only data chunk, or
-		an auxiliary chunk, if the data do not fit the single chunk:
-*/
-	ret = MPI_Bcast((void*)PF_longMultiRoot->buffer,
-	                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-	if ( ret != MPI_SUCCESS ) return(ret);
 
-	ret = MPI_Unpack((void*)PF_longMultiRoot->buffer,
-	                 PF_packsize,
-	                 &(PF_longMultiRoot->packpos),
-	                 &PF_longPackN,1,MPI_INT,PF_COMM);
-	if ( ret != MPI_SUCCESS ) return(ret);
-/*
-		Now in PF_longPackN we have the number of cells used
-		for broadcasting. If it is >1, then we have to allocate
-		enough cells, initialize them and receive all the chunks.
-*/
-	if ( PF_longPackN < 2 ) /* That's all, the single chunk is received. */
-		return(0);
-/*
-		Here we have to get PF_longPackN chunks. But, first,
-		initialize cells by info from the received auxiliary chunk.
-*/
-	if ( PF_longMultiProcessPrefix() ) return(-1);
-/*
-		Now we have free PF_longPackN cells, starting
-		from PF_longMultiRoot->next,  with properly initialized
-		nPacks and lastLen fields. Get chunks:
-*/
-	for ( PF_longMultiTop = PF_longMultiRoot->next, i = 0; i < PF_longPackN; i++ ) {
-		ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-		                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		if ( i == 0 ) {   /* The first chunk, it contains extra "1". */
-			int tmp;
-/*
-				Extract this 1 into tmp and forget about it.
-*/
-			ret = MPI_Unpack((void*)PF_longMultiTop->buffer,
-			                 PF_packsize,
-			                 &(PF_longMultiTop->packpos),
-			                 &tmp,1,MPI_INT,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-		}
-		PF_longMultiTop = PF_longMultiTop->next;
+	/* Slave path. */
+	PF_longMultiReset(0);
+	ret = MPI_Bcast(&total_bytes, 1, MPI_INT, MASTER, PF_COMM);
+	if ( ret != MPI_SUCCESS ) return ret;
+	if ( total_bytes < 0 ) return -1;
+	if ( total_bytes > PF_longPackTop ) {
+		if ( PF_longEnsure(total_bytes) ) return -1;
+		PF_longMultiRoot->buffer = PF_longPackBuf;
 	}
-/*
-		multiUnPack starts with PF_longMultiTop, skip auxiliary chunk in
-		PF_longMultiRoot:
-*/
-	PF_longMultiTop = PF_longMultiRoot->next;
-	return(0);
+	if ( total_bytes > 0 ) {
+		ret = MPI_Bcast(PF_longMultiRoot->buffer, total_bytes,
+		                MPI_PACKED, MASTER, PF_COMM);
+		if ( ret != MPI_SUCCESS ) return ret;
+	}
+	PF_longMultiRoot->packpos = 0;  /* unpacker reads from the start */
+	PF_longMultiTop = PF_longMultiRoot;
+	return 0;
 }
 
 /*
