@@ -1782,8 +1782,17 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				dst = term_hash % PF.numreducers + PF.nummappers;
 				r = rr = AR.CompressPointers[dst];
 			}
-#endif	
-			if ( !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
+#endif
+			int allow_compress = 1;
+#ifdef WITHMPI
+			/* PF_SHUFFLE_NOCOMPRESS=1 disables delta compression on the
+			   shuffle path only — receiver decodes either form via the
+			   *ss < 0 ? ss + ss[1] + 2 : ss + *ss loop in PF_StoreBuffer.
+			   When set, the entire compression block below is skipped and
+			   the term is written raw. */
+			if ( lowmr_sort && PF_shuffle_nocompress ) allow_compress = 0;
+#endif
+			if ( allow_compress && !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
 			if ( dobracketindex ) {
 				PutBracketInIndex(BHEAD term,position);
 			}
@@ -1865,7 +1874,7 @@ nocompress:
 				return(-1);
 			}
 		}
-		else if ( !AR.NoCompress && ( ncomp < 0 ) && AR.sLevel <= 0 ) {
+		else if ( allow_compress && !AR.NoCompress && ( ncomp < 0 ) && AR.sLevel <= 0 ) {
 				/* No compress but put in compress buffer anyway */
 			if ( dobracketindex ) {
 				PutBracketInIndex(BHEAD term,position);

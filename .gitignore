@@ -1,5 +1,6 @@
 *.o
 *.e
+*.log
 *.exe
 *.str
 *.txt
@@ -87,3 +88,5 @@ tests/Adquanta/GR_heavy_h5_83.frm
 
 FORM-Thesis/
 
+tmp/test_spin_mr.mem.log
+tmp/test_spin_org.mem.log

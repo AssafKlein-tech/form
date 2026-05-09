@@ -62,11 +62,21 @@ After any change to `sort.c` / `parallel.c` / `mpi.c`, the correctness check is 
 
 ## Production runs (Adquanta cluster)
 
-`runs/Adquanta/` holds the PBS jobs for the real workload. Two siblings:
-- [runs/Adquanta/form_spin_test.pbs](runs/Adquanta/form_spin_test.pbs) — non-MR baseline (150 ranks, `Spin2_h5_45.frm`)
-- [runs/Adquanta/form_spin_test_mr.pbs](runs/Adquanta/form_spin_test_mr.pbs) — MR variant (180 ranks with `-r15`, `Spin2_h5_45_mr.frm`, `PF_SBUFS=PF_RBUFS=3`)
+`runs/Adquanta/` holds the PBS jobs for the real workload. Four siblings:
+- `form_spin_test.pbs` — 1 node × 60 ranks, non-MR (`Spin2_h5_45.frm`)
+- `form_spin_test_mr.pbs` — 1 node × 60 ranks MR (`Spin2_h5_45_mr.frm`, `-r12`)
+- `form_spin_test_4n.pbs` — 4 nodes × 16 ranks (excl), non-MR
+- `form_spin_test_mr_4n.pbs` — 4 nodes × 16 ranks MR (`-r12`) — **the winning configuration** (40,778 s wallclock for the v3 round)
 
-Both write run logs to `tmp/test_spin_*.{o,e}`. When the user references "the org run" or "the mr run" they usually mean the most recent log files there.
+Logs go to `tmp/test_spin_<layout>_v[N].{o,e,mem.log}` where `<layout>` ∈ `{org, mr, 4n, mr_4n}` and `[N]` is the round. **v3 is the first complete + correct production round** (after items 2/3/4 + LongMulti broadcast fix + toPolynomial restored). v1/v2 had `toPolynomial onlyfunctions G;` commented out as a workaround for the fixed `MPI_ERR_TRUNCATE` bug — those rounds **skipped polynomial reduction** and produced output in raw `G(...)` form. See the auto-memory `project_spin_runs.md` for the full archive.
+
+**form.set choice depends on whether the heavy sort is MR-active or serial.** Older buffer-tuning sweeps used `bench_compress_mr.frm`, which has `off parallel;` (line 121) before the heavy `.sort:Diagram Loaded` — that runs the sort **serial on the master**, not MR. Buffer tunings derived from that bench tune the wrong code path. The MR-active heavy bench is `bench_compress_mr_keepmr.frm` (with `off parallel;` commented out) or `bench_heavy.frm` (keepmr + `#call dummyindices`). For MR-tuned form.set values from current sweeps see the memory skill ("Reference: what the Spin run actually used").
+
+**toPolynomial + MR gotcha:** if a `.frm` has `on mapreduce;` and uses `toPolynomial onlyfunctions`, you MUST add `off mapreduce;` (alongside `off parallel;`) before the procedure that calls toPolynomial. Otherwise `parallel.c:1687` fires "ERROR: Calling Map Reduce without parallel" — toPolynomial forces the module non-parallel for its poly arithmetic, and the lingering `sMRflag = MAPREDUCE` trips the guard. `Spin2_h5_45_mr.frm` line 152 has the canonical fix.
+
+**form.set lookup gotcha:** [tools.c:580](sources/tools.c#L580) opens `./form.set` from CWD before honoring `-S`. If the run dir has a tform-tuned `form.set`, parform reads it and OOMs (~25 GB/rank floor from the 96 M sortiosize). Either rename the tform file aside (`form.set.tform`) or write parform values directly into `./form.set`.
+
+**Multi-node MR rank-placement gotcha:** [parallel.c:1666](sources/parallel.c#L1666) assigns reducers as the **highest-numbered ranks** (`role = (PF.me < PF.nummappers) ? MAPPER : REDUCER`). With OpenMPI's default block-fill mapping over `$PBS_NODEFILE`, that puts **all reducers on the last node** — which then carries 100% of the sort-side disk I/O, RSS, and mapper-fan-in NIC traffic while the other nodes do only mapping. Any multi-node MR `.pbs` MUST pass `--map-by node` to mpirun so ranks round-robin across hosts and reducers spread evenly. Already wired into `form_spin_test_mr_4n.pbs`, `form_spin_test_mr_4n_2x.pbs`, and `form_spin_test_4n.pbs` (latter for parity). **Pre-v5 multi-node MR wallclocks are biased toward "one hot node" and don't measure true scaling.** Proper fix is to make reducer rank selection stride-based in parallel.c:1666 — not done yet.
 
 Cluster-side env vars (set in the PBS jobs):
 - `FORMTMP=/gtmp` — local tmp, NOT NFS — sort files must not go to NFS or the run dies on I/O.
@@ -78,18 +88,54 @@ Cluster-side env vars (set in the PBS jobs):
 | Env var | Default | Cap | Purpose |
 |---|---|---|---|
 | `PF_SBUFS` | 2 | 10 | Cyclic send-buffer slots per (mapper, destination) |
-| `PF_RBUFS` | 2 | 4 | Cyclic receive-buffer slots per (reducer, source mapper) |
+| `PF_RBUFS` | 2 | 2 | Cyclic receive-buffer slots per (reducer, source mapper) — see note below |
 | `PF_LOG` | 0 | — | ParFORM logging verbosity |
 | `PF_STATS` | 10 | — | Stats interval |
 
-Caps and parsing live in [sources/parallel.c:2409-2422](sources/parallel.c#L2409). **Gotcha:** `PF_RBUFS` clamps silently — there is no warning if you set it above the cap. `PF_ReducerInit` only pre-posts ONE IRecv per source at init, so even with `numrbufs > 1` only one message per mapper is in flight at a time. See the sort skill for what each buffer actually does.
+Caps and parsing live in [sources/parallel.c:2409-2422](sources/parallel.c#L2409). **Gotcha:** `PF_RBUFS` clamps silently — no warning if you set it above the cap.
+
+**`PF_RBUFS` cap is 2 by design ([sources/parallel.c:2425](sources/parallel.c#L2425)):**
+
+The effective queue depth is 1 per (reducer, source) regardless of value: `PF_ReducerInit` and `PF_InitTree` pre-post only the `active=0` slot, and `PF_StoreBuffer` / `PF_PutIn` keep depth at 1 by posting `next` inside the consume step. Setting `PF_RBUFS > 2` would not add real pipelining — the chunk transfer is bandwidth-limited (chunks above the 1 MB OpenMPI eager limit go through rendezvous) and the receiver memcpy is ≥10× faster than network transfer, so concurrent CTS handshakes share the same TCP link with zero added throughput. Production `tmp/test_spin_mr_v3.o` confirms zero `Wait time for Reducers` across all mappers under PF_SBUFS=3, PF_RBUFS=2; the multi-node case [tmp/test_spin_mr_4n_v3.o](tmp/test_spin_mr_4n_v3.o) shows ≤0.5% mapper stall (cross-node TCP-bandwidth bound, not match-latency bound).
+
+`PF_RBUFS=3` was historically buggy: `PF_InitTree:424` only IRecv'd the active slot, and `PF_PutIn:589`'s `newterms` branch waited on slot `next` without arming it. The 0→1→2→0 cycle hit unarmed slot 2 on the 2nd wrap → `MPI_Get_count` on uninitialized `type[2]` → `MPI_ERR_TYPE`. The cap-clamp at line 2425 makes that path unreachable. If a future workload ever needs deeper queueing (e.g. PF_SBUFS raised >2, or interconnect changes from TCP to RDMA), reopen with the multi-deep IRecv design (pre-post all slots in InitTree+ReducerInit, restructure consume/re-arm in PutIn+StoreBuffer, MPI_Cancel cleanup at ENDSHUFFLE/ENDBUFFER) — see [/home/assafklein/.claude/plans/eager-cuddling-wreath.md](.claude/plans/eager-cuddling-wreath.md) for the deferred plan.
+
+See the sort skill for what each buffer actually does.
+
+## Profiling / finding bottlenecks
+
+For any "where is time going / which knob next" question on a parform run — MR or non-MR — use the built-in per-phase profiler. **Full reference is in [.claude/skills/profile/SKILL.md](.claude/skills/profile/SKILL.md)** (auto-loaded when you ask to profile, find bottlenecks, or compare MR vs org).
+
+Quick path:
+
+```bash
+# 1. Build a profile binary (one-time, then redo only on source edits)
+module load openmpi/5.0.3-pbs
+export LD_LIBRARY_PATH=/usr/local/openmpi-5.0.3-pbs/lib:$LD_LIBRARY_PATH
+autoreconf -i
+./configure --enable-parform --enable-mr-profile
+make -C sources parform
+cp sources/parform ~/bin/parform.profile
+
+# 2. Run your job with parform.profile (PBS or local) -- see the skill for env wiring.
+#    The master writes ${PF_PROFILE_DIR:-.}/pf_profile.csv with one row per (module, rank).
+
+# 3. Visualize
+python3 scripts/pf_profile_viz.py <run_dir>                    # single run
+python3 scripts/pf_profile_viz.py <mr_dir> <org_dir>           # MR vs org compare
+```
+
+The `--enable-mr-profile` flag is gated by `#ifdef PF_PROFILE`. In production builds without it, every timer macro expands to `((void)0)` and `pf_profile.c` compiles to nothing — zero overhead. Only the MR-active announcement at [parallel.c:1715](sources/parallel.c#L1715) stays in production; the master "finished sending terms" line, the per-rank wait/working summary, and `[N|module] Endsort,Collect,Broadcast done` are all gated behind `PF_PROFILE`.
+
+The profiler captures **MR and non-MR runs with the same CSV schema**, so the visualization's compare mode lines them up directly. Reducer-specific phases (`RED_*`) are zero on non-MR rows; mapper phases (`MAP_*`) cover slave→master sort traffic in non-MR mode. The visualization includes a **decision matrix** that prints the recommended next optimization (knob or code change) given the observed bottleneck pattern. See the skill for the full rule list and the iostat-style `disk_util_pct` derivation.
 
 ## Reference: skills
 
-Two skill files in `.claude/skills/` carry deep reference material — load them when working in their domain:
+Skill files in `.claude/skills/` carry deep reference material — auto-loaded by topic:
 
 - `.claude/skills/sort/SKILL.md` — full sort-pipeline reference (regular FORM / TFORM / ParFORM / MRmpi). Read this BEFORE touching `sort.c`, `parallel.c`, or `mpi.c`.
 - `.claude/skills/term/SKILL.md` — FORM term memory layout, coefficient extraction, delta compression wire format. Read this when reading or writing term bytes (hash routing, compression, scratch-file format).
+- `.claude/skills/profile/SKILL.md` — per-phase profiler (`--enable-mr-profile`) for MR or non-MR parform runs. Read this when asked to profile a job, find bottlenecks, decide which knob to tune next, or compare MR vs org.
 
 ## Architecture
 

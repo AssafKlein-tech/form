@@ -278,9 +278,10 @@ extern void   PF_MLock(void);
 extern void   PF_MUnlock(void);
 extern LONG   PF_WriteFileToFile(int,UBYTE *,LONG);
 extern void   PF_FlushStdOutBuffer(void);
+extern int    PF_shuffle_nocompress;  /* env PF_SHUFFLE_NOCOMPRESS toggle for the per-reducer delta-compression path in PutOut/lowmr_sort */
 
 /*
-  	#] Function prototypes : 
+  	#] Function prototypes :
 */
 
 #endif

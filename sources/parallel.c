@@ -39,6 +39,7 @@
 */
 #include "form3.h"
 #include "vector.h"
+#include "pf_profile.h"
 
 /*
 #define PF_DEBUG_BCAST_LONG
@@ -179,6 +180,7 @@ static LONG PF_linterms;     /* local interms on this proces: PF_Proces */
 static LONG **PF_stats = NULL;/* space for collecting statistics of all procs */
 static LONG PF_laststat;     /* last realtime when statistics were printed */
 static LONG PF_statsinterval;/* timeinterval for printing statistics */
+int PF_shuffle_nocompress = 0;/* if nonzero, mappers skip per-reducer delta compression in lowmr_sort */
 /*
  		#] variables : 
  		#[ PF_Statistics :
@@ -639,11 +641,13 @@ static int PF_StoreBuffer()
 	PF_Dispatch* d = &PF.dispatch;
 	int src = 0;
 	TimeElapsed(TIMERESET);
-newsrc:
+newsrc: ;
 	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
+	PF_TIMER_BEGIN(RED_RECV_WAIT);
 	TimeElapsed(TIMESTART);
 	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
 	TimeElapsed(TIMESTOP);
+	PF_TIMER_END(RED_RECV_WAIT);
 	if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 	{
 		src = 0;
@@ -687,7 +691,10 @@ newsrc:
 */
 		//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 
+		PF_TIMER_BEGIN(RED_MERGE_PATCHES);
+		PF_TIMER_INC(PF_EX_PATCHES_BUILT);
 		if ( MergePatches(1) ) return (-1);
+		PF_TIMER_END(RED_MERGE_PATCHES);
 
 		SETBASEPOSITION(pp,sSpace);
 		MULPOS(pp,sizeof(WORD));
@@ -1659,6 +1666,15 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	FILEHANDLE *oldoutfile = AR.outfile;
 	TimeElapsed(TIMERESET);
 
+#ifdef PF_PROFILE
+	pf_profile_per_node_init();
+	pf_profile_reset_module();
+	PF_OSCounters _pf_os_start;
+	pf_profile_snapshot_os(&_pf_os_start);
+	double _pf_module_t0 = MPI_Wtime();
+	if ( PF.me == MASTER ) pf_profile_alloc_master(PF.numtasks);
+#endif
+
 	PF.numreducers = (PF.numtasks - 1)*AM.ReducerPer / 100;
 	if (PF.numreducers <2 ) PF.numreducers = 2;
 	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks - PF.numreducers): PF.numtasks;
@@ -1767,6 +1783,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		AN.ninterms = 0;
 		termsinbucket = 0;
 		PACK_LONG(sb->fill[0], 1);
+		PF_TIMER_BEGIN(MAS_DISTRIBUTE);
 		while ( GetTerm(BHEAD term) ) {
 			AN.ninterms++; dd = AN.deferskipped;
 			if ( AC.CollectFun && *term <= (LONG)(AM.MaxTer/(2*sizeof(WORD))) ) {
@@ -1776,7 +1793,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			}
 			//PRINTFBUF("PF_Processor gets",term,*term);
 			if ( termsinbucket >= maxinterms || sb->fill[0] + *term >= sb->stop[0] ) {
+				PF_TIMER_BEGIN(MAS_DISTRIBUTE_WAIT);
 				next = PF_Wait4Slave(PF_ANY_SOURCE);
+				PF_TIMER_END(MAS_DISTRIBUTE_WAIT);
 
 				sb->fill[next] = sb->fill[0];
 				sb->full[next] = sb->full[0];
@@ -1814,6 +1833,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			NCOPY(sb->fill[0], s, j);
 			termsinbucket++;
 		}
+		PF_TIMER_END(MAS_DISTRIBUTE);
 		/* NOTE: The last chunk will be sent to a slave at EndSort() => PF_EndSort()
 		 *       => PF_WaitAllSlaves(). */
 		AN.ninterms += dd;
@@ -1833,8 +1853,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		if ( AR.outtohide ) AR.outfile = AR.hidefile;
 		PF.parallel = 1;
+#ifdef PF_PROFILE
 		MesPrint("[0] PF_Processor: Master finished sending terms");
+#endif
+		PF_TIMER_BEGIN(MAS_FINAL_SORT);
 		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
+		PF_TIMER_END(MAS_FINAL_SORT);
 		PF.parallel = 0;
 		if ( AR.outtohide ) {
 			AR.outfile = oldoutfile;
@@ -1862,9 +1886,15 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms));
 		PF_CatchErrorMessagesForAll();
 		e->numdummies = 0;
+		PF_TIMER_BEGIN(MAS_COLLECT);
 		for ( k = 1; k < PF.numtasks; k++ ) {
 			PF_LongSingleReceive(PF_ANY_SOURCE, PF_ENDSORT_MSGTAG, &src, &tag);
 			PF_LongSingleUnpack(PF_stats[src], PF_STATS_SIZE, PF_LONG);
+#ifdef PF_PROFILE
+			PF_LongSingleUnpack(pf_profile_stats[src].phase_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].os_diff,  PF_OS_COUNT,    PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].extras,   PF_EX_COUNT,    PF_LONG);
+#endif
 			{
 				WORD numdummies, expchanged;
 				PF_LongSingleUnpack(&numdummies, 1, PF_WORD);
@@ -1875,6 +1905,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			/* Now handle redefined preprocessor variables. */
 			if ( AC.numpfirstnum > 0 ) PF_UnpackRedefinedPreVars();
 		}
+		PF_TIMER_END(MAS_COLLECT);
 		/* Broadcast redefined preprocessor variables. */
 		if ( AC.numpfirstnum > 0 ) {
 			int RetCode = PF_BroadcastRedefinedPreVars();
@@ -1891,6 +1922,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			Expressions[AR.CurExpr].size = PF_exprsize;
 		}
 		PF_Statistics(PF_stats,0);
+#ifdef PF_PROFILE
 		if( AC.sMRflag != NO_MAPREDUCE){
 			WORD cpart, rpart, csort, rsort;
 			for ( int proc = 1; proc < PF.numtasks; proc++){
@@ -1907,6 +1939,18 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					MesPrint("Reducer [%d]: Sort time %7l.%2i sec. Wait time for Mappers:  %7l.%2i sec", proc, rsort, csort, rpart, cpart);
 				}
 		}}
+		{
+			PF_OSCounters _pf_os_end;
+			pf_profile_snapshot_os(&_pf_os_end);
+			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
+			memcpy(pf_profile_stats[0].phase_us, pf_phase_us, sizeof(pf_phase_us));
+			memcpy(pf_profile_stats[0].os_diff,  pf_os_diff,  sizeof(pf_os_diff));
+			memcpy(pf_profile_stats[0].extras,   pf_extras,   sizeof(pf_extras));
+			pf_profile_dump_master_csv(AC.CModule, (const char *)EXPRNAME(i),
+			                           PF.nummappers, PF.numreducers, PF.numtasks);
+		}
+#endif
 /*
 			#] Collect (stats,prepro,...): 
 			#[ Update flags :
@@ -2001,6 +2045,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
 		LONG send_time = TimeCPU(1);
+		PF_TIMER_BEGIN(MAP_GENERATOR);
 		while ( PF_GetTerm(term) ) {
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
 			AT.WorkPointer = term + *term;
@@ -2032,6 +2077,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			}
 			PF_linterms += dd; AN.ninterms += dd;
 		}
+		PF_TIMER_END(MAP_GENERATOR);
 		PF_linterms += dd; AN.ninterms += dd;
 		{
 			/*
@@ -2052,7 +2098,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
 			//MesPrint("[%d] PF_Processor: starting endsort", PF.me);
+			PF_TIMER_BEGIN(MAP_ENDSORT_TOTAL);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+			PF_TIMER_END(MAP_ENDSORT_TOTAL);
 			//MesPrint("[%d] PF_Processor: finished endsort", PF.me);
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
@@ -2080,6 +2128,18 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&AM.S0->TermsLeft, 1, PF_LONG);
 		PF_LongSinglePack(&waittime,		 1, PF_LONG);
 		PF_LongSinglePack(&send_time,		 1, PF_LONG);
+#ifdef PF_PROFILE
+		{
+			PF_OSCounters _pf_os_end;
+			pf_profile_snapshot_os(&_pf_os_end);
+			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
+			pf_extras[PF_EX_TERMS_SENT] = PF_linterms;
+			PF_LongSinglePack(pf_phase_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_os_diff,  PF_OS_COUNT,    PF_LONG);
+			PF_LongSinglePack(pf_extras,   PF_EX_COUNT,    PF_LONG);
+		}
+#endif
 
 		{
 			WORD numdummies = AR.MaxDum - AM.IndDum;
@@ -2095,19 +2155,21 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			if ( RetCode ) return RetCode;
 		}
 /*
-			#] Collect (stats,prepro...) : 
+			#] Collect (stats,prepro...) :
 
 		This operation is moved to the beginning of each block, see PreProcessor
 		in pre.c.
 
- 		#] Slave : 
+ 		#] Slave :
 */
+#ifdef PF_PROFILE
 		if ( PF.log ) {
 			UBYTE lbuf[24];
 			NumToStr(lbuf,AC.CModule);
 			fprintf(stderr,"[%d|%s] Endsort,Collect,Broadcast done\n",PF.me,lbuf);
 			fflush(stderr);
 		}
+#endif
 	}
 	else { // role==ROLE_REDUCER
 /*
@@ -2145,6 +2207,17 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&AM.S0->TermsLeft, 1, PF_LONG);
 		PF_LongSinglePack(&waittime,		 1, PF_LONG);
 		PF_LongSinglePack(&ret,		 		 1, PF_LONG);
+#ifdef PF_PROFILE
+		{
+			PF_OSCounters _pf_os_end;
+			pf_profile_snapshot_os(&_pf_os_end);
+			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
+			PF_LongSinglePack(pf_phase_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_os_diff,  PF_OS_COUNT,    PF_LONG);
+			PF_LongSinglePack(pf_extras,   PF_EX_COUNT,    PF_LONG);
+		}
+#endif
 		{
 			WORD numdummies = AR.MaxDum - AM.IndDum;
 			PF_LongSinglePack(&numdummies,    1, PF_WORD);
@@ -2166,12 +2239,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 
  		#] Slave : 
 */
+#ifdef PF_PROFILE
 		if ( PF.log ) {
 			UBYTE lbuf[24];
 			NumToStr(lbuf,AC.CModule);
 			fprintf(stderr,"[%d|%s] Endsort,Collect,Broadcast done\n",PF.me,lbuf);
 			fflush(stderr);
 		}
+#endif
 	}
 	return(0);
 }
@@ -2250,7 +2325,9 @@ LONG PF_ForwardTermsToMaster()
 	WORD *oldstop = fout->POstop;
 	LONG  oldsize = fout->POsize;
 	LONG sort_time = TimeCPU(1);
+	PF_TIMER_BEGIN(RED_FINAL_SORT);
 	if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+	PF_TIMER_END(RED_FINAL_SORT);
 	sort_time = TimeCPU(1) - sort_time;
 	fout->PObuffer = oldbuff;
 	fout->POstop   = oldstop;
@@ -2422,8 +2499,14 @@ int PF_Init(int *argc, char ***argv)
 		}
 		if ( PF.numsbufs > 10 ) PF.numsbufs = 10;
 		if ( PF.numsbufs <  1 ) PF.numsbufs = 1;
-		if ( PF.numrbufs >  4 ) PF.numrbufs = 4;
+		if ( PF.numrbufs >  2 ) PF.numrbufs = 2;
 		if ( PF.numrbufs <  1 ) PF.numrbufs = 1;
+
+		if ( ( c = (char*)getenv("PF_SHUFFLE_NOCOMPRESS") ) != 0 ) {
+			PF_shuffle_nocompress = (int)atoi(c);
+			fprintf(stderr,"[%d] PF_shuffle_nocompress=%d\n",PF.me,PF_shuffle_nocompress);
+			fflush(stderr);
+		}
 
 		if ( ( c = getenv("PF_STATS") ) ) {
 			UBYTE lbuf[24];

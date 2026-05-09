@@ -38,6 +38,7 @@
 
 #include <limits.h>
 #include "form3.h"
+#include "pf_profile.h"
 
 #ifdef MPICH_PROFILING
 # include "mpe.h"
@@ -300,6 +301,26 @@ int PF_ISendSbuf(int to, int tag)
 
 	static int finished;
 
+#ifdef PF_PROFILE
+	int _pf_send_phase = -1, _pf_wait_phase = -1, _pf_bytes_idx = -1;
+	if ( PF.me != MASTER ) {
+		if ( AC.sMRflag != NO_MAPREDUCE && PF.me >= PF.nummappers && to == MASTER ) {
+			/* MR reducer -> master */
+			_pf_send_phase = PF_PHASE_RED_FORWARD_MPI;
+			_pf_wait_phase = PF_PHASE_RED_FORWARD_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_TO_MASTER;
+		} else {
+			/* MR mapper -> reducer, OR non-MR slave -> master.
+			   Both are sender-side primitives ahead of a sort merge, so we
+			   group them under MAP_SEND_* for a clean MR-vs-org comparison
+			   in the visualization. */
+			_pf_send_phase = PF_PHASE_MAP_SEND_MPI;
+			_pf_wait_phase = PF_PHASE_MAP_SEND_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_SENT;
+		}
+	}
+#endif
+
 	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) {
 		fprintf(stderr,"[%d] PF_ISendSbuf: invalid msg_size %lld (to=%d tag=%d)\n",
 		        PF.me,(long long)msg_size,to,tag);
@@ -327,15 +348,25 @@ int PF_ISendSbuf(int to, int tag)
 
 	switch ( tag ) { /* things to do before sending */
 		case PF_TERM_MSGTAG:
-			if ( s->request[to] != MPI_REQUEST_NULL)
+			if ( s->request[to] != MPI_REQUEST_NULL) {
+				PF_TIMER_BEGIN_RT(presend);
 				r = MPI_Wait(&s->request[to],&s->retstat[to]);
+				PF_TIMER_END_RT(presend, _pf_wait_phase);
+			}
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:
 			break;
 	}
 	//MesPrint("[%d] PF_ISendSbuf: sending %d words out of %d to %d with tag %d", PF.me, size, s->stop[a] - s->buff[a] ,to, tag);
-	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
+	{
+		PF_TIMER_BEGIN_RT(isend);
+		r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
+		PF_TIMER_END_RT(isend, _pf_send_phase);
+#ifdef PF_PROFILE
+		if ( _pf_bytes_idx >= 0 ) pf_extras[_pf_bytes_idx] += (LONG)size * (LONG)sizeof(WORD);
+#endif
+	}
 
 	if ( r != MPI_SUCCESS ) return(r);
 
@@ -344,8 +375,11 @@ int PF_ISendSbuf(int to, int tag)
 			finished = 0;
 			break;
 		case PF_ENDSORT_MSGTAG:
-			if ( ++finished == PF.nummappers - 1 )
+			if ( ++finished == PF.nummappers - 1 ) {
+				PF_TIMER_BEGIN_RT(endsort_wait);
 				r = MPI_Waitall(s->numbufs,s->request,s->status);
+				PF_TIMER_END_RT(endsort_wait, _pf_wait_phase);
+			}
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		case PF_SHUFFLE_MSGTAG:
@@ -356,20 +390,25 @@ int PF_ISendSbuf(int to, int tag)
 		   prior MPI_Waitsome loop which spun re-entering until the right slot
 		   happened to be selected. */
 		if ( s->request[s->active] != MPI_REQUEST_NULL ) {
+			PF_TIMER_BEGIN_RT(buf_wait);
 			TimeElapsed(TIMESTART);
 			r = MPI_Wait(&s->request[s->active], &s->retstat[0]);
 			TimeElapsed(TIMESTOP);
+			PF_TIMER_END_RT(buf_wait, _pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 		}
 		break;
 		case PF_ENDSHUFFLE_MSGTAG:
-		case PF_ENDBUFFER_MSGTAG:
+		case PF_ENDBUFFER_MSGTAG: {
 			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
+			PF_TIMER_BEGIN_RT(endbuf_wait);
 			TimeElapsed(TIMESTART);
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
 			TimeElapsed(TIMESTOP);
+			PF_TIMER_END_RT(endbuf_wait, _pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
+		}
 		default:
 			return(-99);
 			break;

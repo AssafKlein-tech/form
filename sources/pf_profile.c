@@ -1,0 +1,304 @@
+/** @file pf_profile.c
+ *
+ *  MRmpi per-phase profiling implementation.
+ *
+ *  All bodies are inside #ifdef PF_PROFILE; in production builds without
+ *  the flag this translation unit compiles to nothing.
+ */
+
+#ifdef PF_PROFILE
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/sysmacros.h>
+#include <sys/resource.h>
+#include <mpi.h>
+
+#include "form3.h"
+#include "pf_profile.h"
+
+/* Per-rank globals filled by the timer macros. */
+LONG pf_phase_us[PF_PHASE_COUNT];
+LONG pf_os_diff[PF_OS_COUNT];
+LONG pf_extras[PF_EX_COUNT];
+
+/* Master-only receive buffer for per-rank profile slots. */
+PF_ProfileSlot *pf_profile_stats = NULL;
+
+/* Node-leader detection state. Set by pf_profile_per_node_init(). */
+static int   s_node_leader_inited = 0;
+static int   s_is_node_leader = 0;
+static dev_t s_formtmp_dev = 0;
+static unsigned int s_formtmp_major = 0;
+static unsigned int s_formtmp_minor = 0;
+static int   s_diskstats_unavailable = 0;
+
+/* CSV state: written once per run. */
+static FILE *s_csv = NULL;
+static int   s_csv_header_written = 0;
+
+void pf_profile_reset_module(void)
+{
+	memset(pf_phase_us, 0, sizeof(pf_phase_us));
+	memset(pf_os_diff, 0, sizeof(pf_os_diff));
+	memset(pf_extras, 0, sizeof(pf_extras));
+}
+
+/*
+	Read /proc/<pid>/diskstats field 13 (time_in_io_ms) for the FORMTMP
+	device. Returns -1 if the device cannot be found (e.g. tmpfs) or if
+	per-node init was never run.
+*/
+static LONG read_node_disk_time_in_io_ms(void)
+{
+	if ( !s_is_node_leader || s_diskstats_unavailable ) return -1;
+	FILE *fp = fopen("/proc/diskstats", "r");
+	if ( !fp ) { s_diskstats_unavailable = 1; return -1; }
+	char line[512];
+	LONG result = -1;
+	while ( fgets(line, sizeof(line), fp) ) {
+		unsigned int maj = 0, min = 0;
+		char name[64];
+		unsigned long long rd_ios, rd_merges, rd_sec, rd_tms;
+		unsigned long long wr_ios, wr_merges, wr_sec, wr_tms;
+		unsigned long long ios_in_prog, time_in_io_ms;
+		int n = sscanf(line, "%u %u %63s %llu %llu %llu %llu %llu %llu %llu %llu %llu %llu",
+			&maj, &min, name,
+			&rd_ios, &rd_merges, &rd_sec, &rd_tms,
+			&wr_ios, &wr_merges, &wr_sec, &wr_tms,
+			&ios_in_prog, &time_in_io_ms);
+		if ( n < 13 ) continue;
+		if ( maj == s_formtmp_major && min == s_formtmp_minor ) {
+			result = (LONG)time_in_io_ms;
+			break;
+		}
+	}
+	fclose(fp);
+	return result;
+}
+
+void pf_profile_snapshot_os(PF_OSCounters *out)
+{
+	memset(out, 0, sizeof(*out));
+	out->node_disk_time_in_io_ms = -1;
+	out->node_wallclock_us = -1;
+
+	FILE *fp = fopen("/proc/self/io", "r");
+	if ( fp ) {
+		char key[64];
+		long long val;
+		while ( fscanf(fp, "%63[^:]: %lld\n", key, &val) == 2 ) {
+			if      ( !strcmp(key, "rchar") )       out->io_rchar       = (LONG)val;
+			else if ( !strcmp(key, "wchar") )       out->io_wchar       = (LONG)val;
+			else if ( !strcmp(key, "read_bytes") )  out->io_read_bytes  = (LONG)val;
+			else if ( !strcmp(key, "write_bytes") ) out->io_write_bytes = (LONG)val;
+			else if ( !strcmp(key, "syscr") )       out->io_syscr       = (LONG)val;
+			else if ( !strcmp(key, "syscw") )       out->io_syscw       = (LONG)val;
+		}
+		fclose(fp);
+	}
+
+	struct rusage ru;
+	if ( getrusage(RUSAGE_SELF, &ru) == 0 ) {
+		out->ru_maxrss = (LONG)ru.ru_maxrss;
+		out->ru_minflt = (LONG)ru.ru_minflt;
+		out->ru_majflt = (LONG)ru.ru_majflt;
+		out->ru_nvcsw  = (LONG)ru.ru_nvcsw;
+		out->ru_nivcsw = (LONG)ru.ru_nivcsw;
+	}
+
+	if ( s_is_node_leader ) {
+		out->node_disk_time_in_io_ms = read_node_disk_time_in_io_ms();
+		out->node_wallclock_us = (LONG)(MPI_Wtime() * 1.0e6);
+	}
+}
+
+void pf_profile_diff_os(const PF_OSCounters *start, const PF_OSCounters *end, LONG *out_diff)
+{
+	out_diff[PF_OS_IO_RCHAR]       = end->io_rchar       - start->io_rchar;
+	out_diff[PF_OS_IO_WCHAR]       = end->io_wchar       - start->io_wchar;
+	out_diff[PF_OS_IO_READ_BYTES]  = end->io_read_bytes  - start->io_read_bytes;
+	out_diff[PF_OS_IO_WRITE_BYTES] = end->io_write_bytes - start->io_write_bytes;
+	out_diff[PF_OS_IO_SYSCR]       = end->io_syscr       - start->io_syscr;
+	out_diff[PF_OS_IO_SYSCW]       = end->io_syscw       - start->io_syscw;
+	out_diff[PF_OS_RU_MAXRSS]      = end->ru_maxrss; /* report end value (HWM) */
+	out_diff[PF_OS_RU_MINFLT]      = end->ru_minflt - start->ru_minflt;
+	out_diff[PF_OS_RU_MAJFLT]      = end->ru_majflt - start->ru_majflt;
+	out_diff[PF_OS_RU_NVCSW]       = end->ru_nvcsw  - start->ru_nvcsw;
+	out_diff[PF_OS_RU_NIVCSW]      = end->ru_nivcsw - start->ru_nivcsw;
+	if ( start->node_disk_time_in_io_ms < 0 || end->node_disk_time_in_io_ms < 0 ) {
+		out_diff[PF_OS_NODE_DISK_TIME_IN_IO_MS] = -1;
+		out_diff[PF_OS_NODE_WALLCLOCK_US] = -1;
+	} else {
+		out_diff[PF_OS_NODE_DISK_TIME_IN_IO_MS] =
+			end->node_disk_time_in_io_ms - start->node_disk_time_in_io_ms;
+		out_diff[PF_OS_NODE_WALLCLOCK_US] =
+			end->node_wallclock_us - start->node_wallclock_us;
+	}
+}
+
+int pf_profile_per_node_init(void)
+{
+	if ( s_node_leader_inited ) return 0;
+	s_node_leader_inited = 1;
+
+	MPI_Comm node_comm;
+	int local_rank = 0;
+	if ( MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0,
+	                         MPI_INFO_NULL, &node_comm) == MPI_SUCCESS ) {
+		MPI_Comm_rank(node_comm, &local_rank);
+		MPI_Comm_free(&node_comm);
+	}
+	s_is_node_leader = (local_rank == 0);
+
+	if ( s_is_node_leader ) {
+		/*
+			Resolve the dir FORM is actually writing scratch to. ReserveTempFiles
+			(startup.c:740) has already run by the time PF_Processor enters, so
+			AM.TempSortDir / AM.TempDir reflect the full priority chain:
+			-T flag, form.set tempdir/tempsortdir, FORMTMPSORT, FORMTMP, ".".
+			Stat'ing whichever of these is populated guarantees we measure the
+			same filesystem the sort I/O is hitting, regardless of how the
+			operator configured the path.
+		*/
+		const char *path = NULL;
+		if ( AM.TempSortDir && *AM.TempSortDir ) path = (const char *)AM.TempSortDir;
+		else if ( AM.TempDir   && *AM.TempDir   ) path = (const char *)AM.TempDir;
+		else {
+			path = getenv("FORMTMPSORT");
+			if ( !path || !*path ) path = getenv("FORMTMP");
+			if ( !path || !*path ) path = ".";
+		}
+		struct stat st;
+		if ( stat(path, &st) == 0 ) {
+			s_formtmp_dev = st.st_dev;
+			s_formtmp_major = major(st.st_dev);
+			s_formtmp_minor = minor(st.st_dev);
+			fprintf(stderr, "[%d] pf_profile: tracking disk %u:%u (%s)\n",
+			        PF.me, s_formtmp_major, s_formtmp_minor, path);
+			fflush(stderr);
+		} else {
+			s_diskstats_unavailable = 1;
+			fprintf(stderr, "[%d] pf_profile: stat(%s) failed; disk %%util disabled\n",
+			        PF.me, path);
+			fflush(stderr);
+		}
+	}
+	return 0;
+}
+
+int pf_profile_is_node_leader(void)
+{
+	return s_is_node_leader;
+}
+
+void pf_profile_alloc_master(int numtasks)
+{
+	if ( pf_profile_stats != NULL ) return;
+	pf_profile_stats = (PF_ProfileSlot *)calloc((size_t)numtasks, sizeof(PF_ProfileSlot));
+}
+
+static void write_csv_header(FILE *fp)
+{
+	fprintf(fp,
+		"timestamp,module,expr,rank,role,nummappers,numreducers,wallclock_us,"
+		"t_map_generator_us,t_map_endsort_total_us,t_map_send_wait_us,t_map_send_mpi_us,"
+		"t_red_recv_wait_us,t_red_merge_patches_us,t_red_final_sort_us,t_red_forward_wait_us,t_red_forward_mpi_us,"
+		"t_mas_distribute_us,t_mas_distribute_wait_us,t_mas_final_sort_us,t_mas_collect_us,"
+		"bytes_sent,bytes_to_master,terms_sent,patches_built,"
+		"io_rchar,io_wchar,io_read_bytes,io_write_bytes,io_syscr,io_syscw,"
+		"maxrss_kb,minflt,majflt,nvcsw,nivcsw,"
+		"node_disk_time_in_io_ms,node_wallclock_us\n");
+}
+
+static const char *role_name(int rank, int nummappers)
+{
+	if ( rank == 0 ) return "master";
+	return (rank < nummappers) ? "mapper" : "reducer";
+}
+
+static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_name,
+                          int rank, int nummappers, int numreducers,
+                          const PF_ProfileSlot *slot)
+{
+	const LONG *p  = slot->phase_us;
+	const LONG *os = slot->os_diff;
+	const LONG *ex = slot->extras;
+	fprintf(fp,
+		"%lld,%d,%s,%d,%s,%d,%d,%lld,"
+		"%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld\n",
+		(long long)ts, module_num, expr_name ? expr_name : "",
+		rank, role_name(rank, nummappers), nummappers, numreducers,
+		(long long)ex[PF_EX_WALLCLOCK_US],
+		(long long)p[PF_PHASE_MAP_GENERATOR],
+		(long long)p[PF_PHASE_MAP_ENDSORT_TOTAL],
+		(long long)p[PF_PHASE_MAP_SEND_WAIT],
+		(long long)p[PF_PHASE_MAP_SEND_MPI],
+		(long long)p[PF_PHASE_RED_RECV_WAIT],
+		(long long)p[PF_PHASE_RED_MERGE_PATCHES],
+		(long long)p[PF_PHASE_RED_FINAL_SORT],
+		(long long)p[PF_PHASE_RED_FORWARD_WAIT],
+		(long long)p[PF_PHASE_RED_FORWARD_MPI],
+		(long long)p[PF_PHASE_MAS_DISTRIBUTE],
+		(long long)p[PF_PHASE_MAS_DISTRIBUTE_WAIT],
+		(long long)p[PF_PHASE_MAS_FINAL_SORT],
+		(long long)p[PF_PHASE_MAS_COLLECT],
+		(long long)ex[PF_EX_BYTES_SENT],
+		(long long)ex[PF_EX_BYTES_TO_MASTER],
+		(long long)ex[PF_EX_TERMS_SENT],
+		(long long)ex[PF_EX_PATCHES_BUILT],
+		(long long)os[PF_OS_IO_RCHAR],
+		(long long)os[PF_OS_IO_WCHAR],
+		(long long)os[PF_OS_IO_READ_BYTES],
+		(long long)os[PF_OS_IO_WRITE_BYTES],
+		(long long)os[PF_OS_IO_SYSCR],
+		(long long)os[PF_OS_IO_SYSCW],
+		(long long)os[PF_OS_RU_MAXRSS],
+		(long long)os[PF_OS_RU_MINFLT],
+		(long long)os[PF_OS_RU_MAJFLT],
+		(long long)os[PF_OS_RU_NVCSW],
+		(long long)os[PF_OS_RU_NIVCSW],
+		(long long)os[PF_OS_NODE_DISK_TIME_IN_IO_MS],
+		(long long)os[PF_OS_NODE_WALLCLOCK_US]);
+}
+
+void pf_profile_dump_master_csv(int module_num, const char *expr_name,
+                                int nummappers, int numreducers,
+                                int numtasks)
+{
+	if ( s_csv == NULL ) {
+		const char *dir = getenv("PF_PROFILE_DIR");
+		char path[1024];
+		if ( dir && *dir ) snprintf(path, sizeof(path), "%s/pf_profile.csv", dir);
+		else               snprintf(path, sizeof(path), "pf_profile.csv");
+		struct stat st;
+		int existed_nonempty = (stat(path, &st) == 0 && st.st_size > 0);
+		s_csv = fopen(path, "a");
+		if ( !s_csv ) return;
+		s_csv_header_written = existed_nonempty;
+	}
+	if ( !s_csv_header_written ) {
+		write_csv_header(s_csv);
+		s_csv_header_written = 1;
+	}
+
+	time_t ts = time(NULL);
+	for ( int rank = 0; rank < numtasks; rank++ ) {
+		write_csv_row(s_csv, ts, module_num, expr_name,
+		              rank, nummappers, numreducers,
+		              &pf_profile_stats[rank]);
+	}
+	fflush(s_csv);
+}
+
+#endif /* PF_PROFILE */

@@ -107,7 +107,7 @@ Allocated on each slave when `AC.RhsExprInModuleFlag` is set (any module that re
 Each mapper holds a per-destination cyclic send buffer. Master-side: `min(LARGEBUFFER/numtasks, AM.ScratSize-1)` per slot. Worker-side: `(sTop2 - lBuffer - 1) / (numtasks-1) - (MaxTer/sizeof(WORD)+2)` per slot. **Knobs:**
 
 - `PF_SBUFS` env (default 2, cap 10) — slots per mapper destination. Bumping to 3 hides one `Isend` latency, cost is one extra slot per dest.
-- `PF_RBUFS` env (default 2, cap 4) — slots per reducer source. Caveat at [parallel.c:2421](../../../sources/parallel.c#L2421): clamp is silent. Also, `PF_ReducerInit` only pre-posts ONE `IRecv` per source, so `numrbufs > 1` doesn't actually pipeline.
+- `PF_RBUFS` env (default 2, **cap 2 since 2026-05-05**) — slots per reducer source. Cap was 4; clamped down to 2 in [parallel.c:2425](../../../sources/parallel.c#L2425) because (a) `numrbufs > 2` was buggy: `PF_InitTree:424` only armed the active slot and `PF_PutIn:589`'s newterms wait on slot `next` reached unarmed slot 2 on the 2nd wrap → `MPI_Get_count` on uninit `type[2]` → `MPI_ERR_TYPE`. (b) Even if pre-posting were fixed, depth >2 buys nothing: chunks are ~17 MB rendezvous (above 1 MB eager limit), receiver memcpy ≥10× faster than network, so concurrent CTS handshakes share the same TCP link without speedup. Production v3 instrumentation showed 0 mapper stall on 1-node and ≤0.5% on 4-node. The depth-1-effective queue is correct for this workload. Multi-deep IRecv design deferred at [/home/assafklein/.claude/plans/eager-cuddling-wreath.md](../../../../.claude/plans/eager-cuddling-wreath.md); reopen only if PF_SBUFS rises >2 or interconnect changes (RDMA).
 
 ### `PF_packbuf` ([mpi.c:58](../../../sources/mpi.c#L58))
 
@@ -150,6 +150,20 @@ After form.set v3 (largesize=1G, smallext=400M, sortiosize=1M, filepatches=32):
 - Compare v0 (tform form.set, sortiosize 96M, filepatches default 256): floor 25 GB/rank → 1.5 TB → instant OOM
 - Compare v1/v2 (largesize lowered but sortiosize/filepatches unchanged): floor still 25 GB/rank → same OOM, no improvement
 
+**Pre-MR-active "sweet spot" claim was based on a serial bench.** The original `bench_compress_mr.frm` has `off parallel;` (line 121) before the heavy `.sort:Diagram Loaded` — heavy sort runs serial on the master. Buffer tunings on that bench (which made v3 the "sweet spot") were tuning a master-side serial sort, not MR. **MR-active sweeps tell a different story:**
+
+- **Asymmetric `lp >> fp` wins big.** On MR-active heavy bench (`bench_heavy.frm`), `fp=128 / lp=1024 / largesize=1G / smallext=400M` beats v3 by ~24%. Going further to `lp=512` or `lp=256` is worse; `lp=1024` is the sweet spot at fp=128.
+- **`smallextension=1.5G` beats `smallext=400M` by another ~17%** on the same bench (lp128_2G base). Combined with lp=1024 → expected ~35% gain over v3 (Phase B in flight will validate).
+- **`smallsize=100M` is the sweet spot.** 50–400M all within 3%; 10M is +80% slower (tier-1 thrashes), 800M is +17% slower.
+- **`largesize=1G` ≈ `2G` for lp=1024** (within 5% on Phase A1.5 fill-in sweep). For lp=256, `2G > 3G` because at 3G we hit memory pressure on some node groups (cross-job variance).
+- **Compression is wash at lp128_2G but critical at lp128_3G** (+41% slower without it on the regressed-memory config).
+
+**Lesson:** more memory IS faster *when buffers actually get used*. The earlier "more memory ≠ faster" conclusion came from a serial bench where the working set fit in 1G regardless of what you allocated. On the MR path with multi-sort workloads (Spin's `expandmomenta`-class modules), per-rank intermediate state grows large and bigger smallext buys real merging headroom.
+
+**Bench correctness traps:**
+1. `bench_compress_mr.frm` has `off parallel;` before the heavy sort — heavy sort runs **serial** on master, not MR. Tuning on this bench measures master-side single-thread sort behavior, not MR. Use `bench_compress_mr_keepmr.frm` (parallel kept on) or `bench_heavy.frm` (= keepmr + `#call dummyindices`).
+2. The first heavy sort in the keepmr/heavy bench has a **serial term-generation pre-cursor** (~13% of wallclock) — only one rank actually generates the 4M output terms because there's only one input expression. Subsequent sorts redistribute terms across all ranks and are truly parallel. Full Spin's heavy modules don't have this artifact (terms are pre-distributed from earlier modules).
+
 ## Diagnostic recipes
 
 ### "Attempted to allocate N bytes — allocating scratchsize"
@@ -166,7 +180,13 @@ Lower `sortiosize` and `filepatches` first; only then `largesize`/`smallext` (wh
 
 ### "MPI_ERR_TRUNCATE in MPI_Pack"
 
-PF_PACKSIZE (1600 B) overflow in a `PF_BroadcastCBuf`/`PF_BroadcastModifiedDollars` path. Usually `toPolynomial`-triggered. Either disable `toPolynomial onlyfunctions` (or any flag that sets `TOPOLYNOMIALFLAG`), or bump `PF_PACKSIZE` in [mpi.c:58](../../../sources/mpi.c#L58) and rebuild parform. `off parallel;` does NOT prevent the broadcast — it runs unconditionally inside `#ifdef WITHMPI` at [execute.c:885-902](../../../sources/execute.c#L885).
+**FIXED in commit `adeb92f`** — `PF_LongMultiBroadcast` now uses a single growable buffer with an INT size header, so any-size broadcasts work. Previously: PF_PACKSIZE=1600 chained-chunk path silently truncated near 320 KB total payload.
+
+Historical context (kept for understanding pre-`adeb92f` behavior): the bug was usually `toPolynomial onlyfunctions`-triggered, since it sets `TOPOLYNOMIALFLAG` → calls `PF_BroadcastCBuf` from [execute.c:894](../../../sources/execute.c#L894). `off parallel;` does NOT prevent the broadcast — it runs unconditionally inside `#ifdef WITHMPI` at [execute.c:885-902](../../../sources/execute.c#L885).
+
+### "ERROR: Calling Map Reduce without parallel"
+
+[parallel.c:1687](../../../sources/parallel.c#L1687) fires when `AC.mparallelflag != PARALLELFLAG && sMRflag != NO_MAPREDUCE`. **`toPolynomial onlyfunctions` internally forces non-parallel for its module** (its poly arithmetic isn't parallel-safe), so any module that calls toPolynomial in an MR-mode .frm trips this guard. Fix: add `off mapreduce;` next to `off parallel;` before the procedure call. This is what `runs/Adquanta/Spin2_h5_45_mr.frm` line 152 does.
 
 ### Run starts, gets through several modules, then SIGKILL on rank 0
 

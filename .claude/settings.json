@@ -1,7 +1,27 @@
 {
   "permissions": {
     "allow": [
-      "Bash(module load *)"
+      "Bash(module load *)",
+      "Bash(qstat:*)",
+      "Bash(qsub:*)",
+      "Bash(qdel:*)",
+      "Bash(tracejob:*)",
+      "Bash(tr:*)",
+      "Bash(grep:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(diff:*)",
+      "Bash(wc:*)",
+      "Bash(sort:*)",
+      "Bash(uniq:*)",
+      "Bash(ls:*)",
+      "Bash(stat:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(rm:*)",
+      "Bash(date:*)",
+      "Bash(make:*)",
+      "Bash(module:*)"
     ]
   },
   "hooks": {

@@ -183,9 +183,20 @@ In `PutOut()` for a reducer, `PF_LowMRsort()` is **false** (reducer rank >= numm
 - Master fan-in = numreducers < (numtasks − 1)
 - No duplicate terms written to sort files across mappers for the same symbolic expression
 
-### Caveat: lowmr_sort fires during EndSort, not generation
+### Mappers do NOT write term data to disk in MR mode
 
-`PF_LowMRsort()` is checked inside `PutOut()`, and `PutOut()` is the per-term sink during the **final merge** in `EndSort` ([sort.c:888](sources/sort.c#L888)). That means a mapper still runs the full local three-tier pipeline first — small buffer → patches → potentially `MergePatches(1)` writing to the local sort file `S->file`. Only when EndSort streams those merged terms back through `PutOut` does shuffle traffic begin. So mappers can spill to disk before the shuffle starts; the "less disk I/O" goal is only fully realized when the mapper's working set fits in `lBuffer` and never hits `S->file`.
+This is the single most important non-obvious thing about the MR path. `PF_LowMRsort()` is checked inside both `PutOut()` AND `FlushOut()`, and **both have early-returns that redirect the disk-write path to `PF_WISendSbuf()`**. There is no `WriteFile(S->file, ...)` of term data on a mapper in MR mode.
+
+| Site | What happens when `lowmr_sort=true` |
+|---|---|
+| `PutOut` per-term, [sort.c:1921-1933](sources/sort.c#L1921) | term destined for `dst`'s reducer; alias `fi->POfill` into `sbuf->fill[active]`; if would overflow, `PF_WISendSbuf(PF_BUFFER_MSGTAG, dst)` |
+| `PutOut` mid-write spill, [sort.c:1939-1945](sources/sort.c#L1939) | when `p >= fi->POstop` mid-loop, `PF_WISendSbuf` to `dst` instead of falling through to `CreateFile`/`WriteFile` |
+| `FlushOut`, [sort.c:2068-2105](sources/sort.c#L2068) | early-return at line 2104 — loops over reducers, `PF_WISendSbuf` per destination, then `return(0)` *before* the `WriteFile` at 2147-2148 |
+| `MergePatches(par=1)` from EndSort | calls `FlushOut` for actual writes, so all data goes to MPI per above. The function does call `CreateFile(fout->name)` at [sort.c:4051](sources/sort.c#L4051) unconditionally — that creates an **empty** file on `/gtmp` which is `close()`d and `remove()`d at [sort.c:1339-1346](sources/sort.c#L1339) at end of EndSort. Cost: microseconds; no data ever written into it. |
+
+So the mapper-side flow is: `Generator` → `StoreTerm` → `sBuffer` → `SplitMerge`+`ComPress` → `lBuffer` patches → `MergePatches(1)`/`MergePatches(2)`/direct, all leading to `PutOut`+`FlushOut` in EndSort which **stream straight to reducers via MPI**. The "less disk I/O" tagline is fully realized in the term-data path; only the residual empty-`creat()` syscall remains.
+
+When reading the EndSort flow ([sort.c:888-1340](sources/sort.c#L888)), don't be misled by `MergePatches(par=1)` — `par=1` means "write to S->file" in *regular* FORM, but in MR mode the leaf `FlushOut` redirects, so the same `par=1` API produces MPI traffic instead.
 
 ---
 
@@ -201,8 +212,9 @@ One per destination (reducer rank or master rank). Each holds `PF.numsbufs` slot
 
 One per source mapper. Each holds `PF.numrbufs` slots cycled via `rbuf->active`. Used by `PF_StoreBuffer` ([parallel.c:630](sources/parallel.c#L630)) — incoming `PF_SHUFFLE_MSGTAG` lands into the active slot, the slot is drained directly into the reducer's large buffer as a new patch, and the *next* slot's IRecv is posted then.
 
-- Default `numrbufs = 2`, env `PF_RBUFS`, clamped to [1, 4] at [parallel.c:2421](sources/parallel.c#L2421).
-- **Init only pre-posts ONE IRecv per source** (the `active` slot) at [parallel.c:2206-2218](sources/parallel.c#L2206). Other slots' `MPI_Request` stays `MPI_REQUEST_NULL` until the active message is consumed and the next IRecv is posted. So even with `numrbufs = 4`, a single mapper has at most one in-flight receive at a time — additional slots only help by overlapping reducer-side processing with the next IRecv post, not by buffering multiple in-flight messages from the same mapper.
+- Default `numrbufs = 2`, env `PF_RBUFS`, **clamped to [1, 2]** at [parallel.c:2425](sources/parallel.c#L2425) (since 2026-05-05; was 4).
+- **Init only pre-posts ONE IRecv per source** (the `active` slot) at [parallel.c:2210-2218](sources/parallel.c#L2210). Other slots' `MPI_Request` stays `MPI_REQUEST_NULL` until the active message is consumed and the next IRecv is posted. So even with `numrbufs = 2`, a single (mapper, reducer) pair has at most one in-flight receive at a time — additional slots only help by overlapping reducer-side processing with the next IRecv post, not by buffering multiple in-flight messages from the same source.
+- **Why the cap is 2**: `numrbufs ≥ 3` had a latent bug — `PF_InitTree:424` only IRecv'd the active slot, while `PF_PutIn:589`'s `newterms` branch waited on slot `next` without arming it; the cycle 0→1→2→0 hit unarmed slot 2 on the 2nd wrap and `MPI_Get_count` read uninitialized `type[2]` → `MPI_ERR_TYPE`. Even fixed, depth >2 gives no measurable speedup at the chunk sizes typical for this workload (rendezvous protocol on multi-MB chunks, bandwidth-limited TCP; receiver memcpy is much faster than network so concurrent CTS handshakes share the same link without speedup). Production runs show near-zero `Wait time for Reducers` per mapper. Reopen only if `PF_SBUFS` rises >2 or interconnect changes (RDMA). Deferred design at [/home/assafklein/.claude/plans/eager-cuddling-wreath.md](../../../../.claude/plans/eager-cuddling-wreath.md).
 
 ### Per-term invariant in PF_StoreBuffer
 
@@ -218,7 +230,7 @@ Where `rbuf->fill[a]` = patch start written into the large buffer, `rbuf->full[a
 
 ### `FlushOut(patch=1)` behavior
 
-[sort.c:2056](sources/sort.c#L2056), called from `MergePatches(1)` on a mapper. Loops over **every** reducer and emits a `PF_BUFFER_MSGTAG` whether or not the per-reducer buffer has new data — the gating condition `sbuf->fill[active] >= sbuf->stop[active] || patch` is true for all destinations once `patch=1`. The `!patch` branch additionally writes a 0 terminator and uses `PF_ENDBUFFER_MSGTAG` for end-of-stream signalling.
+[sort.c:2058](sources/sort.c#L2058), called from `MergePatches(1)` on a mapper. Loops over **every** reducer and emits a `PF_BUFFER_MSGTAG`. The empty-buffer optimization landed in commit `dcef34c`: the gating condition is now `sbuf->fill[active] >= sbuf->stop[active] || (patch && nonempty)` — empty per-reducer slots are skipped on `patch=1` to avoid pure-overhead Isends under hash skew. The `!patch` branch (called from EndSort termination) still writes a 0 terminator and emits `PF_ENDBUFFER_MSGTAG` for end-of-stream signalling unconditionally — that's required.
 
 ---
 
