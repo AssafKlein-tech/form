@@ -72,7 +72,7 @@ Logs go to `tmp/test_spin_<layout>_v[N].{o,e,mem.log}` where `<layout>` ∈ `{or
 
 **form.set choice depends on whether the heavy sort is MR-active or serial.** Older buffer-tuning sweeps used `bench_compress_mr.frm`, which has `off parallel;` (line 121) before the heavy `.sort:Diagram Loaded` — that runs the sort **serial on the master**, not MR. Buffer tunings derived from that bench tune the wrong code path. The MR-active heavy bench is `bench_compress_mr_keepmr.frm` (with `off parallel;` commented out) or `bench_heavy.frm` (keepmr + `#call dummyindices`). For MR-tuned form.set values from current sweeps see the memory skill ("Reference: what the Spin run actually used").
 
-**toPolynomial + MR gotcha:** if a `.frm` has `on mapreduce;` and uses `toPolynomial onlyfunctions`, you MUST add `off mapreduce;` (alongside `off parallel;`) before the procedure that calls toPolynomial. Otherwise `parallel.c:1687` fires "ERROR: Calling Map Reduce without parallel" — toPolynomial forces the module non-parallel for its poly arithmetic, and the lingering `sMRflag = MAPREDUCE` trips the guard. `Spin2_h5_45_mr.frm` line 152 has the canonical fix.
+**toPolynomial + MR gotcha:** if a `.frm` has `on mapreduce;` and uses `toPolynomial onlyfunctions`, you MUST add `off mapreduce;` (alongside `off parallel;`) before the procedure that calls toPolynomial. Otherwise `parallel.c:1705` fires "ERROR: Calling Map Reduce without parallel" — toPolynomial forces the module non-parallel for its poly arithmetic, and the lingering `sMRflag = MAPREDUCE` trips the guard. `Spin2_h5_45_mr.frm` line 152 has the canonical fix.
 
 **form.set lookup gotcha:** [tools.c:580](sources/tools.c#L580) opens `./form.set` from CWD before honoring `-S`. If the run dir has a tform-tuned `form.set`, parform reads it and OOMs (~25 GB/rank floor from the 96 M sortiosize). Either rename the tform file aside (`form.set.tform`) or write parform values directly into `./form.set`.
 
@@ -81,7 +81,42 @@ Logs go to `tmp/test_spin_<layout>_v[N].{o,e,mem.log}` where `<layout>` ∈ `{or
 Cluster-side env vars (set in the PBS jobs):
 - `FORMTMP=/gtmp` — local tmp, NOT NFS — sort files must not go to NFS or the run dies on I/O.
 - `FORM_IGNORE_DEPRECATION=1` — silences ParFORM deprecation warning.
-- `OMPI_MCA_btl_tcp_eager_limit=1048576` and friends — let MR shuffle messages bypass rendezvous handshake.
+
+**Transport: RDMA (UCX/InfiniBand) is the default for all PBS scripts as of 2026-05-09.** TCP-BTL was retired because at ≥30 ranks/node it crashed repeatedly with MPI "Socket closed" errors (verified with three independent trials at 32 ranks/node × 4 nodes). At 16 ranks/node TCP works but RDMA matches it within noise, so all production scripts use one config. The required stanza:
+
+```sh
+module load openmpi/5.0.3-pbs   # the only OMPI 5 module on Zeus with UCX
+export LD_LIBRARY_PATH=/usr/local/openmpi-5.0.3-pbs/lib:$LD_LIBRARY_PATH
+
+export OMPI_MCA_pml=ucx
+export OMPI_MCA_pml_ucx_priority=100
+export OMPI_MCA_osc=ucx
+export OMPI_MCA_btl='^tcp,openib'        # crash loudly if UCX init fails
+export UCX_TLS=dc_mlx5,sysv,self         # DC for the mapper→reducer fan-in; sysv (NOT posix shm) for intra-node
+export UCX_NET_DEVICES=mlx5_0:1
+export UCX_RNDV_THRESH=256k              # push MR shuffle chunks to rendezvous (frees the eager pool; ≈ 64m on wallclock)
+export UCX_ZCOPY_THRESH=1024
+```
+
+**`UCX_TLS` must use `sysv` not `sm` (= POSIX shm).** Node `n099` has a
+broken `/dev/shm` — `shm_open(... O_CREAT)` fails with `Permission denied`, so
+any `UCX_TLS` containing `sm` (which prefers POSIX shm) makes every rank on
+that node abort at `MPI_Init` with "Failed to create UCP worker" → the whole
+job dies in <1 s. `sysv` (System-V shared-memory segments) gives the same
+intra-node fast path and works on n099 too, so it's the safe default
+everywhere. **Do NOT add `cma`** — Cross-Memory-Attach is not compiled into
+this UCX build, so `UCX_TLS=...,cma,...` is silently dropped and just spams one
+"transport 'cma' is not available" warn line per rank. See
+`project_ucx_thin_alloc.md`. `UCX_RNDV_THRESH` was lowered 64m→256k after the
+rndv comparison showed them wallclock-equivalent; 256k keeps the eager
+descriptor pool small (avoids the `mm_recv_desc`/`rc_recv_desc` chunk-alloc OOM
+seen at high rank counts).
+*The 6 keeper spin PBS (`form_spin_test_mr_4n_{r9,r12,r15,32r,cores_os,cores_prog}.pbs`)
+use the `dc_mlx5,sysv,self` / `256k` stanza as of 2026-05-12. Some surviving
+`bench_*` / `form_spin_test{,_mr,_4n}` siblings still carry the old
+`dc_mlx5,sm,self` / `64m` values — fix when next touched.*
+
+Three TCP-only files are kept as comparison artifacts: `bench_heavy_tcp.pbs`, `bench_keepmr_128_tcp.pbs`, `verify_keepmr_recreated.pbs`. Don't add TCP-only scripts beyond those. See `project_rdma_findings.md` for the full empirical record.
 
 ## Runtime tuning (MRmpi)
 

@@ -186,7 +186,7 @@ Historical context (kept for understanding pre-`adeb92f` behavior): the bug was 
 
 ### "ERROR: Calling Map Reduce without parallel"
 
-[parallel.c:1687](../../../sources/parallel.c#L1687) fires when `AC.mparallelflag != PARALLELFLAG && sMRflag != NO_MAPREDUCE`. **`toPolynomial onlyfunctions` internally forces non-parallel for its module** (its poly arithmetic isn't parallel-safe), so any module that calls toPolynomial in an MR-mode .frm trips this guard. Fix: add `off mapreduce;` next to `off parallel;` before the procedure call. This is what `runs/Adquanta/Spin2_h5_45_mr.frm` line 152 does.
+[parallel.c:1705](../../../sources/parallel.c#L1705) fires when `AC.mparallelflag != PARALLELFLAG && sMRflag != NO_MAPREDUCE`. **`toPolynomial onlyfunctions` internally forces non-parallel for its module** (its poly arithmetic isn't parallel-safe), so any module that calls toPolynomial in an MR-mode .frm trips this guard. Fix: add `off mapreduce;` next to `off parallel;` before the procedure call. This is what `runs/Adquanta/Spin2_h5_45_mr.frm` line 152 does.
 
 ### Run starts, gets through several modules, then SIGKILL on rank 0
 
