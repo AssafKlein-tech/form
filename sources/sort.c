@@ -1639,6 +1639,56 @@ int Sflush(FILEHANDLE *fi)
  *	@param ncomp    Information about what type of compression should be used
  */
 
+#ifdef WITHMPI
+/*
+	Diagnostic-only: when PF_DUMP_PREFIX=<N> is set, an MR-mode mapper dumps
+	every N-th routed term's first up-to-16 *raw symbolic words* (the bytes the
+	hash router runs over, term[1 .. GETSTOP)) to ${PF_PROFILE_DIR}/prefix_<rank>.csv.
+	Used offline to histogram prefix-bucket distributions per module before
+	deciding on a PF_HASH_PREFIX_WORDS routing change. Inert (zero overhead) when
+	the env var is unset; never compiled into non-WITHMPI builds. Kill the run
+	once module 10 has started -- you don't need all 2e9 terms of it.
+*/
+static void pf_dump_prefix(WORD *term)
+{
+	static int   rate = -1;     /* -1 = not yet read; 0 = disabled */
+	static LONG  counter = 0;
+	static FILE *fp = NULL;
+	if ( rate < 0 ) {
+		char *e = getenv("PF_DUMP_PREFIX");
+		rate = (e && *e) ? atoi(e) : 0;
+		if ( rate < 1 ) rate = (e && *e) ? 1 : 0;
+	}
+	if ( rate == 0 ) return;
+	if ( (counter++ % rate) != 0 ) return;
+	if ( fp == NULL ) {
+		char *dir = getenv("PF_PROFILE_DIR");
+		char path[1100];
+		snprintf(path, sizeof path, "%s/prefix_%d.csv",
+			(dir && *dir) ? dir : ".", (int)PF.me);
+		fp = fopen(path, "w");
+		if ( fp == NULL ) { rate = 0; return; }
+		fprintf(fp, "module,rank,numreducers,symlen");
+		{ int i; for (i = 0; i < 16; i++) fprintf(fp, ",w%d", i); }
+		fprintf(fp, "\n");
+	}
+	{
+		WORD *start = term + 1;
+		WORD *end   = (term + *term) - ABS((term + *term)[-1]);
+		LONG symlen = (LONG)(end - start);
+		int i;
+		fprintf(fp, "%d,%d,%d,%ld",
+			(int)AC.CModule, (int)PF.me, (int)PF.numreducers, (long)symlen);
+		for (i = 0; i < 16; i++) {
+			if ( i < symlen ) fprintf(fp, ",%ld", (long)start[i]);
+			else fprintf(fp, ",");
+		}
+		fprintf(fp, "\n");
+		fflush(fp);   /* the run is killed early, so flush each sampled line */
+	}
+}
+#endif
+
 WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 {
 	GETBIDENTITY
@@ -1757,11 +1807,28 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		else {
 		#ifdef WITHMPI
 			if (lowmr_sort ) {
+				pf_dump_prefix(term);   /* no-op unless PF_DUMP_PREFIX is set */
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);
 				UWORD term_hash = 0;
 				start++;
+				/* PF_HASH_PREFIX_WORDS=K (default 0 = whole symbolic part):
+				   hash only the first K words, so terms sharing a K-word prefix
+				   (= adjacent in canonical order) route to the same reducer.
+				   Invariant preserved: same symbolic part => same prefix =>
+				   same reducer => coeffs still summed at the reducer. */
+				{
+					static int pf_hash_prefix_words = -1;
+					if ( pf_hash_prefix_words < 0 ) {
+						char *e = getenv("PF_HASH_PREFIX_WORDS");
+						pf_hash_prefix_words = (e && *e) ? atoi(e) : 0;
+						if ( pf_hash_prefix_words < 0 ) pf_hash_prefix_words = 0;
+					}
+					if ( pf_hash_prefix_words > 0
+						&& (end - start) > pf_hash_prefix_words )
+						end = start + pf_hash_prefix_words;
+				}
 #ifdef BITSINWORD == 16
 				while( start < end ) {
 					UWORD w = (UWORD)(*start++);    
