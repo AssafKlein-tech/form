@@ -533,7 +533,11 @@ static WORD *PF_PutIn(int src)
 /*
 			very first term from this src
 */
-		tag = PF_WaitRbuf(rbuf,a,&size);
+		{
+			PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
+			tag = PF_WaitRbuf(rbuf,a,&size);
+			PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+		}
 		rbuf->full[a] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) *rbuf->full[a]++ = 0;
 		else if ( rbuf->numbufs > 1 ) {
@@ -588,7 +592,11 @@ newterms:
 */
 		//MesPrint("[%d] PF_PutIn: Wait the next buffer to be filled from %d active buffer %d ", PF.me, workerIdx, next);
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
-		tag = PF_WaitRbuf(rbuf,next,&size);
+		{
+			PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
+			tag = PF_WaitRbuf(rbuf,next,&size);
+			PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+		}
 		//MesPrint("[%d] PF_PutIn: got new terms tag %d", PF.me, tag);
 		rbuf->full[next] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) {
@@ -677,6 +685,7 @@ newsrc: ;
 	if (!rbuf || !rbuf->buff || !rbuf->full || !rbuf->fill) {
 		return -1;
 	}
+	PF_TIMER_INC(PF_EX_BUFFERS_RECEIVED);
 
 	sSpace = rbuf->full[a] - rbuf->fill[a];
 	//MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace);
@@ -684,25 +693,31 @@ newsrc: ;
 				 - (AM.MaxTer/sizeof(WORD))*((LONG)S->lPatch);
 	SETBASEPOSITION(pp,lSpace);
 	MULPOS(pp,sizeof(WORD));
-	if ( ( S->lPatch >= S->MaxPatches ) ||
-		( ( (WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer ) ) >= S->lTop ) ) {
+	{
+		int _pf_merge_max_patches = (S->lPatch >= S->MaxPatches);
+		int _pf_merge_lbuf_full = ((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer)) >= S->lTop;
+		if ( _pf_merge_max_patches || _pf_merge_lbuf_full ) {
 /*
-		The large buffer is too full. Merge and write it
+			The large buffer is too full. Merge and write it
 */
-		//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+			//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 
-		PF_TIMER_BEGIN(RED_MERGE_PATCHES);
-		PF_TIMER_INC(PF_EX_PATCHES_BUILT);
-		if ( MergePatches(1) ) return (-1);
-		PF_TIMER_END(RED_MERGE_PATCHES);
+			if (_pf_merge_max_patches) PF_TIMER_INC(PF_EX_MERGE_MAX_PATCHES);
+			if (_pf_merge_lbuf_full)   PF_TIMER_INC(PF_EX_MERGE_LBUFFER_FULL);
+			PF_TIMER_BEGIN(RED_MERGE_PATCHES);
+			PF_TIMER_INC(PF_EX_PATCHES_BUILT);
+			if ( MergePatches(1) ) return (-1);
+			PF_TIMER_END(RED_MERGE_PATCHES);
 
-		SETBASEPOSITION(pp,sSpace);
-		MULPOS(pp,sizeof(WORD));
-		ADD2POS(pp,S->fPatches[S->fPatchN]);
+			SETBASEPOSITION(pp,sSpace);
+			MULPOS(pp,sizeof(WORD));
+			ADD2POS(pp,S->fPatches[S->fPatchN]);
 
-		S->lPatch = 0;
-		S->lFill = S->lBuffer;
+			S->lPatch = 0;
+			S->lFill = S->lBuffer;
+		}
 	}
+	PF_TIMER_BEGIN(RED_BUFFER_COPY);
 	S->Patches[S->lPatch++] = S->lFill;
 	lfill = (WORD *)(((UBYTE *)(S->lFill)) + AM.MaxTer);
 
@@ -731,6 +746,7 @@ newsrc: ;
 	S->sTerms = 0;
 	S->PoinFill = S->sPointer;
 	*(S->PoinFill) = S->sFill = S->sBuffer;
+	PF_TIMER_END(RED_BUFFER_COPY);
 	a = rbuf->active = next;
 	goto newsrc;
 }
@@ -1176,7 +1192,9 @@ ReceiveNew:
 		PF_RecvWbuf(fi->PObuffer,&size,&src);
 #endif
 #endif
+		PF_TIMER_BEGIN(MAP_GETTERM_WAIT);
 		tag=PF_RecvWbuf(fi->PObuffer,&size,&src);
+		PF_TIMER_END(MAP_GETTERM_WAIT);
 
 		fi->POfill = fi->PObuffer;
 		/* Get AN.ninterms which sits in the first 2 WORDs. */
@@ -1671,7 +1689,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	pf_profile_reset_module();
 	PF_OSCounters _pf_os_start;
 	pf_profile_snapshot_os(&_pf_os_start);
-	double _pf_module_t0 = MPI_Wtime();
+	pf_module_t0 = MPI_Wtime();
 	if ( PF.me == MASTER ) pf_profile_alloc_master(PF.numtasks);
 #endif
 
@@ -1891,9 +1909,11 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			PF_LongSingleReceive(PF_ANY_SOURCE, PF_ENDSORT_MSGTAG, &src, &tag);
 			PF_LongSingleUnpack(PF_stats[src], PF_STATS_SIZE, PF_LONG);
 #ifdef PF_PROFILE
-			PF_LongSingleUnpack(pf_profile_stats[src].phase_us, PF_PHASE_COUNT, PF_LONG);
-			PF_LongSingleUnpack(pf_profile_stats[src].os_diff,  PF_OS_COUNT,    PF_LONG);
-			PF_LongSingleUnpack(pf_profile_stats[src].extras,   PF_EX_COUNT,    PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].phase_us,       PF_PHASE_COUNT, PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].phase_first_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].phase_last_us,  PF_PHASE_COUNT, PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].os_diff,        PF_OS_COUNT,    PF_LONG);
+			PF_LongSingleUnpack(pf_profile_stats[src].extras,         PF_EX_COUNT,    PF_LONG);
 #endif
 			{
 				WORD numdummies, expchanged;
@@ -1923,30 +1943,16 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		PF_Statistics(PF_stats,0);
 #ifdef PF_PROFILE
-		if( AC.sMRflag != NO_MAPREDUCE){
-			WORD cpart, rpart, csort, rsort;
-			for ( int proc = 1; proc < PF.numtasks; proc++){
-				cpart = (WORD)(PF_stats[proc][5]%1000);
-				rpart = PF_stats[proc][5] / 1000;
-				cpart /= 10;
-				csort = (WORD)(PF_stats[proc][6]%1000);
-				rsort = (WORD) (PF_stats[proc][6] / 1000);
-				csort /= 10;
-				if ( proc < PF.nummappers){
-					MesPrint("Mapper  [%d]: Send time %7l.%2i sec. Wait time for Reducers: %7l.%2i sec", proc, rsort, csort, rpart, cpart);
-				}
-				else{
-					MesPrint("Reducer [%d]: Sort time %7l.%2i sec. Wait time for Mappers:  %7l.%2i sec", proc, rsort, csort, rpart, cpart);
-				}
-		}}
 		{
 			PF_OSCounters _pf_os_end;
 			pf_profile_snapshot_os(&_pf_os_end);
 			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
-			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
-			memcpy(pf_profile_stats[0].phase_us, pf_phase_us, sizeof(pf_phase_us));
-			memcpy(pf_profile_stats[0].os_diff,  pf_os_diff,  sizeof(pf_os_diff));
-			memcpy(pf_profile_stats[0].extras,   pf_extras,   sizeof(pf_extras));
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
+			memcpy(pf_profile_stats[0].phase_us,       pf_phase_us,       sizeof(pf_phase_us));
+			memcpy(pf_profile_stats[0].phase_first_us, pf_phase_first_us, sizeof(pf_phase_first_us));
+			memcpy(pf_profile_stats[0].phase_last_us,  pf_phase_last_us,  sizeof(pf_phase_last_us));
+			memcpy(pf_profile_stats[0].os_diff,        pf_os_diff,        sizeof(pf_os_diff));
+			memcpy(pf_profile_stats[0].extras,         pf_extras,         sizeof(pf_extras));
 			pf_profile_dump_master_csv(AC.CModule, (const char *)EXPRNAME(i),
 			                           PF.nummappers, PF.numreducers, PF.numtasks);
 		}
@@ -2133,11 +2139,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			PF_OSCounters _pf_os_end;
 			pf_profile_snapshot_os(&_pf_os_end);
 			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
-			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
 			pf_extras[PF_EX_TERMS_SENT] = PF_linterms;
-			PF_LongSinglePack(pf_phase_us, PF_PHASE_COUNT, PF_LONG);
-			PF_LongSinglePack(pf_os_diff,  PF_OS_COUNT,    PF_LONG);
-			PF_LongSinglePack(pf_extras,   PF_EX_COUNT,    PF_LONG);
+			PF_LongSinglePack(pf_phase_us,       PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_phase_first_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_phase_last_us,  PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_os_diff,        PF_OS_COUNT,    PF_LONG);
+			PF_LongSinglePack(pf_extras,         PF_EX_COUNT,    PF_LONG);
 		}
 #endif
 
@@ -2212,10 +2220,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			PF_OSCounters _pf_os_end;
 			pf_profile_snapshot_os(&_pf_os_end);
 			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
-			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - _pf_module_t0) * 1.0e6);
-			PF_LongSinglePack(pf_phase_us, PF_PHASE_COUNT, PF_LONG);
-			PF_LongSinglePack(pf_os_diff,  PF_OS_COUNT,    PF_LONG);
-			PF_LongSinglePack(pf_extras,   PF_EX_COUNT,    PF_LONG);
+			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
+			PF_LongSinglePack(pf_phase_us,       PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_phase_first_us, PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_phase_last_us,  PF_PHASE_COUNT, PF_LONG);
+			PF_LongSinglePack(pf_os_diff,        PF_OS_COUNT,    PF_LONG);
+			PF_LongSinglePack(pf_extras,         PF_EX_COUNT,    PF_LONG);
 		}
 #endif
 		{

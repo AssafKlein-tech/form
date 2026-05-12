@@ -25,15 +25,18 @@ enum {
 	PF_PHASE_MAP_ENDSORT_TOTAL,    /* mapper: total wall time of EndSort */
 	PF_PHASE_MAP_SEND_WAIT,        /* mapper: MPI_Wait inside PF_WISendSbuf */
 	PF_PHASE_MAP_SEND_MPI,         /* mapper: MPI_Isend post */
+	PF_PHASE_MAP_GETTERM_WAIT,     /* mapper: blocked in PF_RecvWbuf waiting for master to dispatch terms (pair to MAS_DISTRIBUTE_WAIT) */
 	PF_PHASE_RED_RECV_WAIT,        /* reducer: PF_WaitAnyRbuf in PF_StoreBuffer */
+	PF_PHASE_RED_BUFFER_COPY,      /* reducer: term-by-term memcpy of an arrived buffer into the sort patch */
 	PF_PHASE_RED_MERGE_PATCHES,    /* reducer: MergePatches calls */
 	PF_PHASE_RED_FINAL_SORT,       /* reducer: EndSort in PF_ForwardTermsToMaster */
 	PF_PHASE_RED_FORWARD_WAIT,     /* reducer: MPI_Wait when sending to master */
 	PF_PHASE_RED_FORWARD_MPI,      /* reducer: MPI_Isend to master */
 	PF_PHASE_MAS_DISTRIBUTE,       /* master: term-distribution loop */
 	PF_PHASE_MAS_DISTRIBUTE_WAIT,  /* master: PF_Wait4Slave */
-	PF_PHASE_MAS_FINAL_SORT,       /* master: EndSort merge tree */
-	PF_PHASE_MAS_COLLECT,          /* master: PF_LongSingleReceive loop */
+	PF_PHASE_MAS_FINAL_SORT,       /* master: EndSort merge tree (includes MAS_MERGE_RECV_WAIT) */
+	PF_PHASE_MAS_COLLECT,          /* master: end-of-module PF_LongSingleReceive stats loop */
+	PF_PHASE_MAS_MERGE_RECV_WAIT,  /* master: MPI_Wait inside PF_PutIn -- blocked mid-merge for a child's (reducer's) next sorted chunk. Sub-component of MAS_FINAL_SORT, not additive with it. */
 	PF_PHASE_COUNT
 };
 
@@ -53,6 +56,8 @@ enum {
 	PF_OS_RU_NIVCSW,
 	PF_OS_NODE_DISK_TIME_IN_IO_MS, /* node-leader only; -1 on non-leader */
 	PF_OS_NODE_WALLCLOCK_US,       /* node-leader only; -1 on non-leader */
+	PF_OS_NODE_NIC_XMIT_BYTES,     /* node-leader only; -1 on non-leader / wrap */
+	PF_OS_NODE_NIC_RCV_BYTES,      /* node-leader only; -1 on non-leader / wrap */
 	PF_OS_COUNT
 };
 
@@ -61,8 +66,11 @@ enum {
 	PF_EX_BYTES_SENT = 0,        /* mapper: total bytes shipped to reducers */
 	PF_EX_BYTES_TO_MASTER,       /* reducer: total bytes shipped to master */
 	PF_EX_TERMS_SENT,            /* reserved (filled from existing PF_linterms in CSV) */
-	PF_EX_PATCHES_BUILT,         /* reducer: number of MergePatches calls */
+	PF_EX_PATCHES_BUILT,         /* reducer: total MergePatches calls */
 	PF_EX_WALLCLOCK_US,          /* per-rank wallclock for the module */
+	PF_EX_BUFFERS_RECEIVED,      /* reducer: chunks consumed in PF_StoreBuffer (1 per mapper-side send) */
+	PF_EX_MERGE_LBUFFER_FULL,    /* reducer: MergePatches firings caused by large buffer running out of room */
+	PF_EX_MERGE_MAX_PATCHES,     /* reducer: MergePatches firings caused by lPatch >= MaxPatches */
 	PF_EX_COUNT
 };
 
@@ -81,36 +89,71 @@ typedef struct {
 	LONG ru_nivcsw;
 	LONG node_disk_time_in_io_ms; /* -1 on non-leader */
 	LONG node_wallclock_us;       /* -1 on non-leader */
+	LONG node_nic_xmit_bytes;     /* -1 on non-leader; IB sysfs counter * 4 */
+	LONG node_nic_rcv_bytes;      /* -1 on non-leader; IB sysfs counter * 4 */
 } PF_OSCounters;
 
 /* Per-rank profile slots (sent via PF_LongSinglePack; received and stored
-   in pf_profile_stats[rank] on the master). */
+   in pf_profile_stats[rank] on the master). phase_first_us / phase_last_us
+   are wall-clock offsets from the module start in microseconds (-1 if the
+   phase never executed on that rank for that module); they drive the Gantt
+   panel in the visualization. */
 typedef struct {
 	LONG phase_us[PF_PHASE_COUNT];
+	LONG phase_first_us[PF_PHASE_COUNT];
+	LONG phase_last_us[PF_PHASE_COUNT];
 	LONG os_diff[PF_OS_COUNT];
 	LONG extras[PF_EX_COUNT];
 } PF_ProfileSlot;
 
 /* Globals: filled per-module by each rank, then packed and sent to master. */
 extern LONG pf_phase_us[PF_PHASE_COUNT];
+extern LONG pf_phase_first_us[PF_PHASE_COUNT];
+extern LONG pf_phase_last_us[PF_PHASE_COUNT];
 extern LONG pf_os_diff[PF_OS_COUNT];
 extern LONG pf_extras[PF_EX_COUNT];
+
+/* Module-start MPI_Wtime() reference; first/last timestamps are computed
+   relative to this. Set by parallel.c right after pf_profile_reset_module()
+   and the start-of-module OS snapshot. */
+extern double pf_module_t0;
 
 /* Master-only: per-rank receive buffer, allocated lazily on first dump. */
 extern PF_ProfileSlot *pf_profile_stats;
 
-/* Macros. Always evaluate cheaply; MPI_Wtime() is ~30 ns on Linux. */
-#define PF_TIMER_BEGIN(P) double _pf_t_##P = MPI_Wtime()
+/*
+   Timer macros. PF_TIMER_BEGIN(P) introduces a local _pf_t_##P at the call
+   site and (on first entry within a module) records the phase's relative
+   start time in pf_phase_first_us[P]. PF_TIMER_END(P) accumulates duration
+   and updates pf_phase_last_us[P]. MPI_Wtime() ~30 ns on Linux.
+
+   IMPORTANT: PF_TIMER_BEGIN expands to a declaration + a conditional update;
+   it must appear at top-level inside a brace-delimited block, never as the
+   body of an unbraced if/else/for. All current call sites comply.
+*/
+#define PF_TIMER_BEGIN(P) \
+	double _pf_t_##P = MPI_Wtime(); \
+	if (pf_phase_first_us[PF_PHASE_##P] < 0) \
+		pf_phase_first_us[PF_PHASE_##P] = (LONG)((_pf_t_##P - pf_module_t0) * 1.0e6)
 #define PF_TIMER_END(P) \
 	do { \
-		pf_phase_us[PF_PHASE_##P] += (LONG)((MPI_Wtime() - _pf_t_##P) * 1.0e6); \
+		double _pf_now_##P = MPI_Wtime(); \
+		pf_phase_us[PF_PHASE_##P] += (LONG)((_pf_now_##P - _pf_t_##P) * 1.0e6); \
+		pf_phase_last_us[PF_PHASE_##P] = (LONG)((_pf_now_##P - pf_module_t0) * 1.0e6); \
 	} while (0)
 /* Runtime-indexed timer: phase ID resolved at runtime (e.g. PF_ISendSbuf
-   chooses MAP_SEND_* vs RED_FORWARD_* based on caller's role). */
+   chooses MAP_SEND_* vs RED_FORWARD_* based on caller's role). Both first
+   and last are attributed at END time since the index isn't known at BEGIN. */
 #define PF_TIMER_BEGIN_RT(name) double _pf_t_rt_##name = MPI_Wtime()
 #define PF_TIMER_END_RT(name, idx) \
 	do { \
-		if ((idx) >= 0) pf_phase_us[(idx)] += (LONG)((MPI_Wtime() - _pf_t_rt_##name) * 1.0e6); \
+		if ((idx) >= 0) { \
+			double _pf_now_rt_##name = MPI_Wtime(); \
+			pf_phase_us[(idx)] += (LONG)((_pf_now_rt_##name - _pf_t_rt_##name) * 1.0e6); \
+			if (pf_phase_first_us[(idx)] < 0) \
+				pf_phase_first_us[(idx)] = (LONG)((_pf_t_rt_##name - pf_module_t0) * 1.0e6); \
+			pf_phase_last_us[(idx)] = (LONG)((_pf_now_rt_##name - pf_module_t0) * 1.0e6); \
+		} \
 	} while (0)
 #define PF_TIMER_ADD_BYTES(idx, n) (pf_extras[(idx)] += (LONG)(n))
 #define PF_TIMER_INC(idx) (pf_extras[(idx)]++)

@@ -21,10 +21,17 @@
 #include "form3.h"
 #include "pf_profile.h"
 
-/* Per-rank globals filled by the timer macros. */
+/* Per-rank globals filled by the timer macros. phase_first_us / phase_last_us
+   are wall-clock offsets from pf_module_t0 in microseconds; -1 means the phase
+   never fired on this rank for the current module. */
 LONG pf_phase_us[PF_PHASE_COUNT];
+LONG pf_phase_first_us[PF_PHASE_COUNT];
+LONG pf_phase_last_us[PF_PHASE_COUNT];
 LONG pf_os_diff[PF_OS_COUNT];
 LONG pf_extras[PF_EX_COUNT];
+
+/* Module-start time reference; written by parallel.c at module entry. */
+double pf_module_t0 = 0.0;
 
 /* Master-only receive buffer for per-rank profile slots. */
 PF_ProfileSlot *pf_profile_stats = NULL;
@@ -37,6 +44,18 @@ static unsigned int s_formtmp_major = 0;
 static unsigned int s_formtmp_minor = 0;
 static int   s_diskstats_unavailable = 0;
 
+/* IB NIC counter state. Resolved from UCX_NET_DEVICES at init. The two
+   paths point at /sys/class/infiniband/<dev>/ports/<port>/counters/<name>;
+   the values there are in 4-byte units per the IB spec, multiplied by 4
+   when read so callers see bytes. We prefer port_xmit_data_extended /
+   port_rcv_data_extended (64-bit, ConnectX-5+) and fall back to the
+   32-bit names when only those are present, with wrap detection in
+   the diff. */
+static int   s_ib_unavailable = 0;
+static int   s_ib_counter_extended = 0;
+static char  s_ib_xmit_path[256] = {0};
+static char  s_ib_rcv_path[256]  = {0};
+
 /* CSV state: written once per run. */
 static FILE *s_csv = NULL;
 static int   s_csv_header_written = 0;
@@ -46,6 +65,10 @@ void pf_profile_reset_module(void)
 	memset(pf_phase_us, 0, sizeof(pf_phase_us));
 	memset(pf_os_diff, 0, sizeof(pf_os_diff));
 	memset(pf_extras, 0, sizeof(pf_extras));
+	for ( int i = 0; i < PF_PHASE_COUNT; i++ ) {
+		pf_phase_first_us[i] = -1;
+		pf_phase_last_us[i]  = -1;
+	}
 }
 
 /*
@@ -81,11 +104,30 @@ static LONG read_node_disk_time_in_io_ms(void)
 	return result;
 }
 
+/*
+	Read an IB sysfs counter file. Returns the raw counter value
+	multiplied by 4 (IB spec: counters are in units of 4 bytes), or -1
+	on failure / non-leader.
+*/
+static LONG read_ib_counter(const char *path)
+{
+	if ( !s_is_node_leader || s_ib_unavailable || !path[0] ) return -1;
+	FILE *fp = fopen(path, "r");
+	if ( !fp ) return -1;
+	unsigned long long v = 0;
+	int n = fscanf(fp, "%llu", &v);
+	fclose(fp);
+	if ( n != 1 ) return -1;
+	return (LONG)(v * 4ULL);
+}
+
 void pf_profile_snapshot_os(PF_OSCounters *out)
 {
 	memset(out, 0, sizeof(*out));
 	out->node_disk_time_in_io_ms = -1;
 	out->node_wallclock_us = -1;
+	out->node_nic_xmit_bytes = -1;
+	out->node_nic_rcv_bytes  = -1;
 
 	FILE *fp = fopen("/proc/self/io", "r");
 	if ( fp ) {
@@ -114,6 +156,8 @@ void pf_profile_snapshot_os(PF_OSCounters *out)
 	if ( s_is_node_leader ) {
 		out->node_disk_time_in_io_ms = read_node_disk_time_in_io_ms();
 		out->node_wallclock_us = (LONG)(MPI_Wtime() * 1.0e6);
+		out->node_nic_xmit_bytes = read_ib_counter(s_ib_xmit_path);
+		out->node_nic_rcv_bytes  = read_ib_counter(s_ib_rcv_path);
 	}
 }
 
@@ -138,6 +182,21 @@ void pf_profile_diff_os(const PF_OSCounters *start, const PF_OSCounters *end, LO
 			end->node_disk_time_in_io_ms - start->node_disk_time_in_io_ms;
 		out_diff[PF_OS_NODE_WALLCLOCK_US] =
 			end->node_wallclock_us - start->node_wallclock_us;
+	}
+	if ( start->node_nic_xmit_bytes < 0 || end->node_nic_xmit_bytes < 0
+	     || end->node_nic_xmit_bytes < start->node_nic_xmit_bytes ) {
+		/* negative delta on the 32-bit-counter fallback signals wrap; emit -1 */
+		out_diff[PF_OS_NODE_NIC_XMIT_BYTES] = -1;
+	} else {
+		out_diff[PF_OS_NODE_NIC_XMIT_BYTES] =
+			end->node_nic_xmit_bytes - start->node_nic_xmit_bytes;
+	}
+	if ( start->node_nic_rcv_bytes < 0 || end->node_nic_rcv_bytes < 0
+	     || end->node_nic_rcv_bytes < start->node_nic_rcv_bytes ) {
+		out_diff[PF_OS_NODE_NIC_RCV_BYTES] = -1;
+	} else {
+		out_diff[PF_OS_NODE_NIC_RCV_BYTES] =
+			end->node_nic_rcv_bytes - start->node_nic_rcv_bytes;
 	}
 }
 
@@ -187,6 +246,59 @@ int pf_profile_per_node_init(void)
 			        PF.me, path);
 			fflush(stderr);
 		}
+
+		/*
+			Resolve the IB NIC counter paths from UCX_NET_DEVICES. Format
+			is "<dev>:<port>" (e.g. "mlx5_0:1"); the part after the colon
+			is optional and defaults to port 1. Read-only sampling at
+			module boundaries -- no resets, no perturbation of co-tenant
+			traffic. See feedback memory feedback_concurrent_profile_runs.
+		*/
+		const char *ucxdev = getenv("UCX_NET_DEVICES");
+		if ( !ucxdev || !*ucxdev ) {
+			s_ib_unavailable = 1;
+			fprintf(stderr, "[%d] pf_profile: NIC tracking disabled "
+			        "(UCX_NET_DEVICES not set)\n", PF.me);
+			fflush(stderr);
+		} else {
+			char dev[128]; dev[0] = '\0';
+			int port = 1;
+			const char *colon = strchr(ucxdev, ':');
+			size_t devlen = colon ? (size_t)(colon - ucxdev) : strlen(ucxdev);
+			if ( devlen >= sizeof(dev) ) devlen = sizeof(dev) - 1;
+			memcpy(dev, ucxdev, devlen);
+			dev[devlen] = '\0';
+			if ( colon && *(colon + 1) ) {
+				int p = atoi(colon + 1);
+				if ( p > 0 ) port = p;
+			}
+			char probe[256];
+			snprintf(probe, sizeof(probe),
+			         "/sys/class/infiniband/%s/ports/%d/counters/port_xmit_data_extended",
+			         dev, port);
+			struct stat pst;
+			s_ib_counter_extended = (stat(probe, &pst) == 0);
+			const char *xmit_name = s_ib_counter_extended
+				? "port_xmit_data_extended" : "port_xmit_data";
+			const char *rcv_name = s_ib_counter_extended
+				? "port_rcv_data_extended" : "port_rcv_data";
+			snprintf(s_ib_xmit_path, sizeof(s_ib_xmit_path),
+			         "/sys/class/infiniband/%s/ports/%d/counters/%s",
+			         dev, port, xmit_name);
+			snprintf(s_ib_rcv_path, sizeof(s_ib_rcv_path),
+			         "/sys/class/infiniband/%s/ports/%d/counters/%s",
+			         dev, port, rcv_name);
+			if ( stat(s_ib_xmit_path, &pst) != 0 ) {
+				s_ib_unavailable = 1;
+				fprintf(stderr, "[%d] pf_profile: NIC tracking disabled "
+				        "(%s missing)\n", PF.me, s_ib_xmit_path);
+				fflush(stderr);
+			} else {
+				fprintf(stderr, "[%d] pf_profile: tracking NIC %s:%d (%s)\n",
+				        PF.me, dev, port, xmit_name);
+				fflush(stderr);
+			}
+		}
 	}
 	return 0;
 }
@@ -206,13 +318,31 @@ static void write_csv_header(FILE *fp)
 {
 	fprintf(fp,
 		"timestamp,module,expr,rank,role,nummappers,numreducers,wallclock_us,"
-		"t_map_generator_us,t_map_endsort_total_us,t_map_send_wait_us,t_map_send_mpi_us,"
-		"t_red_recv_wait_us,t_red_merge_patches_us,t_red_final_sort_us,t_red_forward_wait_us,t_red_forward_mpi_us,"
-		"t_mas_distribute_us,t_mas_distribute_wait_us,t_mas_final_sort_us,t_mas_collect_us,"
-		"bytes_sent,bytes_to_master,terms_sent,patches_built,"
+		"t_map_generator_us,t_map_endsort_total_us,t_map_send_wait_us,t_map_send_mpi_us,t_map_getterm_wait_us,"
+		"t_red_recv_wait_us,t_red_buffer_copy_us,t_red_merge_patches_us,t_red_final_sort_us,t_red_forward_wait_us,t_red_forward_mpi_us,"
+		"t_mas_distribute_us,t_mas_distribute_wait_us,t_mas_final_sort_us,t_mas_collect_us,t_mas_merge_recv_wait_us,"
+		"bytes_sent,bytes_to_master,terms_sent,patches_built,buffers_received,merge_lbuffer_full,merge_max_patches,"
 		"io_rchar,io_wchar,io_read_bytes,io_write_bytes,io_syscr,io_syscw,"
 		"maxrss_kb,minflt,majflt,nvcsw,nivcsw,"
-		"node_disk_time_in_io_ms,node_wallclock_us\n");
+		"node_disk_time_in_io_ms,node_wallclock_us,"
+		"node_nic_xmit_bytes,node_nic_rcv_bytes,"
+		/* Per-phase Gantt timestamps (us from module start; -1 = phase didn't fire). */
+		"t_map_generator_first_us,t_map_generator_last_us,"
+		"t_map_endsort_total_first_us,t_map_endsort_total_last_us,"
+		"t_map_send_wait_first_us,t_map_send_wait_last_us,"
+		"t_map_send_mpi_first_us,t_map_send_mpi_last_us,"
+		"t_map_getterm_wait_first_us,t_map_getterm_wait_last_us,"
+		"t_red_recv_wait_first_us,t_red_recv_wait_last_us,"
+		"t_red_buffer_copy_first_us,t_red_buffer_copy_last_us,"
+		"t_red_merge_patches_first_us,t_red_merge_patches_last_us,"
+		"t_red_final_sort_first_us,t_red_final_sort_last_us,"
+		"t_red_forward_wait_first_us,t_red_forward_wait_last_us,"
+		"t_red_forward_mpi_first_us,t_red_forward_mpi_last_us,"
+		"t_mas_distribute_first_us,t_mas_distribute_last_us,"
+		"t_mas_distribute_wait_first_us,t_mas_distribute_wait_last_us,"
+		"t_mas_final_sort_first_us,t_mas_final_sort_last_us,"
+		"t_mas_collect_first_us,t_mas_collect_last_us,"
+		"t_mas_merge_recv_wait_first_us,t_mas_merge_recv_wait_last_us\n");
 }
 
 static const char *role_name(int rank, int nummappers)
@@ -226,17 +356,23 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
                           const PF_ProfileSlot *slot)
 {
 	const LONG *p  = slot->phase_us;
+	const LONG *pf = slot->phase_first_us;
+	const LONG *pl = slot->phase_last_us;
 	const LONG *os = slot->os_diff;
 	const LONG *ex = slot->extras;
 	fprintf(fp,
 		"%lld,%d,%s,%d,%s,%d,%d,%lld,"
-		"%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld\n",
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,"
+		/* Gantt timestamps (16 phases x first,last). */
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
 		(long long)ts, module_num, expr_name ? expr_name : "",
 		rank, role_name(rank, nummappers), nummappers, numreducers,
 		(long long)ex[PF_EX_WALLCLOCK_US],
@@ -244,7 +380,9 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)p[PF_PHASE_MAP_ENDSORT_TOTAL],
 		(long long)p[PF_PHASE_MAP_SEND_WAIT],
 		(long long)p[PF_PHASE_MAP_SEND_MPI],
+		(long long)p[PF_PHASE_MAP_GETTERM_WAIT],
 		(long long)p[PF_PHASE_RED_RECV_WAIT],
+		(long long)p[PF_PHASE_RED_BUFFER_COPY],
 		(long long)p[PF_PHASE_RED_MERGE_PATCHES],
 		(long long)p[PF_PHASE_RED_FINAL_SORT],
 		(long long)p[PF_PHASE_RED_FORWARD_WAIT],
@@ -253,10 +391,14 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)p[PF_PHASE_MAS_DISTRIBUTE_WAIT],
 		(long long)p[PF_PHASE_MAS_FINAL_SORT],
 		(long long)p[PF_PHASE_MAS_COLLECT],
+		(long long)p[PF_PHASE_MAS_MERGE_RECV_WAIT],
 		(long long)ex[PF_EX_BYTES_SENT],
 		(long long)ex[PF_EX_BYTES_TO_MASTER],
 		(long long)ex[PF_EX_TERMS_SENT],
 		(long long)ex[PF_EX_PATCHES_BUILT],
+		(long long)ex[PF_EX_BUFFERS_RECEIVED],
+		(long long)ex[PF_EX_MERGE_LBUFFER_FULL],
+		(long long)ex[PF_EX_MERGE_MAX_PATCHES],
 		(long long)os[PF_OS_IO_RCHAR],
 		(long long)os[PF_OS_IO_WCHAR],
 		(long long)os[PF_OS_IO_READ_BYTES],
@@ -269,7 +411,25 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)os[PF_OS_RU_NVCSW],
 		(long long)os[PF_OS_RU_NIVCSW],
 		(long long)os[PF_OS_NODE_DISK_TIME_IN_IO_MS],
-		(long long)os[PF_OS_NODE_WALLCLOCK_US]);
+		(long long)os[PF_OS_NODE_WALLCLOCK_US],
+		(long long)os[PF_OS_NODE_NIC_XMIT_BYTES],
+		(long long)os[PF_OS_NODE_NIC_RCV_BYTES],
+		(long long)pf[PF_PHASE_MAP_GENERATOR],      (long long)pl[PF_PHASE_MAP_GENERATOR],
+		(long long)pf[PF_PHASE_MAP_ENDSORT_TOTAL],  (long long)pl[PF_PHASE_MAP_ENDSORT_TOTAL],
+		(long long)pf[PF_PHASE_MAP_SEND_WAIT],      (long long)pl[PF_PHASE_MAP_SEND_WAIT],
+		(long long)pf[PF_PHASE_MAP_SEND_MPI],       (long long)pl[PF_PHASE_MAP_SEND_MPI],
+		(long long)pf[PF_PHASE_MAP_GETTERM_WAIT],   (long long)pl[PF_PHASE_MAP_GETTERM_WAIT],
+		(long long)pf[PF_PHASE_RED_RECV_WAIT],      (long long)pl[PF_PHASE_RED_RECV_WAIT],
+		(long long)pf[PF_PHASE_RED_BUFFER_COPY],    (long long)pl[PF_PHASE_RED_BUFFER_COPY],
+		(long long)pf[PF_PHASE_RED_MERGE_PATCHES],  (long long)pl[PF_PHASE_RED_MERGE_PATCHES],
+		(long long)pf[PF_PHASE_RED_FINAL_SORT],     (long long)pl[PF_PHASE_RED_FINAL_SORT],
+		(long long)pf[PF_PHASE_RED_FORWARD_WAIT],   (long long)pl[PF_PHASE_RED_FORWARD_WAIT],
+		(long long)pf[PF_PHASE_RED_FORWARD_MPI],    (long long)pl[PF_PHASE_RED_FORWARD_MPI],
+		(long long)pf[PF_PHASE_MAS_DISTRIBUTE],     (long long)pl[PF_PHASE_MAS_DISTRIBUTE],
+		(long long)pf[PF_PHASE_MAS_DISTRIBUTE_WAIT],(long long)pl[PF_PHASE_MAS_DISTRIBUTE_WAIT],
+		(long long)pf[PF_PHASE_MAS_FINAL_SORT],         (long long)pl[PF_PHASE_MAS_FINAL_SORT],
+		(long long)pf[PF_PHASE_MAS_COLLECT],            (long long)pl[PF_PHASE_MAS_COLLECT],
+		(long long)pf[PF_PHASE_MAS_MERGE_RECV_WAIT],    (long long)pl[PF_PHASE_MAS_MERGE_RECV_WAIT]);
 }
 
 void pf_profile_dump_master_csv(int module_num, const char *expr_name,
