@@ -1380,19 +1380,17 @@ typedef struct {
 */
 
 /**
- *	K-prefix routing + drain merge tuning for MR mode. Both fields key off
- *	the same K (a term's first K symbolic WORDs): HashPrefixWords selects
- *	how mappers hash terms to reducers (so terms sharing a K-prefix land on
- *	the same reducer, putting contiguous prefix-buckets in each stream),
- *	and MasterGallop enables the master's matching prefix-drain on the
- *	k-way merge of those streams (consecutive same-K-prefix terms from one
- *	stream emit without inter-reducer compare). Lives inside M_const as
- *	AM.MR; populated on the master in PF_Init from PF_HASH_PREFIX_WORDS and
- *	PF_MASTER_GALLOP and broadcast to all ranks.
+ *	K-prefix routing + drain merge tuning for MR mode. HashPrefixWords > 0
+ *	enables both (a) mappers hashing terms by their first K symbolic WORDs
+ *	(so terms sharing a K-prefix land on the same reducer) AND (b) the
+ *	master's matching prefix-drain on the k-way merge of those streams
+ *	(consecutive same-K-prefix terms from one stream emit without
+ *	inter-reducer compare). Lives inside M_const as AM.MR; populated on
+ *	the master in PF_Init from PF_HASH_PREFIX_WORDS and broadcast to all
+ *	ranks. K=0 disables both (= standard ParFORM MR behavior).
  */
 struct PrefixHashSort {
-    int HashPrefixWords;       /* (M) PF_HASH_PREFIX_WORDS; 0 = hash whole symbolic part */
-    int MasterGallop;          /* (M) PF_MASTER_GALLOP; 0 = serial k-way merge */
+    int HashPrefixWords;       /* (M) PF_HASH_PREFIX_WORDS; 0 = hash whole symbolic part, no drain */
 };
 
 /**

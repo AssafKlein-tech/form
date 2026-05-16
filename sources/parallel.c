@@ -1191,21 +1191,20 @@ int PF_EndSort(void)
 
 	noutterms = 0;
 
-	/* Prefix-drain: PF_MASTER_GALLOP=1 AND PF_HASH_PREFIX_WORDS=K>0.
-	   Exploits the routing invariant -- any two terms with byte-equal
-	   first-K symbolic words land on the same reducer. So once W wins
-	   with K-prefix P, every subsequent W-term whose wire-format
-	   compression-share (against the just-emitted term) exceeds K has
-	   the same K-prefix P, must be the correct next emit (no other
-	   reducer can hold P), AND has wire bytes that are already a valid
-	   delta against the output stream's previous term. The drain copies
-	   those bytes straight to fout, skipping both the master's loser-
-	   tree sift and PutOut's per-word compression search. Master
-	   decisions drop from O(terms) to O(distinct-K-prefix-buckets).
-	   Disabled when S->PolyFlag != 0 (PolyFun equal-terms path needs
-	   the full PF_GetLoser). K=0 makes the gallop knob a no-op. */
-	int drain_active = ( AM.MR.MasterGallop
-	                  && AM.MR.HashPrefixWords > 0
+	/* Prefix-drain: PF_HASH_PREFIX_WORDS=K>0 enables both prefix routing
+	   (mappers) and the master drain. Exploits the routing invariant --
+	   any two terms with byte-equal first-K symbolic words land on the
+	   same reducer. So once src wins with K-prefix P, every subsequent
+	   src-term whose wire-format compression-share (against the just-
+	   emitted term) exceeds K has the same K-prefix P, must be the
+	   correct next emit (no other reducer can hold P), AND has wire
+	   bytes that are already a valid delta against the output stream's
+	   previous term. The drain copies those bytes straight to fout,
+	   skipping both the master's loser-tree sift and PutOut's per-word
+	   compression search. Master decisions drop from O(terms) to
+	   O(distinct-K-prefix-buckets). Disabled when S->PolyFlag != 0
+	   (PolyFun equal-terms path needs the full PF_GetLoser). */
+	int drain_active = ( AM.MR.HashPrefixWords > 0
 	                  && S->PolyFlag == 0 );
 	int dobracketindex = ( AR.sLevel <= 0
 	                  && Expressions[AR.CurExpr].newbracketinfo
@@ -2705,7 +2704,6 @@ int PF_Init(int *argc, char ***argv)
 	PF.rhsInParallel=1;
 	PF.exprbufsize=4096;/*in WORDs*/
 	AM.MR.HashPrefixWords = 0;
-	AM.MR.MasterGallop = 0;
 
 #ifdef PF_WITHGETENV
 	if ( PF.me == MASTER ) {
@@ -2755,9 +2753,6 @@ int PF_Init(int *argc, char ***argv)
 			if ( AM.MR.HashPrefixWords > PF_DRAIN_MAX_K )
 				AM.MR.HashPrefixWords = PF_DRAIN_MAX_K;
 		}
-		if ( ( c = (char*)getenv("PF_MASTER_GALLOP") ) != 0 ) {
-			AM.MR.MasterGallop = (atoi(c) != 0);
-		}
 	}
 #endif
 /*
@@ -2769,7 +2764,6 @@ int PF_Init(int *argc, char ***argv)
 		PF_Pack(&PF.numrbufs,1,PF_WORD);
 		PF_Pack(&PF.numsbufs,1,PF_WORD);
 		PF_Pack(&AM.MR.HashPrefixWords,1,PF_INT);
-		PF_Pack(&AM.MR.MasterGallop,1,PF_INT);
 	}
 	PF_Broadcast();
 	if ( PF.me != MASTER ) {
@@ -2777,7 +2771,6 @@ int PF_Init(int *argc, char ***argv)
 		PF_Unpack(&PF.numrbufs,1,PF_WORD);
 		PF_Unpack(&PF.numsbufs,1,PF_WORD);
 		PF_Unpack(&AM.MR.HashPrefixWords,1,PF_INT);
-		PF_Unpack(&AM.MR.MasterGallop,1,PF_INT);
 		if ( PF.log ) {
 			fprintf(stderr, "[%d] log=%d rbufs=%d sbufs=%d\n",
 			        PF.me, PF.log, PF.numrbufs, PF.numsbufs);
