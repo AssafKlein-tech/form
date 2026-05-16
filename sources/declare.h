@@ -1468,6 +1468,10 @@ typedef WORD (*GETTERM)(PHEAD WORD *);
 #define FiniShuffle AN.SHvar.finishuf
 #define DoShtuffle ((DO_UFFLE)AN.SHvar.do_uffle)
 
+#ifdef WITHMPI
+extern WORD pf_compare_kcap;  /* if >0, Compare1 caps its symbolic walk at this many words */
+#endif
+
 extern UBYTE *defineChannel(UBYTE*, HANDLERS*);
 extern int    writeToChannel(int,UBYTE *,HANDLERS*);
 #ifdef WITHEXTERNALCHANNEL

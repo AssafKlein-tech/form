@@ -113,14 +113,6 @@ DECISION_MATRIX = [
         "rationale": "Hash work is per-term; vectorization is the only lever.",
     },
     {
-        "id": "master_merge_bound",
-        "test": lambda d: d["master"]["t_mas_final_sort_us"] > 0.50 * d["master"]["wallclock_us"]
-                          and d["reducer"]["t_red_recv_wait_us"] > 0.30 * d["reducer"]["wallclock_us"],
-        "diagnosis": "Master merge tree dominant; reducers idle.",
-        "knob": "Increase number of reducers OR widen master merge tree.",
-        "rationale": "Master fan-in scales with numreducers; pre-merging upstream helps.",
-    },
-    {
         "id": "master_merge_recv_bound",
         "test": lambda d: d["master"]["t_mas_merge_recv_wait_us"] > 0.40 * d["master"]["wallclock_us"],
         "diagnosis": "Master spends most of its merge blocked in PF_PutIn waiting for reducers to deliver sorted chunks (MAS_MERGE_RECV_WAIT high) — recv-bound, not merge-CPU-bound.",
@@ -128,12 +120,21 @@ DECISION_MATRIX = [
         "rationale": "The master can't merge faster than its slowest child delivers; shortening the reducer critical path or deepening the master's receive queue is the lever, not the merge tree shape.",
     },
     {
+        "id": "master_merge_bound",
+        "test": lambda d: d["master"]["t_mas_final_sort_us"] > 0.30 * d["master"]["wallclock_us"]
+                          and d["master"]["t_mas_merge_recv_wait_us"] > 0.15 * d["master"]["t_mas_final_sort_us"]
+                          and d["master"]["t_mas_merge_recv_wait_us"] <= 0.40 * d["master"]["wallclock_us"],
+        "diagnosis": "Master merge tree substantial AND meaningfully recv-stalled (MAS_MERGE_RECV_WAIT is 15-40% of MAS_FINAL_SORT) — mixed CPU/recv bound, leaning recv.",
+        "knob": "Speeding up reducer delivery (more reducers OR raise reducer largesize/smallext) shortens the master critical path; merge-tree-shape changes won't.",
+        "rationale": "A non-trivial share of master merge time is waiting for the next reducer chunk, so reducer-side throughput is a real lever -- but not so dominant that master_merge_recv_bound fires.",
+    },
+    {
         "id": "master_merge_cpu_bound",
-        "test": lambda d: d["master"]["t_mas_final_sort_us"] > 0.50 * d["master"]["wallclock_us"]
+        "test": lambda d: d["master"]["t_mas_final_sort_us"] > 0.30 * d["master"]["wallclock_us"]
                           and d["master"]["t_mas_merge_recv_wait_us"] < 0.15 * d["master"]["t_mas_final_sort_us"],
-        "diagnosis": "Master merge dominant but NOT recv-bound (MAS_MERGE_RECV_WAIT tiny vs MAS_FINAL_SORT) — the master is CPU-bound in the loser-tree compare/decompress.",
-        "knob": "Fewer, fatter reducers won't help; profile the master's compare path. Reducing total term volume reaching the master (better dedup, compression) is the only structural lever.",
-        "rationale": "Merge work is per-term on a single core; widening the tree adds children, not throughput.",
+        "diagnosis": "Master merge substantial but NOT recv-bound (MAS_MERGE_RECV_WAIT tiny vs MAS_FINAL_SORT) — the master is CPU-bound in the loser-tree compare/decompress.",
+        "knob": "Fewer/fatter reducers won't help; reducers do not combine like terms (they bypass ComPress, just k-way merge and forward). The lever is upstream: reduce term volume per mapper (algebraic restructuring in the FORM script, or anything that improves mapper-side ComPress yield), OR speed up the master's compare path itself (Compare1 kernel).",
+        "rationale": "Merge work is per-term on a single core; widening the tree adds children, not throughput. Every unique term a mapper emits reaches the master, so mapper-side combining + raw term count are the only volume levers.",
     },
     {
         "id": "master_distribute_slow",

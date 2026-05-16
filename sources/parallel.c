@@ -170,6 +170,11 @@ static POSITION PF_exprsize;   /* (master) The size of the expression at PF_EndS
 #define DBGOUT_NINTERMS(lv, a)
 /* #define DBGOUT_NINTERMS(lv, a) DBGOUT(1, lv, a) */
 
+/* Upper bound on the K-prefix word count used by the master-side prefix-drain
+   (AM.MR.HashPrefixWords clamped to this in PF_Init). K=1024 is huge for
+   current routing (production uses K≈128); the clamp is just a sanity bound. */
+#define PF_DRAIN_MAX_K 1024
+
 /*
   	#] includes : 
   	#[ statistics :
@@ -281,6 +286,20 @@ static  WORD PF_loser;			/* this is the last loser */
 static  WORD **PF_term;			/* these point to the active terms */
 static  WORD **PF_newcpos;		/* new coeffs of merged terms */
 static  WORD *PF_newclen;		/* length of new coefficients */
+
+/* Stable scratch copy of the just-emitted term T_i, used as lastterm for
+   PF_GetLoser's NEXT refill of the drained leaf. The drain advances
+   rbuf->fill past the bulk of T_{i+1}..T_{i+k} compressed bytes without
+   decompressing them; the next iteration's PF_GetLoser calls PF_PutIn on
+   the same leaf, which reads PF_term[src] for lastterm. PF_PutIn's
+   backward decompression write extends up to share words from
+   boundary_start; when the drained run is short (< share words), the
+   write reaches back into rbuf positions that previously held T_i, so
+   T_i must live in a buffer outside rbuf. Correctness of using T_i in
+   place of T_{i+k}: boundary_share <= K and all drained terms share the
+   first K+1 words, so lastterm[1..share] is identical. Grown on demand. */
+static  WORD *PF_drain_lastterm = NULL;
+static  int   PF_drain_lastterm_cap = 0;
 
 /*
 	preliminary: could also write somewhere else?
@@ -634,7 +653,124 @@ newterms:
 }
 
 /*
- 		#] PF_PutIn : 
+ 		#] PF_PutIn :
+ 		#[ pf_emit_compressed_bulk :
+*/
+
+/**
+ * Master prefix-drain bulk emit: copy a run of n_terms consecutive
+ * compressed terms from rbuf (already verified to share the K-prefix
+ * with the just-emitted term T_i) straight to fout's POfill, bypassing
+ * PutOut and all per-term decompression.
+ *
+ * Correctness:
+ *   - Wire format both reducer and master produce is identical:
+ *     [-share, tail_len, tail_words]. Term j in the run encodes a delta
+ *     against term j-1 IN THE INPUT STREAM, which is also term j-1 in the
+ *     OUTPUT stream (we just wrote it). So the deltas decode the same on
+ *     replay. For the first drained term the previous output term is T_i
+ *     (just emitted by PutOut) -- same as its input predecessor.
+ *   - AR.CompressPointer stays = T_i (set by PutOut). The boundary term's
+ *     PutOut will compress against T_i; since boundary_share <= K and
+ *     T_i[1..K] == T_{i+k}[1..K] (drain invariant), the compression match
+ *     length is the same as it would be against T_{i+k}. No refresh needed.
+ *   - PutBracketInIndex needs each output term's position. All drained
+ *     terms share the same bracket prefix (it lives within the first K+1
+ *     words), so we pass T_i as the term pointer; PutBracketInIndex
+ *     internally collapses consecutive-equal-bracket calls (it just
+ *     increments termsinbracket).
+ *
+ * @param T_i_decompressed  The just-emitted term, used for PutBracketInIndex.
+ * @param src               Start of compressed bulk in rbuf.
+ * @param nwords            Total WORDs in the bulk.
+ * @param n_terms           Number of compressed terms in the bulk.
+ * @return 0 on success, -1 on I/O error.
+ */
+static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
+                                   int nwords, int n_terms,
+                                   FILEHANDLE *fi, POSITION *position,
+                                   int dobracketindex)
+{
+	WORD *p = fi->POfill;
+	WORD *s = src;
+	LONG remaining = (LONG)nwords;
+	LONG RetCode;
+
+	while ( remaining > 0 ) {
+		LONG space = (LONG)(fi->POstop - p);
+		if ( space <= 0 ) {
+			/* Flush. Same shape as PutOut's block. */
+			if ( fi->handle < 0 ) {
+				if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
+					fi->handle = (WORD)RetCode;
+					PUTZERO(fi->filesize);
+					PUTZERO(fi->POposition);
+				}
+				else {
+					MLOCK(ErrorMessageLock);
+					MesPrint("Cannot create scratch file %s", fi->name);
+					MUNLOCK(ErrorMessageLock);
+					return(-1);
+				}
+			}
+#ifdef ALLLOCK
+			LOCK(fi->pthreadslock);
+#endif
+			if ( fi == AR.hidefile ) { LOCK(AS.inputslock); }
+			SeekFile(fi->handle, &(fi->POposition), SEEK_SET);
+			if ( ( RetCode = WriteFile(fi->handle, (UBYTE *)(fi->PObuffer), fi->POsize) ) != fi->POsize ) {
+				if ( fi == AR.hidefile ) { UNLOCK(AS.inputslock); }
+#ifdef ALLLOCK
+				UNLOCK(fi->pthreadslock);
+#endif
+				MLOCK(ErrorMessageLock);
+				MesPrint("Write error during sort. Disk full?");
+				MUNLOCK(ErrorMessageLock);
+				return(-1);
+			}
+			ADDPOS(fi->filesize, fi->POsize);
+			ADDPOS(fi->POposition, fi->POsize);
+			p = fi->PObuffer;
+			if ( fi == AR.hidefile ) { UNLOCK(AS.inputslock); }
+#ifdef ALLLOCK
+			UNLOCK(fi->pthreadslock);
+#endif
+			space = (LONG)(fi->POstop - p);
+		}
+		{
+			LONG ncopy = (remaining < space) ? remaining : space;
+			memcpy(p, s, (size_t)(ncopy * (LONG)sizeof(WORD)));
+			p += ncopy;
+			s += ncopy;
+			remaining -= ncopy;
+		}
+	}
+	fi->POfull = fi->POfill = p;
+
+	/* Per-term bracket index. Walks compressed headers within the bulk to
+	   compute each term's offset; passes T_i as the term pointer since all
+	   drained terms share the same bracket prefix (within the first K+1
+	   words). PutBracketInIndex collapses same-bracket calls internally. */
+	if ( dobracketindex ) {
+		POSITION term_pos = *position;
+		WORD *q = src;
+		WORD *qend = src + nwords;
+		while ( q < qend ) {
+			int compressed_len;
+			PutBracketInIndex(BHEAD T_i_decompressed, &term_pos);
+			compressed_len = 2 + (int)q[1];
+			ADDPOS(term_pos, (LONG)compressed_len * sizeof(WORD));
+			q += compressed_len;
+		}
+	}
+
+	ADDPOS(*position, (LONG)nwords * sizeof(WORD));
+	(void)n_terms;
+	return 0;
+}
+
+/*
+ 		#] pf_emit_compressed_bulk :
 		#[ PF_StoreBuffer :
 */
 static int PF_StoreBuffer()
@@ -1055,9 +1191,35 @@ int PF_EndSort(void)
 
 	noutterms = 0;
 
+	/* Prefix-drain: PF_MASTER_GALLOP=1 AND PF_HASH_PREFIX_WORDS=K>0.
+	   Exploits the routing invariant -- any two terms with byte-equal
+	   first-K symbolic words land on the same reducer. So once W wins
+	   with K-prefix P, every subsequent W-term whose wire-format
+	   compression-share (against the just-emitted term) exceeds K has
+	   the same K-prefix P, must be the correct next emit (no other
+	   reducer can hold P), AND has wire bytes that are already a valid
+	   delta against the output stream's previous term. The drain copies
+	   those bytes straight to fout, skipping both the master's loser-
+	   tree sift and PutOut's per-word compression search. Master
+	   decisions drop from O(terms) to O(distinct-K-prefix-buckets).
+	   Disabled when S->PolyFlag != 0 (PolyFun equal-terms path needs
+	   the full PF_GetLoser). K=0 makes the gallop knob a no-op. */
+	int drain_active = ( AM.MR.MasterGallop
+	                  && AM.MR.HashPrefixWords > 0
+	                  && S->PolyFlag == 0 );
+	int dobracketindex = ( AR.sLevel <= 0
+	                  && Expressions[AR.CurExpr].newbracketinfo
+	                  && ( fout == AR.outfile || fout == AR.hidefile ) ) ? 1 : 0;
+
+	/* K-truncated CompareTerms for the master loser tree: cross-reducer
+	   terms differ within the first K symbolic words by the routing
+	   invariant, so capping Compare1's stoppers at K is correctness-
+	   preserving and skips any tail-walking. Active only when prefix
+	   routing is on. Restored after the merge loop. */
+	if ( drain_active ) pf_compare_kcap = (WORD)AM.MR.HashPrefixWords;
+
 	while ( PF_loser >= 0 ) {
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
-		//MesPrint("PF_EndSort: PF_GetLoser found loser %d", PF_loser);
 		outterm = PF_term[PF_loser];
 		noutterms++;
 
@@ -1080,11 +1242,69 @@ int PF_EndSort(void)
 			*PF_newcpos[PF_loser] = 0;
 			PF_newclen[PF_loser] = 0;
 /*
-			#] this is only when new coeff was too long : 
+			#] this is only when new coeff was too long :
 */
 		}
 		PutOut(BHEAD outterm,&position,fout,1);
+
+		/* Prefix-drain fast path. After PutOut emits T_i from stream src,
+		   walk src's rbuf headers without decompressing: every consecutive
+		   compressed term with share > K shares the same K-prefix as T_i
+		   (routing invariant => no other reducer can hold these terms; the
+		   reducer has already emitted them in canonical order). Bulk-memcpy
+		   the run's compressed bytes to the output, then let the NEXT
+		   PF_GetLoser call do the boundary refill via its normal PF_PutIn
+		   path -- reading PF_term[src] (= scratch T_i) as lastterm is safe
+		   since boundary_share <= K and T_i[1..K] == T_{i+k}[1..K]. */
+		if ( drain_active && !AR.NoCompress ) {
+			int src = PF_loser;
+			PF_BUFFER *rbuf = PF.rbufs[src];
+			int a = rbuf->active;
+			WORD *run_start = rbuf->fill[a];
+			WORD *stop = rbuf->full[a];
+			WORD *q = run_start;
+			int n_drained = 0;
+			int K = AM.MR.HashPrefixWords;
+			while ( q < stop ) {
+				int share, compressed_len;
+				if ( *q == 0 ) break;          /* end-of-stream marker */
+				if ( *q > 0 ) break;           /* uncompressed term: no share */
+				share = (int)(-(*q));
+				if ( share <= K ) break;       /* boundary: prefix may differ */
+				compressed_len = 2 + (int)q[1];
+				if ( q + compressed_len > stop ) break; /* spans chunk; bail */
+				q += compressed_len;
+				n_drained++;
+			}
+			if ( n_drained > 0 ) {
+				int nwords = (int)(q - run_start);
+				int tlen = (int)*PF_term[src];
+				/* One-shot allocation sized to the max-term ceiling. AM.MaxTer
+				   bounds *any* FORM term, so tlen <= AM.MaxTer/sizeof(WORD)
+				   always -- no need to grow. */
+				if ( PF_drain_lastterm == NULL ) {
+					PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
+					PF_drain_lastterm_cap = (int)(AM.MaxTer / sizeof(WORD));
+				}
+				memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
+				if ( pf_emit_compressed_bulk(BHEAD PF_drain_lastterm,
+				                             run_start, nwords, n_drained,
+				                             fout, &position,
+				                             dobracketindex) < 0 ) {
+					AR.gzipCompress = oldgzipCompress;
+					return(-1);
+				}
+				rbuf->fill[a] = q;
+				noutterms += n_drained;
+				/* PF_term[src] -> scratch T_i: PF_GetLoser's next iteration
+				   will call PF_PutIn(src), which reads this as lastterm to
+				   decompress the boundary, then overwrites PF_term[src]
+				   with the new term in rbuf. */
+				PF_term[src] = PF_drain_lastterm;
+			}
+		}
 	}
+	pf_compare_kcap = 0;   /* restore unconditional Compare1 for other code paths */
 	if ( FlushOut(&position,fout,0) ) {
 		AR.gzipCompress = oldgzipCompress;
 		return(-1);
@@ -2484,6 +2704,8 @@ int PF_Init(int *argc, char ***argv)
 	PF_statsinterval = 10;
 	PF.rhsInParallel=1;
 	PF.exprbufsize=4096;/*in WORDs*/
+	AM.MR.HashPrefixWords = 0;
+	AM.MR.MasterGallop = 0;
 
 #ifdef PF_WITHGETENV
 	if ( PF.me == MASTER ) {
@@ -2526,6 +2748,16 @@ int PF_Init(int *argc, char ***argv)
 			fflush(stderr);
 			if ( PF_statsinterval < 1 ) PF_statsinterval = 10;
 		}
+
+		if ( ( c = (char*)getenv("PF_HASH_PREFIX_WORDS") ) != 0 ) {
+			AM.MR.HashPrefixWords = (int)atoi(c);
+			if ( AM.MR.HashPrefixWords < 0 ) AM.MR.HashPrefixWords = 0;
+			if ( AM.MR.HashPrefixWords > PF_DRAIN_MAX_K )
+				AM.MR.HashPrefixWords = PF_DRAIN_MAX_K;
+		}
+		if ( ( c = (char*)getenv("PF_MASTER_GALLOP") ) != 0 ) {
+			AM.MR.MasterGallop = (atoi(c) != 0);
+		}
 	}
 #endif
 /*
@@ -2536,12 +2768,16 @@ int PF_Init(int *argc, char ***argv)
 		PF_Pack(&PF.log,1,PF_INT);
 		PF_Pack(&PF.numrbufs,1,PF_WORD);
 		PF_Pack(&PF.numsbufs,1,PF_WORD);
+		PF_Pack(&AM.MR.HashPrefixWords,1,PF_INT);
+		PF_Pack(&AM.MR.MasterGallop,1,PF_INT);
 	}
 	PF_Broadcast();
 	if ( PF.me != MASTER ) {
 		PF_Unpack(&PF.log,1,PF_INT);
 		PF_Unpack(&PF.numrbufs,1,PF_WORD);
 		PF_Unpack(&PF.numsbufs,1,PF_WORD);
+		PF_Unpack(&AM.MR.HashPrefixWords,1,PF_INT);
+		PF_Unpack(&AM.MR.MasterGallop,1,PF_INT);
 		if ( PF.log ) {
 			fprintf(stderr, "[%d] log=%d rbufs=%d sbufs=%d\n",
 			        PF.me, PF.log, PF.numrbufs, PF.numsbufs);

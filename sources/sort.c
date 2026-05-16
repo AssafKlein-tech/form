@@ -80,6 +80,17 @@ extern LONG numfrees;
 	LONG numcompares[1024];
 #endif
 
+#ifdef WITHMPI
+/* If >0, Compare1 truncates its symbolic-part scan to this many WORDs.
+   Set by PF_EndSort around the MR master k-way merge when
+   AM.MR.HashPrefixWords>0: cross-reducer terms differ within the first
+   K symbolic words by the routing invariant, so the canonical compare
+   on the K-prefix returns the same value as the full canonical compare.
+   Single-rank (parform master), single-threaded ⇒ no synchronization
+   needed. Set to 0 in non-MR / non-master code paths. */
+WORD pf_compare_kcap = 0;
+#endif
+
 /*
   	#] Includes : 
 	#[ SortUtilities :
@@ -1639,52 +1650,106 @@ int Sflush(FILEHANDLE *fi)
  *	@param ncomp    Information about what type of compression should be used
  */
 
-#ifdef WITHMPI
+#if defined(WITHMPI) && defined(DEBUGGING)
 /*
-	Diagnostic-only: when PF_DUMP_PREFIX=<N> is set, an MR-mode mapper dumps
-	every N-th routed term's first up-to-16 *raw symbolic words* (the bytes the
-	hash router runs over, term[1 .. GETSTOP)) to ${PF_PROFILE_DIR}/prefix_<rank>.csv.
-	Used offline to histogram prefix-bucket distributions per module before
-	deciding on a PF_HASH_PREFIX_WORDS routing change. Inert (zero overhead) when
-	the env var is unset; never compiled into non-WITHMPI builds. Kill the run
-	once module 10 has started -- you don't need all 2e9 terms of it.
+	Diagnostic-only (DEBUGGING build): when PF_HASH_HISTOGRAM=1 is set, an
+	MR-mode mapper records, per module, the (dst-reducer x prefix-K) routing
+	distribution of all routed terms. K sweeps a fixed list {4,8,12,16,24,32,
+	48,64,96,128,192,256, 0=full symbolic part} so one run yields the full
+	imbalance-vs-K curve offline. Counters flush to
+	${PF_PROFILE_DIR}/hash_hist_<rank>.csv on every module-id change and via
+	atexit; a walltime-killed run still has m9 numbers. Output columns:
+	module,rank,numreducers,K,dst,count. Hash dispatch mirrors the routing
+	code verbatim so counts == what the router would have chosen.
 */
-static void pf_dump_prefix(WORD *term)
+#define PF_HASH_HIST_NUM_K 13
+#define PF_HASH_HIST_MAX_DST 64
+static const int pf_hash_hist_K_list[PF_HASH_HIST_NUM_K] =
+	{4,8,12,16,24,32,48,64,96,128,192,256,0};
+static FILE *pf_hash_hist_fp = NULL;
+static int   pf_hash_hist_cur_module = -1;
+static LONG  pf_hash_hist_counts[PF_HASH_HIST_NUM_K][PF_HASH_HIST_MAX_DST];
+
+static void pf_hash_histogram_flush_module(void)
 {
-	static int   rate = -1;     /* -1 = not yet read; 0 = disabled */
-	static LONG  counter = 0;
-	static FILE *fp = NULL;
-	if ( rate < 0 ) {
-		char *e = getenv("PF_DUMP_PREFIX");
-		rate = (e && *e) ? atoi(e) : 0;
-		if ( rate < 1 ) rate = (e && *e) ? 1 : 0;
+	if ( pf_hash_hist_fp == NULL || pf_hash_hist_cur_module < 0 ) return;
+	int k, d;
+	for ( k = 0; k < PF_HASH_HIST_NUM_K; k++ ) {
+		for ( d = 0; d < PF.numreducers && d < PF_HASH_HIST_MAX_DST; d++ ) {
+			if ( pf_hash_hist_counts[k][d] == 0 ) continue;
+			fprintf(pf_hash_hist_fp, "%d,%d,%d,%d,%d,%ld\n",
+				pf_hash_hist_cur_module, (int)PF.me, (int)PF.numreducers,
+				pf_hash_hist_K_list[k], d, (long)pf_hash_hist_counts[k][d]);
+		}
 	}
-	if ( rate == 0 ) return;
-	if ( (counter++ % rate) != 0 ) return;
-	if ( fp == NULL ) {
+	fflush(pf_hash_hist_fp);
+	memset(pf_hash_hist_counts, 0, sizeof pf_hash_hist_counts);
+}
+
+static void pf_hash_histogram_atexit(void)
+{
+	pf_hash_histogram_flush_module();
+	if ( pf_hash_hist_fp ) { fclose(pf_hash_hist_fp); pf_hash_hist_fp = NULL; }
+}
+
+static void pf_hash_histogram(WORD *term)
+{
+	static int enabled = -1;
+	if ( enabled < 0 ) {
+		char *e = getenv("PF_HASH_HISTOGRAM");
+		enabled = (e && *e && atoi(e) != 0) ? 1 : 0;
+	}
+	if ( !enabled ) return;
+	if ( PF.numreducers <= 0 || PF.numreducers > PF_HASH_HIST_MAX_DST ) return;
+
+	if ( pf_hash_hist_fp == NULL ) {
 		char *dir = getenv("PF_PROFILE_DIR");
 		char path[1100];
-		snprintf(path, sizeof path, "%s/prefix_%d.csv",
+		snprintf(path, sizeof path, "%s/hash_hist_%d.csv",
 			(dir && *dir) ? dir : ".", (int)PF.me);
-		fp = fopen(path, "w");
-		if ( fp == NULL ) { rate = 0; return; }
-		fprintf(fp, "module,rank,numreducers,symlen");
-		{ int i; for (i = 0; i < 16; i++) fprintf(fp, ",w%d", i); }
-		fprintf(fp, "\n");
+		pf_hash_hist_fp = fopen(path, "w");
+		if ( pf_hash_hist_fp == NULL ) { enabled = 0; return; }
+		fprintf(pf_hash_hist_fp, "module,rank,numreducers,K,dst,count\n");
+		atexit(pf_hash_histogram_atexit);
 	}
-	{
-		WORD *start = term + 1;
-		WORD *end   = (term + *term) - ABS((term + *term)[-1]);
-		LONG symlen = (LONG)(end - start);
-		int i;
-		fprintf(fp, "%d,%d,%d,%ld",
-			(int)AC.CModule, (int)PF.me, (int)PF.numreducers, (long)symlen);
-		for (i = 0; i < 16; i++) {
-			if ( i < symlen ) fprintf(fp, ",%ld", (long)start[i]);
-			else fprintf(fp, ",");
+
+	if ( pf_hash_hist_cur_module != (int)AC.CModule ) {
+		pf_hash_histogram_flush_module();
+		pf_hash_hist_cur_module = (int)AC.CModule;
+	}
+
+	WORD *start = term + 1;
+	WORD *symend = (term + *term) - ABS((term + *term)[-1]);
+	LONG symlen = (LONG)(symend - start);
+	int k;
+	for ( k = 0; k < PF_HASH_HIST_NUM_K; k++ ) {
+		WORD *end;
+		UWORD h = 0;
+		if ( pf_hash_hist_K_list[k] == 0 ) end = symend;
+		else if ( pf_hash_hist_K_list[k] < symlen ) end = start + pf_hash_hist_K_list[k];
+		else end = symend;
+		LONG n = end - start;
+		if ( n <= 0 ) { pf_hash_hist_counts[k][0]++; continue; }
+#ifdef BITSINWORD == 16
+		{
+			WORD *p = start;
+			while ( p < end ) {
+				UWORD w = (UWORD)(*p++);
+				h = (h << 13) | (h >> (BITSINWORD - 13));
+				h ^= w;
+			}
 		}
-		fprintf(fp, "\n");
-		fflush(fp);   /* the run is killed early, so flush each sampled line */
+#elif defined __AVX512F__
+		h = hash_list_avx512(start, (WORD)n);
+#elif defined __AVX2__
+		h = hash_list32_avx2(start, (WORD)n);
+#else
+		{
+			WORD *p = start;
+			while ( p < end ) h ^= hash_uint32((UWORD)(*p++));
+		}
+#endif
+		pf_hash_hist_counts[k][h % PF.numreducers]++;
 	}
 }
 #endif
@@ -1807,28 +1872,22 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		else {
 		#ifdef WITHMPI
 			if (lowmr_sort ) {
-				pf_dump_prefix(term);   /* no-op unless PF_DUMP_PREFIX is set */
+#ifdef DEBUGGING
+				pf_hash_histogram(term);  /* no-op unless PF_HASH_HISTOGRAM=1 */
+#endif
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);
 				UWORD term_hash = 0;
 				start++;
-				/* PF_HASH_PREFIX_WORDS=K (default 0 = whole symbolic part):
+				/* AM.MR.HashPrefixWords=K (default 0 = whole symbolic part):
 				   hash only the first K words, so terms sharing a K-word prefix
 				   (= adjacent in canonical order) route to the same reducer.
 				   Invariant preserved: same symbolic part => same prefix =>
 				   same reducer => coeffs still summed at the reducer. */
-				{
-					static int pf_hash_prefix_words = -1;
-					if ( pf_hash_prefix_words < 0 ) {
-						char *e = getenv("PF_HASH_PREFIX_WORDS");
-						pf_hash_prefix_words = (e && *e) ? atoi(e) : 0;
-						if ( pf_hash_prefix_words < 0 ) pf_hash_prefix_words = 0;
-					}
-					if ( pf_hash_prefix_words > 0
-						&& (end - start) > pf_hash_prefix_words )
-						end = start + pf_hash_prefix_words;
-				}
+				if ( AM.MR.HashPrefixWords > 0
+					&& (end - start) > AM.MR.HashPrefixWords )
+					end = start + AM.MR.HashPrefixWords;
 #ifdef BITSINWORD == 16
 				while( start < end ) {
 					UWORD w = (UWORD)(*start++);    
@@ -3002,6 +3061,14 @@ WORD Compare1(PHEAD WORD *term1, WORD *term2, WORD level)
 	GETSTOP(term1,s1);
 	stopper1 = s1;
 	GETSTOP(term2,stopper2);
+#ifdef WITHMPI
+	if ( pf_compare_kcap > 0 ) {
+		WORD *cap1 = term1 + 1 + pf_compare_kcap;
+		WORD *cap2 = term2 + 1 + pf_compare_kcap;
+		if ( stopper1 > cap1 ) { stopper1 = cap1; s1 = cap1; }
+		if ( stopper2 > cap2 ) stopper2 = cap2;
+	}
+#endif
 	t1 = term1 + 1;
 	t2 = term2 + 1;
 	while ( t1 < stopper1 && t2 < stopper2 ) {

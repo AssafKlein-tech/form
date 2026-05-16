@@ -1380,6 +1380,22 @@ typedef struct {
 */
 
 /**
+ *	K-prefix routing + drain merge tuning for MR mode. Both fields key off
+ *	the same K (a term's first K symbolic WORDs): HashPrefixWords selects
+ *	how mappers hash terms to reducers (so terms sharing a K-prefix land on
+ *	the same reducer, putting contiguous prefix-buckets in each stream),
+ *	and MasterGallop enables the master's matching prefix-drain on the
+ *	k-way merge of those streams (consecutive same-K-prefix terms from one
+ *	stream emit without inter-reducer compare). Lives inside M_const as
+ *	AM.MR; populated on the master in PF_Init from PF_HASH_PREFIX_WORDS and
+ *	PF_MASTER_GALLOP and broadcast to all ranks.
+ */
+struct PrefixHashSort {
+    int HashPrefixWords;       /* (M) PF_HASH_PREFIX_WORDS; 0 = hash whole symbolic part */
+    int MasterGallop;          /* (M) PF_MASTER_GALLOP; 0 = serial k-way merge */
+};
+
+/**
  *	The M_const struct is part of the global data and resides in the #ALLGLOBALS
  *	struct #A under the name #M.
  *	We see it used with the macro #AM as in AM.S0.
@@ -1506,6 +1522,7 @@ struct M_const {
     int     jumpratio;
     int     Prepercentage;            /* (M) Maximum number of polynomial moduli */
     int     ReducerPer;            /* (M) Reducers Percentage out of workers */
+    struct PrefixHashSort MR;      /* (M) K-prefix routing + drain merge (env-derived, broadcast in PF_Init) */
     WORD    MaxTal;                /* (M) Maximum number of words in a number */
     WORD    IndDum;                /* (M) Basis value for dummy indices */
     WORD    DumInd;                /* (M) */
