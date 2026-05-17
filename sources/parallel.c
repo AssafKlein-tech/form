@@ -1290,44 +1290,102 @@ int PF_EndSort(void)
 			int n_drained = 0;
 			int K = AM.MR.HashPrefixWords;
 			int boundary_found = 0;
-			/* Scan forward through compressed term headers [-share, tail_len].
-			   We require that the scan ends at a REAL boundary (a term whose
-			   share <= K, an EOF marker, or an uncompressed term). If it
-			   instead ends because the chunk runs out (q+2>stop or
-			   q+compressed_len>stop), the next term in the next chunk could
-			   still have share > K -- meaning T_{i+k} is needed as lastterm
-			   for its decompression, but we only have scratch (= T_i) which
-			   agrees with T_{i+k} only in the first K words. So when the
-			   scan can't see a real boundary, abort the drain entirely:
-			   the normal PF_GetLoser/PF_PutIn/PutOut path emits one more
-			   term, updates AR.CompressPointer = T_{i+1}, and the next
-			   drain attempt will start fresh from a known-good state. */
-			while ( q + 2 <= stop ) {
-				int share, compressed_len;
-				if ( *q == 0 ) { boundary_found = 1; break; }   /* EOF marker */
-				if ( *q > 0 ) { boundary_found = 1; break; }    /* uncompressed term */
-				share = (int)(-(*q));
-				if ( share <= K ) { boundary_found = 1; break; } /* prefix-group end */
-				compressed_len = 2 + (int)q[1];
-				if ( q + compressed_len > stop ) break;          /* spans chunk -- NOT a boundary */
-				q += compressed_len;
-				n_drained++;
+			int lastterm_cached = 0;
+			int workerIdx = (AC.sMRflag == NO_MAPREDUCE && PF.me == MASTER)
+			              ? src : src % PF.numreducers + PF.nummappers;
+			/* Scan forward through compressed term headers [-share, tail_len]
+			   until a REAL boundary (share <= K, EOF marker, or uncompressed
+			   term). When the scan stalls because the next term's body
+			   straddles the active chunk end, mirror PF_PutIn's boundary
+			   dance: emit the run so far, copy the partial term into the
+			   next rbuf slot's reserved zone, wait on the next slot, post a
+			   fresh IRecv on the old active slot, swap active = next, then
+			   resume scanning. T_i's K-prefix is the shared decompression
+			   anchor for the entire run, so the same PF_drain_lastterm
+			   snapshot stays valid across all chunks crossed. */
+			while ( !boundary_found ) {
+				while ( q + 2 <= stop ) {
+					int share, compressed_len;
+					if ( *q == 0 ) { boundary_found = 1; break; }   /* EOF marker */
+					if ( *q > 0 ) { boundary_found = 1; break; }    /* uncompressed term */
+					share = (int)(-(*q));
+					if ( share <= K ) { boundary_found = 1; break; } /* prefix-group end */
+					compressed_len = 2 + (int)q[1];
+					if ( q + compressed_len > stop ) break;          /* cross-chunk -- handle below */
+					q += compressed_len;
+					n_drained++;
+				}
+				if ( boundary_found ) break;
+
+				/* Cross-chunk path. Emit the accumulated run (if any), then
+				   relocate the partial term [q, stop) to the next slot. */
+				if ( n_drained > 0 ) {
+					int nwords = (int)(q - run_start);
+					if ( PF_drain_lastterm == NULL ) {
+						PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
+						PF_drain_lastterm_cap = (int)(AM.MaxTer / sizeof(WORD));
+					}
+					if ( !lastterm_cached ) {
+						int tlen = (int)*PF_term[src];
+						memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
+						lastterm_cached = 1;
+					}
+					if ( pf_emit_compressed_bulk(BHEAD PF_drain_lastterm,
+					                             run_start, nwords, n_drained,
+					                             fout, &position,
+					                             dobracketindex) < 0 ) {
+						AR.gzipCompress = oldgzipCompress;
+						return(-1);
+					}
+					rbuf->fill[a] = q;
+					noutterms += n_drained;
+					n_drained = 0;
+				}
+
+				{
+					int next = (a+1 >= rbuf->numbufs) ? 0 : a+1;
+					WORD *m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
+					WORD *m2 = stop - 1;
+					LONG size;
+					int tag;
+					while ( m2 >= q ) *m1-- = *m2--;
+					rbuf->fill[next] = m1 + 1;
+
+					if ( rbuf->numbufs == 1 ) {
+						rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
+						PF_IRecvRbuf(rbuf, a, workerIdx);
+					}
+
+					rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
+					PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
+					tag = PF_WaitRbuf(rbuf, next, &size);
+					PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+					rbuf->full[next] += size;
+					if ( tag == PF_ENDBUFFER_MSGTAG ) {
+						*rbuf->full[next]++ = 0;
+					}
+					else if ( rbuf->numbufs > 1 ) {
+						rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
+						PF_IRecvRbuf(rbuf, a, workerIdx);
+					}
+					a = rbuf->active = next;
+					q = run_start = rbuf->fill[a];
+					stop = rbuf->full[a];
+				}
 			}
-			/* If we hit chunk-end without finding a boundary, the next term
-			   has unknown share. Don't drain -- using scratch (T_i) as
-			   lastterm would corrupt T_{i+k+1}'s decompression beyond K. */
-			if ( !boundary_found ) n_drained = 0;
+
+			/* Final emit for the run accumulated in the current active chunk. */
 			if ( n_drained > 0 ) {
 				int nwords = (int)(q - run_start);
-				int tlen = (int)*PF_term[src];
-				/* One-shot allocation sized to the max-term ceiling. AM.MaxTer
-				   bounds *any* FORM term, so tlen <= AM.MaxTer/sizeof(WORD)
-				   always -- no need to grow. */
 				if ( PF_drain_lastterm == NULL ) {
 					PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
 					PF_drain_lastterm_cap = (int)(AM.MaxTer / sizeof(WORD));
 				}
-				memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
+				if ( !lastterm_cached ) {
+					int tlen = (int)*PF_term[src];
+					memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
+					lastterm_cached = 1;
+				}
 				if ( pf_emit_compressed_bulk(BHEAD PF_drain_lastterm,
 				                             run_start, nwords, n_drained,
 				                             fout, &position,
@@ -1337,18 +1395,18 @@ int PF_EndSort(void)
 				}
 				rbuf->fill[a] = q;
 				noutterms += n_drained;
-				/* PF_term[src] -> scratch T_i: PF_GetLoser's next iteration
-				   will call PF_PutIn(src), which reads this as lastterm to
-				   decompress the boundary, then overwrites PF_term[src]
-				   with the new term in rbuf. */
+			}
+			/* PF_term[src] -> scratch T_i: PF_GetLoser's next iteration
+			   will call PF_PutIn(src), which reads this as lastterm to
+			   decompress the boundary term, then overwrites PF_term[src]
+			   with the new term in rbuf. Skip when nothing was emitted
+			   (PF_drain_lastterm may be uninitialized garbage in that
+			   case). AR.CompressPointer stays = T_i (set by PutOut on T_i);
+			   the next emitted term T_{i+k+1} shares <= K with T_{i+k},
+			   and T_i[1..K] == T_{i+k}[1..K], so it also shares <= K with
+			   T_i -- PutOut's compression-search produces the same share. */
+			if ( lastterm_cached ) {
 				PF_term[src] = PF_drain_lastterm;
-				/* AR.CompressPointer stays = T_i (set by PutOut on T_i).
-				   For the next emitted term T_{i+k+1}: it shares <= K with
-				   T_{i+k} (drain stop condition), and T_i[1..K] == T_{i+k}[1..K]
-				   (drain invariant), so T_{i+k+1} also shares <= K with T_i.
-				   PutOut's compression-search produces the SAME share count
-				   either way -- no cap needed. (Bracket-past-K case is
-				   handled separately by !dobracketindex above.) */
 			}
 		}
 	}
