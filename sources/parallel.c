@@ -301,6 +301,16 @@ static  WORD *PF_newclen;		/* length of new coefficients */
 static  WORD *PF_drain_lastterm = NULL;
 static  int   PF_drain_lastterm_cap = 0;
 
+/* K-cap value WANTED by the master's merge (set by PF_EndSort when drain
+   is active). The actual sort.c global pf_compare_kcap is set transiently
+   ONLY around the loser-tree CompareTerms call in PF_GetLoser, so the
+   cap does NOT leak into other CompareTerms calls happening during the
+   merge loop -- in particular PutOut->PutBracketInIndex's bracket-equality
+   check (index.c:365) compares whole brackets, not just K-prefixes, so it
+   must NOT see the cap. Otherwise the bracket index collapses different
+   brackets sharing a K-prefix into one entry. */
+static  WORD pf_compare_kcap_want = 0;
+
 /*
 	preliminary: could also write somewhere else?
 */
@@ -948,7 +958,13 @@ newright:
 		}
 	}
 	if ( n->lloser > 0 && n->rloser > 0 ) {
+		/* Apply the K-prefix cap ONLY for the loser-tree compare, where the
+		   routing invariant guarantees cross-leaf terms differ within K.
+		   Restore immediately so PutOut->PutBracketInIndex (called outside
+		   this function from the merge loop) sees the uncapped CompareTerms. */
+		pf_compare_kcap = pf_compare_kcap_want;
 		comp = CompareTerms(BHEAD PF_term[n->lloser],PF_term[n->rloser],(WORD)0);
+		pf_compare_kcap = 0;
 		if ( comp > 0 )     return(n->lloser);
 		else if (comp < 0 ) return(n->rloser);
 		else {
@@ -1213,9 +1229,11 @@ int PF_EndSort(void)
 	/* K-truncated CompareTerms for the master loser tree: cross-reducer
 	   terms differ within the first K symbolic words by the routing
 	   invariant, so capping Compare1's stoppers at K is correctness-
-	   preserving and skips any tail-walking. Active only when prefix
-	   routing is on. Restored after the merge loop. */
-	if ( drain_active ) pf_compare_kcap = (WORD)AM.MR.HashPrefixWords;
+	   preserving for the loser-tree CompareTerms. PF_GetLoser applies
+	   this transiently only around its own compare call -- the cap must
+	   NOT leak to other CompareTerms calls (e.g. PutBracketInIndex's
+	   bracket-equality check, which needs full compare). */
+	pf_compare_kcap_want = drain_active ? (WORD)AM.MR.HashPrefixWords : 0;
 
 	while ( PF_loser >= 0 ) {
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
@@ -1255,7 +1273,14 @@ int PF_EndSort(void)
 		   PF_GetLoser call do the boundary refill via its normal PF_PutIn
 		   path -- reading PF_term[src] (= scratch T_i) as lastterm is safe
 		   since boundary_share <= K and T_i[1..K] == T_{i+k}[1..K]. */
-		if ( drain_active && !AR.NoCompress ) {
+		/* Disable drain when bracket index is active. The bulk-emit's per-term
+		   PutBracketInIndex pass would receive T_i as a proxy for every drained
+		   term, but T_i's bracket only matches the actual term's bracket when
+		   HAAKJE lies within the first K+1 words. For Spin (Keep Brackets,
+		   Collect bracket1) HAAKJE can be past K -- different actual brackets
+		   would be collapsed into one index entry. Drain skip is correct;
+		   normal PutOut handles bracket indexing per-term. */
+		if ( drain_active && !AR.NoCompress && !dobracketindex ) {
 			int src = PF_loser;
 			PF_BUFFER *rbuf = PF.rbufs[src];
 			int a = rbuf->active;
@@ -1264,17 +1289,34 @@ int PF_EndSort(void)
 			WORD *q = run_start;
 			int n_drained = 0;
 			int K = AM.MR.HashPrefixWords;
-			while ( q < stop ) {
+			int boundary_found = 0;
+			/* Scan forward through compressed term headers [-share, tail_len].
+			   We require that the scan ends at a REAL boundary (a term whose
+			   share <= K, an EOF marker, or an uncompressed term). If it
+			   instead ends because the chunk runs out (q+2>stop or
+			   q+compressed_len>stop), the next term in the next chunk could
+			   still have share > K -- meaning T_{i+k} is needed as lastterm
+			   for its decompression, but we only have scratch (= T_i) which
+			   agrees with T_{i+k} only in the first K words. So when the
+			   scan can't see a real boundary, abort the drain entirely:
+			   the normal PF_GetLoser/PF_PutIn/PutOut path emits one more
+			   term, updates AR.CompressPointer = T_{i+1}, and the next
+			   drain attempt will start fresh from a known-good state. */
+			while ( q + 2 <= stop ) {
 				int share, compressed_len;
-				if ( *q == 0 ) break;          /* end-of-stream marker */
-				if ( *q > 0 ) break;           /* uncompressed term: no share */
+				if ( *q == 0 ) { boundary_found = 1; break; }   /* EOF marker */
+				if ( *q > 0 ) { boundary_found = 1; break; }    /* uncompressed term */
 				share = (int)(-(*q));
-				if ( share <= K ) break;       /* boundary: prefix may differ */
+				if ( share <= K ) { boundary_found = 1; break; } /* prefix-group end */
 				compressed_len = 2 + (int)q[1];
-				if ( q + compressed_len > stop ) break; /* spans chunk; bail */
+				if ( q + compressed_len > stop ) break;          /* spans chunk -- NOT a boundary */
 				q += compressed_len;
 				n_drained++;
 			}
+			/* If we hit chunk-end without finding a boundary, the next term
+			   has unknown share. Don't drain -- using scratch (T_i) as
+			   lastterm would corrupt T_{i+k+1}'s decompression beyond K. */
+			if ( !boundary_found ) n_drained = 0;
 			if ( n_drained > 0 ) {
 				int nwords = (int)(q - run_start);
 				int tlen = (int)*PF_term[src];
@@ -1300,10 +1342,17 @@ int PF_EndSort(void)
 				   decompress the boundary, then overwrites PF_term[src]
 				   with the new term in rbuf. */
 				PF_term[src] = PF_drain_lastterm;
+				/* AR.CompressPointer stays = T_i (set by PutOut on T_i).
+				   For the next emitted term T_{i+k+1}: it shares <= K with
+				   T_{i+k} (drain stop condition), and T_i[1..K] == T_{i+k}[1..K]
+				   (drain invariant), so T_{i+k+1} also shares <= K with T_i.
+				   PutOut's compression-search produces the SAME share count
+				   either way -- no cap needed. (Bracket-past-K case is
+				   handled separately by !dobracketindex above.) */
 			}
 		}
 	}
-	pf_compare_kcap = 0;   /* restore unconditional Compare1 for other code paths */
+	pf_compare_kcap_want = 0;   /* no more loser-tree compares this module */
 	if ( FlushOut(&position,fout,0) ) {
 		AR.gzipCompress = oldgzipCompress;
 		return(-1);

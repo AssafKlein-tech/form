@@ -36,6 +36,13 @@ double pf_module_t0 = 0.0;
 /* Master-only receive buffer for per-rank profile slots. */
 PF_ProfileSlot *pf_profile_stats = NULL;
 
+/* Master-only Compare1 K-prefix first-diff histogram. Populated by sort.c's
+   Compare1 when pf_compare_kcap>0; reset per-module here; dumped to a
+   side CSV in pf_profile_dump_master_csv. */
+LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
+static FILE *s_hist_csv = NULL;
+static int s_hist_csv_header_written = 0;
+
 /* Node-leader detection state. Set by pf_profile_per_node_init(). */
 static int   s_node_leader_inited = 0;
 static int   s_is_node_leader = 0;
@@ -65,6 +72,7 @@ void pf_profile_reset_module(void)
 	memset(pf_phase_us, 0, sizeof(pf_phase_us));
 	memset(pf_os_diff, 0, sizeof(pf_os_diff));
 	memset(pf_extras, 0, sizeof(pf_extras));
+	memset(pf_compare1_diff_hist, 0, sizeof(pf_compare1_diff_hist));
 	for ( int i = 0; i < PF_PHASE_COUNT; i++ ) {
 		pf_phase_first_us[i] = -1;
 		pf_phase_last_us[i]  = -1;
@@ -459,6 +467,43 @@ void pf_profile_dump_master_csv(int module_num, const char *expr_name,
 		              &pf_profile_stats[rank]);
 	}
 	fflush(s_csv);
+
+	/* Compare1 K-prefix first-diff histogram. Only nonzero on master and only
+	   when sort.c's pf_compare_kcap>0 (MR master k-way merge). Skip the write
+	   if the histogram is all zeros for this module (non-MR runs, or modules
+	   where the master never entered the prefix branch). */
+	{
+		LONG total = 0;
+		for ( int b = 0; b < PF_COMPARE1_HIST_BINS; b++ ) total += pf_compare1_diff_hist[b];
+		if ( total > 0 ) {
+			if ( s_hist_csv == NULL ) {
+				const char *dir = getenv("PF_PROFILE_DIR");
+				char path[1024];
+				if ( dir && *dir ) snprintf(path, sizeof(path), "%s/pf_compare1_hist.csv", dir);
+				else               snprintf(path, sizeof(path), "pf_compare1_hist.csv");
+				struct stat st;
+				int existed_nonempty = (stat(path, &st) == 0 && st.st_size > 0);
+				s_hist_csv = fopen(path, "a");
+				if ( s_hist_csv ) {
+					s_hist_csv_header_written = existed_nonempty;
+					if ( !s_hist_csv_header_written ) {
+						fprintf(s_hist_csv, "timestamp,module,expr,bin,count\n");
+						s_hist_csv_header_written = 1;
+					}
+				}
+			}
+			if ( s_hist_csv ) {
+				for ( int b = 0; b < PF_COMPARE1_HIST_BINS; b++ ) {
+					if ( pf_compare1_diff_hist[b] != 0 ) {
+						fprintf(s_hist_csv, "%ld,%d,%s,%d,%lld\n",
+						        (long)ts, module_num, expr_name, b,
+						        (long long)pf_compare1_diff_hist[b]);
+					}
+				}
+				fflush(s_hist_csv);
+			}
+		}
+	}
 }
 
 #endif /* PF_PROFILE */

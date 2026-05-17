@@ -59,6 +59,7 @@
 /* #define TESTGARB */
 
 #include "form3.h"
+#include "pf_profile.h"
 
 #ifdef WITHPTHREADS
 UBYTE THRbuf[100];

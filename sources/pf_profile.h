@@ -121,6 +121,17 @@ extern double pf_module_t0;
 /* Master-only: per-rank receive buffer, allocated lazily on first dump. */
 extern PF_ProfileSlot *pf_profile_stats;
 
+/* Compare1 K-prefix first-diff histogram. Only the master writes this, and
+   only when sort.c's pf_compare_kcap>0 (master's MR k-way merge with the
+   hash-prefix-routing invariant). Bins 0..PF_COMPARE1_HIST_K-1 count the WORD
+   position of the first divergence in the K-prefix scan; bin
+   PF_COMPARE1_HIST_K counts the "no diff within K" case (terms agreed on the
+   full K-prefix). Used to decide whether SIMD on the prefix branch is worth
+   the engineering cost. Linear bins because K is small (default 128). */
+#define PF_COMPARE1_HIST_K 128
+#define PF_COMPARE1_HIST_BINS (PF_COMPARE1_HIST_K + 1)
+extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
+
 /*
    Timer macros. PF_TIMER_BEGIN(P) introduces a local _pf_t_##P at the call
    site and (on first entry within a module) records the phase's relative
