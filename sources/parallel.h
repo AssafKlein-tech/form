@@ -183,6 +183,12 @@ typedef struct ParallelVars {
 	                            /* [05nov2003 mt] This flag must be set to 0 in iniModule! */
 	int 		nummappers;		/* number of mappers*/
 	int 		numreducers;	/* number of reducers*/
+	int         nummergers;     /* number of mapper-mergers (0 = no merger tier). Set from PF_MERGERS env, broadcast in PF_Init. */
+	int         is_merger;      /* derived per PF_Processor call: true on ranks 1..nummergers when nummergers > 0 */
+	int         merger_parent;  /* derived per PF_Processor call: on a leaf reducer this is the destination merger rank (1..nummergers), else MASTER */
+	int         merger_groupsz; /* derived per PF_Processor call on merger ranks only: # of leaf reducers feeding THIS merger */
+	int        *merger_leaf_ranks; /* merger-only: rank-list of group leaves (length merger_groupsz). Lazily allocated. */
+	int         in_merger_phase; /* set inside PF_MergerLoop: gates FlushOut routing (sort.c:2206) so merger sends to MASTER, not to reducers. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
@@ -250,6 +256,8 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 extern LONG PF_allocateSbuf(void);
 extern int PF_allocatePFTerm(int numtasks);
 extern LONG    PF_ForwardTermsToMaster(void);
+extern LONG    PF_MergerLoop(void);
+extern void    PF_ReceiveErrorMessage(int src, int tag);
 extern void   PF_SetupFlatRequestsView(void);
 extern int 	  PF_ReducerInit(void);
 extern int    PF_EndSort(void);

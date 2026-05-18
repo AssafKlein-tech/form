@@ -37,6 +37,7 @@
 */
 
 #include <limits.h>
+#include <sched.h>
 #include "form3.h"
 #include "pf_profile.h"
 
@@ -266,8 +267,14 @@ int PF_Probe(int *src)
  */
 int PF_WISendSbuf(int tag, int dest)
 {
+    if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+        MesPrint("[%d] PF_WISendSbuf ENTRY tag=%d dest=%d", PF.me, tag, dest);
+    }
+    /* Non-mapper (reducer or mapper-merger) -> upstream sink, single sbuf,
+       BUFFER/ENDBUFFER framing. Honors `dest` so a leaf reducer can route
+       to a mapper-merger rank (PF.merger_parent) instead of MASTER. */
     if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
-       {return PF_ISendSbuf(MASTER, tag);}
+       {return PF_ISendSbuf(dest, tag);}
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
 	AR.CompressBuffers[dest][0] = 0;
@@ -331,15 +338,19 @@ int PF_ISendSbuf(int to, int tag)
 
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
-		if (first == 0){
+		/* The "first" handshake is the WaitAllSlaves signal that this slave is
+		   about to stream data. Only the master waits on it; a mapper-merger
+		   has Irecvs already posted via PF_MergerInit and needs no handshake.
+		   Suppress when the sink is anything other than MASTER. */
+		if (first == 0 && to == MASTER){
 			PF_Send(MASTER, PF_BUFFER_MSGTAG);
 			first =  1;
 		}
 		first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
-		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,PF_COMM);
+		r = MPI_Ssend(s->buff[a],size,PF_WORD,to,tag,PF_COMM);
 		if ( r != MPI_SUCCESS ) {
-			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d \n",
-			        PF.me,(int)AC.CModule,r);
+			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d (to=%d tag=%d)\n",
+			        PF.me,(int)AC.CModule,r,to,tag);
 			fflush(stderr);
 			return(r);
 		}
@@ -358,7 +369,10 @@ int PF_ISendSbuf(int to, int tag)
 		default:
 			break;
 	}
-	//MesPrint("[%d] PF_ISendSbuf: sending %d words out of %d to %d with tag %d", PF.me, size, s->stop[a] - s->buff[a] ,to, tag);
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] PF_ISendSbuf: MPI_Isend to=%d tag=%d size=%d (multi-buf path)",
+		         PF.me, to, tag, size);
+	}
 	{
 		PF_TIMER_BEGIN_RT(isend);
 		r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
@@ -469,9 +483,10 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 		r->from[bn] = from;
 	}
 	else {
-		//MLOCK(errorMessageLock);
-		//MesPrint("[%d] PF_IRecvRbuf: posting Irecv for buffer %d from %d size %d ", PF.me, bn, from, (int)(r->stop[bn] - r->full[bn]));
-		//MUNLOCK(errorMessageLock);
+		if (PF.me == MASTER) {
+			fprintf(stderr, "[0] PF_IRecvRbuf: posting Irecv from=%d size=%d bn=%d\n",
+			        from, (int)(r->stop[bn] - r->full[bn]), bn); fflush(stderr);
+		}
 		ret = MPI_Irecv(r->full[bn],(int)(r->stop[bn] - r->full[bn]),PF_WORD,from,
 		                MPI_ANY_TAG,PF_COMM,&r->request[bn]);
 		if (ret != MPI_SUCCESS) { if(ret > 0) ret *= -1; return(ret); }
@@ -499,6 +514,14 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 {
 	int ret, rsize;
+	if (PF.me == MASTER) {
+		static int entered = 0;
+		if (!entered) {
+			entered = 1;
+			fprintf(stderr, "[0] PF_WaitRbuf called master, numbufs=%d nummergers=%d sMRflag=%d\n",
+			        r->numbufs, PF.nummergers, AC.sMRflag); fflush(stderr);
+		}
+	}
 
 	if ( r->numbufs == 1 ) {
 		*size = r->stop[bn] - r->full[bn];
@@ -511,11 +534,59 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 		*size = (LONG)rsize;
 	}
 	else {
+		/* Poll loop on master in MR-merger mode so we can drain leaf
+		   reducers' PF_STDOUT_MSGTAG/PF_LOG_MSGTAG (from WriteStats) while
+		   waiting for merger streams. Without this, leaves' PF_RawSend in
+		   PF_MUnlock deadlocks. */
+		int drain_active = (PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0);
+		static int drain_entered = 0;
+		if ( drain_active && !drain_entered ) {
+			drain_entered = 1;
+			fprintf(stderr, "[0] PF_WaitRbuf: drain_active entered\n"); fflush(stderr);
+		}
+		static int drain_count = 0;
+		static int last_count_print = 0;
 		while ( r->request[bn] != MPI_REQUEST_NULL ) {
-			//MesPrint("PF_WaitRbuf: waiting for buffer %d to finish from buffer %d", bn, r );
-			ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
-			if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
-			while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+			if ( drain_active ) {
+				int flag;
+				ret = MPI_Testsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
+				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+				if ( rsize == MPI_UNDEFINED ) rsize = 0;
+				while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+				if ( r->request[bn] == MPI_REQUEST_NULL ) break;
+				drain_count++;
+				if (drain_count - last_count_print > 1000000) {
+					fprintf(stderr, "[0] WaitRbuf: drain loop count=%d\n", drain_count); fflush(stderr);
+					last_count_print = drain_count;
+				}
+				/* Drain stats messages while we wait. Probe with specific
+				   tags so we don't get stuck on non-stats messages (e.g.,
+				   mapper PF_ENDSORT_MSGTAG that master will consume later in
+				   the Collect loop). */
+				{
+					MPI_Status dstat;
+					int dflag;
+					int drained = 0;
+					ret = MPI_Iprobe(MPI_ANY_SOURCE, PF_STDOUT_MSGTAG, PF_COMM, &dflag, &dstat);
+					if ( ret == MPI_SUCCESS && dflag ) {
+						PF_ReceiveErrorMessage(dstat.MPI_SOURCE, PF_STDOUT_MSGTAG);
+						drained = 1;
+					}
+					ret = MPI_Iprobe(MPI_ANY_SOURCE, PF_LOG_MSGTAG, PF_COMM, &dflag, &dstat);
+					if ( ret == MPI_SUCCESS && dflag ) {
+						PF_ReceiveErrorMessage(dstat.MPI_SOURCE, PF_LOG_MSGTAG);
+						drained = 1;
+					}
+					/* Yield the CPU when there was no progress to drain — keep
+					   the merger and leaves making forward progress instead of
+					   100%-busy spinning on the master. */
+					if ( !drained ) sched_yield();
+				}
+			} else {
+				ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
+				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+				while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+			}
 		}
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }

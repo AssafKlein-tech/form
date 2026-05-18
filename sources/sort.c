@@ -111,7 +111,10 @@ char *toterms[] = { "   ", " >>", "-->" };
   fflush(stderr); } }
 static int patch = 0;
 static inline BOOL PF_LowMRsort() {
-	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE);
+	/* Mapper-shuffle path. False during a mapper-merger's own merge phase
+	   (PF.in_merger_phase=1): the merger forwards merged output to master,
+	   it does NOT hash-route terms to reducers. */
+	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase);
 }
 #ifndef BITSINWORD == 16
 static const UWORD R[256] = {
@@ -908,7 +911,11 @@ LONG EndSort(PHEAD WORD *buffer, int par)
   FILEHANDLE *fout = 0, *oldoutfile = 0, *newout = 0;
 
   if ( AM.exitflag && AR.sLevel == 0 ) return(0);
-#ifdef WITHMPI 
+#ifdef WITHMPI
+  if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+      MesPrint("[%d] EndSort: ENTER par=%d sLevel=%d S==S0?%d lPatch=%d sTerms=%d",
+               PF.me, par, AR.sLevel, S==AT.S0, S->lPatch, S->sTerms);
+  }
   if( (retval = PF_EndSort()) > 0){
 	oldoutfile = AR.outfile;
 	retval = 0;
@@ -1094,6 +1101,9 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				retval = -1; goto RetRetval;
 			}
 #ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: post-MergePatches(1) lPatch=%d fPatchN=%d S->file.handle=%d", PF.me, S->lPatch, S->fPatchN, S->file.handle);
+			}
 			if(lowmr_sort){
 				SETBASEPOSITION(pp,sSpace);
 				MULPOS(pp,sizeof(WORD));
@@ -1110,16 +1120,36 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			S->lPatch = 0;
 			pp = S->SizeInFile[1];
 			MULPOS(pp,sizeof(WORD));
+#ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: A path lPatch reset, before stats", PF.me);
+			}
+#endif
 #ifndef WITHPTHREADS
 			if ( S == AT.S0 )
 #endif
 			{
 				POSITION pppp;
 				SETBASEPOSITION(pppp,0);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: A path pre-SeekFile×3", PF.me);
+				}
+#endif
 				SeekFile(S->file.handle,&pppp,SEEK_CUR);
 				SeekFile(S->file.handle,&pp,SEEK_END);
 				SeekFile(S->file.handle,&pppp,SEEK_SET);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: A path pre-WriteStats", PF.me);
+				}
+#endif
 				WriteStats(&pp,STATSMERGETOFILE,CHECKLOGTYPE);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: A path post-WriteStats", PF.me);
+				}
+#endif
 				UpdateMaxSize();
 			}
 		}
@@ -1226,7 +1256,17 @@ TooLarge:
 				MUNLOCK(ErrorMessageLock);
 				retval = -1; goto RetRetval;
 			}
+#ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: post-MergePatches(1) at line~1230, lPatch=%d fPatchN=%d S->file.handle=%d", PF.me, S->lPatch, S->fPatchN, S->file.handle);
+			}
+#endif
 			UpdateMaxSize();
+#ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: after-UpdateMaxSize", PF.me);
+			}
+#endif
 			pp = S->SizeInFile[1];
 			MULPOS(pp,sizeof(WORD));
 #ifndef WITHPTHREADS
@@ -1235,10 +1275,25 @@ TooLarge:
 			{
 				POSITION pppp;
 				SETBASEPOSITION(pppp,0);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: pre-SeekFile×3", PF.me);
+				}
+#endif
 				SeekFile(S->file.handle,&pppp,SEEK_CUR);
 				SeekFile(S->file.handle,&pp,SEEK_END);
 				SeekFile(S->file.handle,&pppp,SEEK_SET);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: pre-WriteStats", PF.me);
+				}
+#endif
 				WriteStats(&pp,STATSMERGETOFILE,CHECKLOGTYPE);
+#ifdef WITHMPI
+				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+					MesPrint("[%d] EndSort: post-WriteStats", PF.me);
+				}
+#endif
 			}
 #ifdef WITHERRORXXX
 			if ( S != AT.S0 ) {
@@ -1260,6 +1315,11 @@ TooLarge:
 		}
 	}
 	if ( S->file.handle >= 0 ) {
+#ifdef WITHMPI
+		if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+			MesPrint("[%d] EndSort: reached file.handle>=0 block, lPatch=%d fPatchN=%d", PF.me, S->lPatch, S->fPatchN);
+		}
+#endif
 #ifdef GZIPDEBUG
 		MLOCK(ErrorMessageLock);
 		MesPrint("%w EndSort: fPatchN = %d, lPatch = %d, position = %12p"
@@ -1267,7 +1327,17 @@ TooLarge:
 		MUNLOCK(ErrorMessageLock);
 #endif
 		if ( S->lPatch <= 0 ) {
+#ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: pre-StageSort", PF.me);
+			}
+#endif
 			StageSort(&(S->file));
+#ifdef WITHMPI
+			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+				MesPrint("[%d] EndSort: post-StageSort", PF.me);
+			}
+#endif
 			position = S->fPatches[S->fPatchN];
 			ss = S->sPointer;
 			if ( *ss ) {
@@ -1330,6 +1400,11 @@ TooLarge:
 #endif
 	}
 RetRetval:
+#ifdef WITHMPI
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] EndSort: RetRetval reached, retval=%lld", PF.me, (long long)retval);
+	}
+#endif
 
 #ifdef WITHMPI
 	/* NOTE: PF_EndSort has been changed such that it sets S->TermsLeft. (TU 30 Jun 2011) */
@@ -1852,8 +1927,22 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	}
 
 #ifdef WITHMPI
+	/* dst has dual meaning in this function:
+	   - index into PF.sbufs[] (mapper: per-reducer slot; reducer/merger: always 0)
+	   - MPI destination rank used by PF_WISendSbuf
+	   For mappers, hash-routing below sets dst to the destination reducer rank;
+	   PF.sbufs[reducer] is the per-reducer slot AND MPI dest. Both meanings
+	   collide on that rank value.
+	   For non-mappers, PF.sbufs is allocated with only slot 0 used (see
+	   PF_allocateSbuf reducer branch). The MPI dest goes through `mpi_dest`
+	   below; dst stays 0 so PF.sbufs[dst] lookups in PutOut hit the allocated
+	   slot. PF_WISendSbuf is given mpi_dest separately. */
 	int dst = 0;
+	int mpi_dest = MASTER;
 	BOOL lowmr_sort = PF_LowMRsort();
+	if (!lowmr_sort && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE) {
+		mpi_dest = (PF.me >= PF.nummappers || PF.in_merger_phase) ? PF.merger_parent : MASTER;
+	}
 #endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
@@ -1907,6 +1996,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 #endif
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
+				mpi_dest = dst;  /* mapper: sbuf index == MPI dest */
 				r = rr = AR.CompressPointers[dst];
 			}
 #endif
@@ -2059,7 +2149,7 @@ nocompress:
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
 			if( fi->POfill + i >= fi->POstop ) {
-				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
 				term = (first == 2) ? (term + k -1) : term;
@@ -2075,7 +2165,7 @@ nocompress:
 			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 				if (!sbuf) sbuf = PF.sbufs[dst];
 				sbuf->fill[sbuf->active] = fi->POstop;
-				PF_WISendSbuf(PF_BUFFER_MSGTAG, dst);
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
 			  }
@@ -2199,11 +2289,19 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 #ifndef WITHZLIB
 	DUMMYUSE(compr);
 #endif
+#ifdef WITHMPI
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] FlushOut: ENTER fi==outfile?%d POfill-PObuffer=%ld POstop-PObuffer=%ld",
+		         PF.me, fi==AR.outfile,
+		         (long)(fi->POfill - fi->PObuffer),
+		         (long)(fi->POstop - fi->PObuffer));
+	}
+#endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
 	if ( PF_LowMRsort() || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
-		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE){
+		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase){
 			for (int i = PF.nummappers; i < PF.numtasks; i++){
 				PF_BUFFER *sbuf = PF.sbufs[i];
 				/* On patch=1 (called from MergePatches) skip the send when this
@@ -2224,16 +2322,23 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 			}
 		}
 		else{
+			/* Reducer (or mapper-merger) FlushOut. For a leaf reducer with
+			   the merger tier active, PF.merger_parent != MASTER routes
+			   the sorted stream to a mapper-merger rank instead. For a
+			   mapper-merger doing its merge phase, merger_parent is MASTER
+			   (mergers always forward upward). Default (no merger tier):
+			   merger_parent == MASTER -> bit-for-bit unchanged behavior. */
+			int dest = (PF.me >= PF.nummappers || PF.in_merger_phase) ? PF.merger_parent : MASTER;
 			PF_BUFFER *sbuf = PF.sbufs[MASTER];
 			if ( fi->POfill >= fi->POstop ){
 				sbuf->fill[sbuf->active] = fi->POstop;
-				PF_WISendSbuf(PF_BUFFER_MSGTAG, MASTER);
+				PF_WISendSbuf(PF_BUFFER_MSGTAG, dest);
 				fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
 			}
 			*(fi->POfill)++ = 0;
 			sbuf->fill[sbuf->active] = fi->POfill;
-			PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, MASTER);
+			PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, dest);
 			fi->PObuffer = fi->POfill = fi->POfull = sbuf->buff[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
 		}
@@ -4161,6 +4266,12 @@ int MergePatches(WORD par)
 	GETIDENTITY
 	SORTING *S = AT.SS;
 	WORD **poin, **poin2, ul, k, i, im, *m1;
+#ifdef WITHMPI
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] MergePatches: ENTER par=%d lPatch=%d fPatchN=%d",
+		         PF.me, par, S->lPatch, S->fPatchN);
+	}
+#endif
 	WORD *p, lpat, mpat, level, l1, l2, r1, r2, r3, c;
 	WORD *m2, *m3, r31, r33, ki, *rr;
 	UWORD *coef;
@@ -4942,10 +5053,20 @@ NormalReturn:
 #ifdef WITHZLIB
 	AR.gzipCompress = oldgzipCompress;
 #endif
+#ifdef WITHMPI
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] MergePatches: NormalReturn par=%d lPatch=%d fPatchN=%d", PF.me, par, S->lPatch, S->fPatchN);
+	}
+#endif
 	return(0);
 ReturnError:
 #ifdef WITHZLIB
 	AR.gzipCompress = oldgzipCompress;
+#endif
+#ifdef WITHMPI
+	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
+		MesPrint("[%d] MergePatches: ReturnError par=%d", PF.me, par);
+	}
 #endif
 	return(-1);
 #ifndef WITHZLIB
