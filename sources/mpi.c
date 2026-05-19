@@ -270,8 +270,12 @@ int PF_WISendSbuf(int tag, int dest)
 {
     /* Non-mapper (reducer or mapper-merger) -> upstream sink, single sbuf,
        BUFFER/ENDBUFFER framing. Honors `dest` so a leaf reducer can route
-       to a mapper-merger rank (PF.merger_parent) instead of MASTER. */
-    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers)
+       to a mapper-merger rank (PF.merger_parent) instead of MASTER.
+       The mapper-merger is a mapper RANK but in MERGE phase its data goes
+       upstream to master, so we treat it like a reducer here -- send the
+       tag through unchanged so master's PF_PutIn sees ENDBUFFER and adds
+       the 0-terminator that marks end of stream. */
+    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase)
        {return PF_ISendSbuf(dest, tag);}
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];

@@ -1264,6 +1264,10 @@ int PF_EndSort(void)
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
 		outterm = PF_term[PF_loser];
 		noutterms++;
+		if ( noutterms == 1 || noutterms % 100000 == 0 ) {
+			MesPrint("[%d] PF_EndSort loop: noutterms=%lld loser=%d",
+			         PF.me, (long long)noutterms, (int)PF_loser);
+		}
 
 		if ( PF_newclen[PF_loser] != 0 ) {
 /*
@@ -2033,6 +2037,10 @@ enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
  */
 int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 {
+	if (PF.is_merger) {
+		MesPrint("[%d] PF_Processor ENTER module=%d sMRflag=%d is_merger=%d",
+		         PF.me, (int)AC.CModule, (int)AC.sMRflag, PF.is_merger);
+	}
 	GETIDENTITY
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
@@ -2492,6 +2500,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		send_time = TimeCPU(1) - send_time;
 		LONG waittime = TimeElapsed(TIMEGET);
+		if (PF.is_merger) MesPrint("[%d] mapper phase done module=%d", PF.me, (int)AC.CModule);
 		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		/* Mapper-merger overlay (Phase 1 of reducer merge tree). On ranks
 		   1..PF.nummergers, after the mapper-phase EndSort + done-send, run
@@ -2804,6 +2813,9 @@ LONG PF_MergerLoop(void)
 	GETIDENTITY
 	if ( !PF.is_merger || PF.nummergers <= 0 ) return 0;
 
+	MesPrint("[%d] PF_MergerLoop ENTER module=%d sMRflag=%d",
+	         PF.me, (int)AC.CModule, (int)AC.sMRflag);
+
 	if ( pf_setup_merger_group() < 0 ) return -1;
 
 	NewSort(BHEAD0);
@@ -2827,6 +2839,7 @@ LONG PF_MergerLoop(void)
 	/* Shared merge body (PF_InitTree + loser-tree drive + FlushOut). */
 	LONG ret = PF_EndSort();
 
+	MesPrint("[%d] PF_MergerLoop EXIT module=%d ret=%lld", PF.me, (int)AC.CModule, (long long)ret);
 	PF.in_merger_phase = 0;
 
 	/* Restore fout. PF_EndSort writes through fout->PObuffer (= sbuf->buff[0]);
