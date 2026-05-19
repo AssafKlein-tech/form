@@ -514,6 +514,16 @@ int PF_IRecvRbuf(PF_BUFFER *r, int bn, int from)
 int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 {
 	int ret, rsize;
+	{
+		static long me_cnt[16] = {0};
+		if (PF.me < 16) {
+			me_cnt[PF.me]++;
+			if (me_cnt[PF.me] < 5 || me_cnt[PF.me] % 50000 == 0) {
+				MesPrint("[%d] PF_WaitRbuf ENTRY cnt=%ld bn=%d numbufs=%d is_merger=%d",
+				        PF.me, me_cnt[PF.me], bn, r->numbufs, PF.is_merger);
+			}
+		}
+	}
 	if (PF.me == MASTER) {
 		static int entered = 0;
 		if (!entered) {
@@ -586,6 +596,17 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 				ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
 				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 				while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+				if (PF.is_merger) {
+					static long wait_cnt = 0;
+					wait_cnt++;
+					if (wait_cnt < 20 || wait_cnt % 10000 == 0) {
+						int rs = 0;
+						MPI_Get_count(&(r->status[bn]), r->type[bn], &rs);
+						fprintf(stderr, "[%d] merger PF_WaitRbuf cnt=%ld bn=%d got tag=%d src=%d count=%d\n",
+						        PF.me, wait_cnt, bn, r->status[bn].MPI_TAG, r->status[bn].MPI_SOURCE, rs);
+						fflush(stderr);
+					}
+				}
 			}
 		}
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);

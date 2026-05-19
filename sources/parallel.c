@@ -555,11 +555,6 @@ static WORD *PF_PutIn(int src)
 	WORD *m1, *m2;
 	LONG size;
 	PF_BUFFER *rbuf = PF.rbufs[src];
-	if (PF.is_merger) {
-		MesPrint("[%d] PF_PutIn(src=%d) ENTER  (merger leaf rank=%d)",
-		         PF.me, src,
-		         (PF.merger_leaf_ranks && src > 0) ? PF.merger_leaf_ranks[src] : -1);
-	}
 	/* src -> MPI rank translation. Three cases (in priority order):
 	   - Mapper-merger: src is local index 1..group_size; rank is looked up
 	     in PF.merger_leaf_ranks[src] (set by PF_MergerInit).
@@ -603,7 +598,17 @@ static WORD *PF_PutIn(int src)
 		}
 	}
 	//last term from the buffer
-	if ( *term == 0 && term != rbuf->full[a] ) return(PF_term[0]);
+	if ( *term == 0 && term != rbuf->full[a] ) {
+		if (PF.is_merger) {
+			static int exhaust_cnt[5] = {0,0,0,0,0};
+			if (src >=0 && src < 5) exhaust_cnt[src]++;
+			if (exhaust_cnt[src] < 3) {
+				MesPrint("[%d] PF_PutIn(src=%d): source exhausted (term==0), full-buff=%ld",
+				         PF.me, src, (long)(rbuf->full[a] - rbuf->buff[a]));
+			}
+		}
+		return(PF_term[0]);
+	}
 /*
 		exception is for rare cases when the terms fitted exactly into buffer
 */
