@@ -1264,10 +1264,6 @@ int PF_EndSort(void)
 		if ( (PF_loser = PF_GetLoser(PF_root)) == 0 ) break;
 		outterm = PF_term[PF_loser];
 		noutterms++;
-		if ( noutterms == 1 || noutterms % 100000 == 0 ) {
-			MesPrint("[%d] PF_EndSort loop: noutterms=%lld loser=%d",
-			         PF.me, (long long)noutterms, (int)PF_loser);
-		}
 
 		if ( PF_newclen[PF_loser] != 0 ) {
 /*
@@ -2037,10 +2033,6 @@ enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
  */
 int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 {
-	if (PF.is_merger) {
-		MesPrint("[%d] PF_Processor ENTER module=%d sMRflag=%d is_merger=%d",
-		         PF.me, (int)AC.CModule, (int)AC.sMRflag, PF.is_merger);
-	}
 	GETIDENTITY
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
@@ -2399,7 +2391,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
 		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
-		if (PF.is_merger) MesPrint("[%d] mapper-init done module=%d size=%lld", PF.me, (int)AC.CModule, (long long)size);
 
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
 		{
@@ -2438,12 +2429,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
 		LONG send_time = TimeCPU(1);
 		PF_TIMER_BEGIN(MAP_GENERATOR);
-		if (PF.is_merger) MesPrint("[%d] generator-loop start module=%d", PF.me, (int)AC.CModule);
-		LONG gen_count = 0;
 		while ( PF_GetTerm(term) ) {
-			if (PF.is_merger && (gen_count == 0 || gen_count == 100 || gen_count % 100000 == 0))
-				MesPrint("[%d] generator-loop iter=%lld module=%d", PF.me, (long long)gen_count, (int)AC.CModule);
-			gen_count++;
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
 			AT.WorkPointer = term + *term;
 			AN.RepPoint = AT.RepCount + 1;
@@ -2506,7 +2492,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		send_time = TimeCPU(1) - send_time;
 		LONG waittime = TimeElapsed(TIMEGET);
-		if (PF.is_merger) MesPrint("[%d] mapper phase done module=%d", PF.me, (int)AC.CModule);
 		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		/* Mapper-merger overlay (Phase 1 of reducer merge tree). On ranks
 		   1..PF.nummergers, after the mapper-phase EndSort + done-send, run
