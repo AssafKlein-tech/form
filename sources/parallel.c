@@ -2399,6 +2399,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
 		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
+		if (PF.is_merger) MesPrint("[%d] mapper-init done module=%d size=%lld", PF.me, (int)AC.CModule, (long long)size);
 
 		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
 		{
@@ -2437,7 +2438,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
 		LONG send_time = TimeCPU(1);
 		PF_TIMER_BEGIN(MAP_GENERATOR);
+		if (PF.is_merger) MesPrint("[%d] generator-loop start module=%d", PF.me, (int)AC.CModule);
+		LONG gen_count = 0;
 		while ( PF_GetTerm(term) ) {
+			if (PF.is_merger && (gen_count == 0 || gen_count == 100 || gen_count % 100000 == 0))
+				MesPrint("[%d] generator-loop iter=%lld module=%d", PF.me, (long long)gen_count, (int)AC.CModule);
+			gen_count++;
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
 			AT.WorkPointer = term + *term;
 			AN.RepPoint = AT.RepCount + 1;
@@ -2813,42 +2819,50 @@ LONG PF_MergerLoop(void)
 	GETIDENTITY
 	if ( !PF.is_merger || PF.nummergers <= 0 ) return 0;
 
-	MesPrint("[%d] PF_MergerLoop ENTER module=%d sMRflag=%d",
-	         PF.me, (int)AC.CModule, (int)AC.sMRflag);
-
 	if ( pf_setup_merger_group() < 0 ) return -1;
+
+	/* Snapshot fout BEFORE PF_allocateSbuf clobbers PObuffer/POstop/POsize
+	   to the sbuf slot. Restore at the end so subsequent modules see the
+	   original scratch-file state. Mappers' regular code path expects
+	   PObuffer to point at the scratch file's buffer. */
+	FILEHANDLE *fout = AR.outfile;
+	WORD *save_PObuffer = fout->PObuffer;
+	WORD *save_POstop   = fout->POstop;
+	LONG  save_POsize   = fout->POsize;
+	WORD *save_POfill   = fout->POfill;
+	WORD *save_POfull   = fout->POfull;
 
 	NewSort(BHEAD0);
 	PF.parallel = 1;
 	/* in_merger_phase gates:
 	   - sort.c FlushOut routing (sends to merger_parent == MASTER, not to reducers),
 	   - PF_LowMRsort (disables hash routing during merge phase),
+	   - PF_WISendSbuf (sends BUFFER/ENDBUFFER tags upstream, not SHUFFLE),
 	   - PF_EndSort's slave-init branch (lets us fall into the shared merge body). */
 	PF.in_merger_phase = 1;
 
-	/* Redirect fout->PObuffer onto PF.sbufs[0] so PutOut accumulates into an
-	   MPI send buffer instead of disk. The mapper's PF_allocateSbuf already
-	   built PF.sbufs[0]; this call re-arms the redirection that the
-	   mapper-phase post-EndSort cleanup undid. */
 	if ( PF_allocateSbuf() == 0 ) {
 		MesPrint("[%d] PF_MergerLoop: PF_allocateSbuf failed", PF.me);
 		PF.in_merger_phase = 0;
 		return -1;
 	}
 
-	/* Shared merge body (PF_InitTree + loser-tree drive + FlushOut). */
-	LONG ret = PF_EndSort();
+	/* Run the shared merge body. Call EndSort (sort.c) rather than PF_EndSort
+	   directly: EndSort handles AR.sLevel-- cleanup, which is critical so the
+	   next module's NewSort lands at sLevel=0 (AT.S0) instead of sub-sort.
+	   EndSort calls PF_EndSort first; PF_EndSort's master path returns 1
+	   here (in_merger_phase set), and EndSort then jumps to RetRetval which
+	   decrements sLevel. */
+	LONG ret = EndSort(BHEAD AM.S0->sBuffer, 0);
 
-	MesPrint("[%d] PF_MergerLoop EXIT module=%d ret=%lld", PF.me, (int)AC.CModule, (long long)ret);
 	PF.in_merger_phase = 0;
 
-	/* Restore fout. PF_EndSort writes through fout->PObuffer (= sbuf->buff[0]);
-	   after FlushOut+restore, we must un-redirect for the next module. */
-	{
-		FILEHANDLE *fout = AR.outfile;
-		fout->PObuffer = fout->POfill = fout->POfull = AR.outfile->PObuffer;
-		/* POstop/POsize are restored by EndSort's own cleanup. */
-	}
+	/* Un-redirect fout. */
+	fout->PObuffer = save_PObuffer;
+	fout->POstop   = save_POstop;
+	fout->POsize   = save_POsize;
+	fout->POfill   = save_POfill;
+	fout->POfull   = save_POfull;
 
 	return ret < 0 ? -1 : 0;
 }
