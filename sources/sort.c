@@ -912,10 +912,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 
   if ( AM.exitflag && AR.sLevel == 0 ) return(0);
 #ifdef WITHMPI
-  if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-      MesPrint("[%d] EndSort: ENTER par=%d sLevel=%d S==S0?%d lPatch=%d sTerms=%d",
-               PF.me, par, AR.sLevel, S==AT.S0, S->lPatch, S->sTerms);
-  }
   if( (retval = PF_EndSort()) > 0){
 	oldoutfile = AR.outfile;
 	retval = 0;
@@ -1101,9 +1097,6 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				retval = -1; goto RetRetval;
 			}
 #ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: post-MergePatches(1) lPatch=%d fPatchN=%d S->file.handle=%d", PF.me, S->lPatch, S->fPatchN, S->file.handle);
-			}
 			if(lowmr_sort){
 				SETBASEPOSITION(pp,sSpace);
 				MULPOS(pp,sizeof(WORD));
@@ -1120,36 +1113,16 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 			S->lPatch = 0;
 			pp = S->SizeInFile[1];
 			MULPOS(pp,sizeof(WORD));
-#ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: A path lPatch reset, before stats", PF.me);
-			}
-#endif
 #ifndef WITHPTHREADS
 			if ( S == AT.S0 )
 #endif
 			{
 				POSITION pppp;
 				SETBASEPOSITION(pppp,0);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: A path pre-SeekFile×3", PF.me);
-				}
-#endif
 				SeekFile(S->file.handle,&pppp,SEEK_CUR);
 				SeekFile(S->file.handle,&pp,SEEK_END);
 				SeekFile(S->file.handle,&pppp,SEEK_SET);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: A path pre-WriteStats", PF.me);
-				}
-#endif
 				WriteStats(&pp,STATSMERGETOFILE,CHECKLOGTYPE);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: A path post-WriteStats", PF.me);
-				}
-#endif
 				UpdateMaxSize();
 			}
 		}
@@ -1256,17 +1229,7 @@ TooLarge:
 				MUNLOCK(ErrorMessageLock);
 				retval = -1; goto RetRetval;
 			}
-#ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: post-MergePatches(1) at line~1230, lPatch=%d fPatchN=%d S->file.handle=%d", PF.me, S->lPatch, S->fPatchN, S->file.handle);
-			}
-#endif
 			UpdateMaxSize();
-#ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: after-UpdateMaxSize", PF.me);
-			}
-#endif
 			pp = S->SizeInFile[1];
 			MULPOS(pp,sizeof(WORD));
 #ifndef WITHPTHREADS
@@ -1275,25 +1238,10 @@ TooLarge:
 			{
 				POSITION pppp;
 				SETBASEPOSITION(pppp,0);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: pre-SeekFile×3", PF.me);
-				}
-#endif
 				SeekFile(S->file.handle,&pppp,SEEK_CUR);
 				SeekFile(S->file.handle,&pp,SEEK_END);
 				SeekFile(S->file.handle,&pppp,SEEK_SET);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: pre-WriteStats", PF.me);
-				}
-#endif
 				WriteStats(&pp,STATSMERGETOFILE,CHECKLOGTYPE);
-#ifdef WITHMPI
-				if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-					MesPrint("[%d] EndSort: post-WriteStats", PF.me);
-				}
-#endif
 			}
 #ifdef WITHERRORXXX
 			if ( S != AT.S0 ) {
@@ -1315,11 +1263,6 @@ TooLarge:
 		}
 	}
 	if ( S->file.handle >= 0 ) {
-#ifdef WITHMPI
-		if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-			MesPrint("[%d] EndSort: reached file.handle>=0 block, lPatch=%d fPatchN=%d", PF.me, S->lPatch, S->fPatchN);
-		}
-#endif
 #ifdef GZIPDEBUG
 		MLOCK(ErrorMessageLock);
 		MesPrint("%w EndSort: fPatchN = %d, lPatch = %d, position = %12p"
@@ -1327,17 +1270,7 @@ TooLarge:
 		MUNLOCK(ErrorMessageLock);
 #endif
 		if ( S->lPatch <= 0 ) {
-#ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: pre-StageSort", PF.me);
-			}
-#endif
 			StageSort(&(S->file));
-#ifdef WITHMPI
-			if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-				MesPrint("[%d] EndSort: post-StageSort", PF.me);
-			}
-#endif
 			position = S->fPatches[S->fPatchN];
 			ss = S->sPointer;
 			if ( *ss ) {
@@ -1400,11 +1333,6 @@ TooLarge:
 #endif
 	}
 RetRetval:
-#ifdef WITHMPI
-	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-		MesPrint("[%d] EndSort: RetRetval reached, retval=%lld", PF.me, (long long)retval);
-	}
-#endif
 
 #ifdef WITHMPI
 	/* NOTE: PF_EndSort has been changed such that it sets S->TermsLeft. (TU 30 Jun 2011) */
@@ -2288,14 +2216,6 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 	int dobracketindex = 0;
 #ifndef WITHZLIB
 	DUMMYUSE(compr);
-#endif
-#ifdef WITHMPI
-	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-		MesPrint("[%d] FlushOut: ENTER fi==outfile?%d POfill-PObuffer=%ld POstop-PObuffer=%ld",
-		         PF.me, fi==AR.outfile,
-		         (long)(fi->POfill - fi->PObuffer),
-		         (long)(fi->POstop - fi->PObuffer));
-	}
 #endif
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
@@ -4266,12 +4186,6 @@ int MergePatches(WORD par)
 	GETIDENTITY
 	SORTING *S = AT.SS;
 	WORD **poin, **poin2, ul, k, i, im, *m1;
-#ifdef WITHMPI
-	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-		MesPrint("[%d] MergePatches: ENTER par=%d lPatch=%d fPatchN=%d",
-		         PF.me, par, S->lPatch, S->fPatchN);
-	}
-#endif
 	WORD *p, lpat, mpat, level, l1, l2, r1, r2, r3, c;
 	WORD *m2, *m3, r31, r33, ki, *rr;
 	UWORD *coef;
@@ -5053,20 +4967,10 @@ NormalReturn:
 #ifdef WITHZLIB
 	AR.gzipCompress = oldgzipCompress;
 #endif
-#ifdef WITHMPI
-	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-		MesPrint("[%d] MergePatches: NormalReturn par=%d lPatch=%d fPatchN=%d", PF.me, par, S->lPatch, S->fPatchN);
-	}
-#endif
 	return(0);
 ReturnError:
 #ifdef WITHZLIB
 	AR.gzipCompress = oldgzipCompress;
-#endif
-#ifdef WITHMPI
-	if (PF.me >= PF.nummappers && AC.sMRflag != NO_MAPREDUCE) {
-		MesPrint("[%d] MergePatches: ReturnError par=%d", PF.me, par);
-	}
 #endif
 	return(-1);
 #ifndef WITHZLIB

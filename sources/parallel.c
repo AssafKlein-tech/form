@@ -410,15 +410,38 @@ static PF_BUFFER *PF_AllocBuf(int nbufs, LONG bsize, WORD free)
  *
  * @return  the number of nodes in the merge tree if succeeded. -1 if failed.
 */
+/* Map a tree-leaf index `src` to the MPI rank that feeds that leaf. Single
+   source of truth for PF_InitTree, PF_PutIn, and master's drain re-arm. */
+static int pf_loser_src_to_rank(int src)
+{
+	if ( AC.sMRflag != NO_MAPREDUCE && PF.is_merger && PF.merger_leaf_ranks )
+		return PF.merger_leaf_ranks[src];        /* merger: leaf reducer */
+	if ( AC.sMRflag != NO_MAPREDUCE && PF.me == MASTER && PF.nummergers > 0 )
+		return src;                              /* master with mergers: rank 1..G */
+	if ( AC.sMRflag == NO_MAPREDUCE && PF.me == MASTER )
+		return src;                              /* non-MR master: rank 1..N */
+	return src % PF.numreducers + PF.nummappers; /* MR master, no mergers */
+}
+
 static int PF_InitTree(void)
 {
 	GETIDENTITY
 	PF_BUFFER **rbuf = PF.rbufs;
-	/* With the merger tier active (PF.nummergers > 0) the master receives
-	   from G mapper-merger ranks (1..G) instead of from R reducers. */
-	int workerIdx,numrbufs,numtasks = (AC.sMRflag == NO_MAPREDUCE) ? PF.nummappers
-	                                : (PF.nummergers > 0)          ? PF.nummergers + 1
-	                                :                                PF.numreducers + 1;
+	/* numtasks = number of LEAVES (sources) in this rank's loser tree, +1.
+	   - non-MR master: PF.nummappers (all slaves)
+	   - MR master, mergers active: PF.nummergers + 1
+	   - MR master, no mergers: PF.numreducers + 1
+	   - merger:                  PF.merger_groupsz + 1                  */
+	int numtasks;
+	if ( AC.sMRflag != NO_MAPREDUCE && PF.is_merger )
+		numtasks = PF.merger_groupsz + 1;
+	else if ( AC.sMRflag == NO_MAPREDUCE )
+		numtasks = PF.nummappers;
+	else if ( PF.nummergers > 0 )
+		numtasks = PF.nummergers + 1;
+	else
+		numtasks = PF.numreducers + 1;
+	int workerIdx,numrbufs;
 	int i, j, src, numnodes;
 	int numslaves = numtasks - 1;
 	LONG size;
@@ -440,9 +463,9 @@ static int PF_InitTree(void)
 	//size = size / 512;
 
 	if ( rbuf == NULL ) {
-		if ( ( rbuf = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
+		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
 		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
-		for ( i = 1; i < PF.numtasks; i++ ) {
+		for ( i = 1; i < numtasks; i++ ) {
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
 		}
 	}
@@ -450,11 +473,11 @@ static int PF_InitTree(void)
 	rbuf[0]->full[0] = rbuf[0]->fill[0] = rbuf[0]->buff[0];
 	rbuf[0]->stop[0] = rbuf[1]->buff[0] = rbuf[0]->buff[0] + 1;
 	rbuf[1]->full[0] = rbuf[1]->fill[0] = rbuf[1]->buff[0];
-	for ( i = 2; i < PF.numtasks ; i++ ) {
+	for ( i = 2; i < numtasks ; i++ ) {
 		rbuf[i-1]->stop[0] = rbuf[i]->buff[0] = rbuf[i-1]->buff[0] + size;
 		rbuf[i]->full[0] = rbuf[i]->fill[0] = rbuf[i]->buff[0];
 	}
-	rbuf[PF.numtasks -1]->stop[0] = rbuf[PF.numtasks -1]->buff[0] + size;
+	rbuf[numtasks -1]->stop[0] = rbuf[numtasks -1]->buff[0] + size;
 
 	for ( i = 1; i < numtasks; i++ ) {
 		rbuf[i]->active = 0;
@@ -463,10 +486,7 @@ static int PF_InitTree(void)
 		}
 		PF_term[i] = rbuf[i]->fill[rbuf[i]->active];
 		*PF_term[i] = 0;
-		workerIdx = (AC.sMRflag == NO_MAPREDUCE) ? i
-		          : (PF.nummergers > 0)          ? i                              /* mergers = ranks 1..G */
-		          :                                i % PF.numreducers + PF.nummappers;
-		//MesPrint("[0] PF_InitTree: Post non blocking receive from %d size %d", workerIdx, rbuf[i]->stop[0] - rbuf[i]->full[0]);
+		workerIdx = pf_loser_src_to_rank(i);
 		PF_IRecvRbuf(rbuf[i],rbuf[i]->active,workerIdx);
 	}
 	rbuf[0]->active = 0;
@@ -555,20 +575,7 @@ static WORD *PF_PutIn(int src)
 	WORD *m1, *m2;
 	LONG size;
 	PF_BUFFER *rbuf = PF.rbufs[src];
-	/* src -> MPI rank translation. Three cases (in priority order):
-	   - Mapper-merger: src is local index 1..group_size; rank is looked up
-	     in PF.merger_leaf_ranks[src] (set by PF_MergerInit).
-	   - Master with mergers active: src directly indexes the merger range 1..G.
-	   - Master without mergers (default), or non-MR: src % R + M (reducer rank),
-	     or just src for non-MR (Param mode). */
-	int workerIdx;
-	if ( AC.sMRflag != NO_MAPREDUCE && PF.is_merger && PF.merger_leaf_ranks ) {
-		workerIdx = PF.merger_leaf_ranks[src];
-	} else if ( AC.sMRflag != NO_MAPREDUCE && PF.me == MASTER && PF.nummergers > 0 ) {
-		workerIdx = src;   /* merger ranks are 1..G */
-	} else {
-		workerIdx = (AC.sMRflag == NO_MAPREDUCE && PF.me == MASTER) ? src : src % PF.numreducers + PF.nummappers;
-	}
+	int workerIdx = pf_loser_src_to_rank(src);
 	int a = rbuf->active;
 	int next = a+1 >= rbuf->numbufs ? 0 : a+1 ;
 	WORD *lastterm = PF_term[src];
@@ -598,17 +605,7 @@ static WORD *PF_PutIn(int src)
 		}
 	}
 	//last term from the buffer
-	if ( *term == 0 && term != rbuf->full[a] ) {
-		if (PF.is_merger) {
-			static int exhaust_cnt[5] = {0,0,0,0,0};
-			if (src >=0 && src < 5) exhaust_cnt[src]++;
-			if (exhaust_cnt[src] < 3) {
-				MesPrint("[%d] PF_PutIn(src=%d): source exhausted (term==0), full-buff=%ld",
-				         PF.me, src, (long)(rbuf->full[a] - rbuf->buff[a]));
-			}
-		}
-		return(PF_term[0]);
-	}
+	if ( *term == 0 && term != rbuf->full[a] ) return(PF_term[0]);
 /*
 		exception is for rare cases when the terms fitted exactly into buffer
 */
@@ -1184,32 +1181,31 @@ int PF_EndSort(void)
 
 	if ( AT.SS != AT.S0 || !PF.parallel ) return 0;
 
-	if ( PF.me != MASTER ) {
-/*
- 		#[ the slaves have to initialize their sendbuffer :
-
-		this is a slave and it's PObuffer should be the minimum of the
-		sortiosize on the master and the POsize of our file.
-		First save the original PObuffer and POstop of the outfile
-*/
-		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers)
-			return 0; //mappers won't enter
+	/* Three execution profiles share the merge-loop body below:
+	     1. MASTER: collect terms from reducers (or mergers when G>0).
+	     2. mapper-merger (PF.me in 1..G, PF.in_merger_phase == 1): collect
+	        sorted streams from leaf reducers and forward to MASTER.
+	     3. plain reducer / non-MR slave: prepare send buffer, then return so
+	        the regular EndSort path can sort and forward via PutOut/FlushOut.
+	   Cases 1 & 2 fall through to the shared merge body; case 3 returns now. */
+	if ( PF.me != MASTER && !PF.in_merger_phase ) {
+		if ( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers )
+			return 0; /* plain mapper: nothing to do here */
 		if ((size = PF_allocateSbuf()) == 0 ) {
 			MesPrint("[%d] ERROR in endsort: Failed to allocate send buffer", PF.me);
 			return -1;
 		}
-/*
- 		#] the slaves have to initialize their sendbuffer :
-*/
-
 		AR.CompressPointer = AR.CompressBuffer;
 		*AR.CompressPointer = 0;
 		return(0);
 	}
-/*
-		this waits for all slaves to be ready to send terms back
-*/
-	PF_WaitAllSlaves(); /* Note, the returned value should be 0 on success. */
+
+	/* WaitAllSlaves is the generation/sort barrier and only meaningful on
+	   MASTER. A mapper-merger arrives here already past its own
+	   mapper-phase done-handshake; the master has been the one waiting on
+	   it. */
+	if ( PF.me == MASTER )
+		PF_WaitAllSlaves();
 /*
 		Now collect the terms of all slaves and merge them.
 		PF_GetLoser gives the position of the smallest term, which is the real
@@ -1320,8 +1316,7 @@ int PF_EndSort(void)
 			int K = AM.MR.HashPrefixWords;
 			int boundary_found = 0;
 			int lastterm_cached = 0;
-			int workerIdx = (AC.sMRflag == NO_MAPREDUCE && PF.me == MASTER)
-			              ? src : src % PF.numreducers + PF.nummappers;
+			int workerIdx = pf_loser_src_to_rank(src);
 			/* Scan forward through compressed term headers [-share, tail_len]
 			   until a REAL boundary (share <= K, EOF marker, or uncompressed
 			   term). When the scan stalls because the next term's body
@@ -2743,7 +2738,6 @@ LONG PF_ForwardTermsToMaster()
 	PF_TIMER_BEGIN(RED_FINAL_SORT);
 	if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
 	PF_TIMER_END(RED_FINAL_SORT);
-	MesPrint("[%d] EndSort done", PF.me);
 	sort_time = TimeCPU(1) - sort_time;
 	fout->PObuffer = oldbuff;
 	fout->POstop   = oldstop;
@@ -2754,29 +2748,20 @@ LONG PF_ForwardTermsToMaster()
 }
 /*
  	#] PF_ForwardTermsToMaster :
- 	#[ PF_MergerInit :
+ 	#[ pf_setup_merger_group :
 */
 /**
- * Allocates the receive buffers + loser tree for a mapper-merger.
+ * Build PF.merger_leaf_ranks[1..groupsz] and set PF.merger_groupsz for this
+ * mapper-merger rank. Group membership: leaf reducer rank r belongs to this
+ * merger iff ((r - PF.nummappers) % PF.nummergers) + 1 == PF.me.
  *
- * A mapper-merger (rank in [1, PF.nummergers]) consumes sorted streams from a
- * group of leaf reducers and forwards the merged result to MASTER. Group
- * membership: leaf reducer rank r belongs to this merger iff
- *   ((r - PF.nummappers) % PF.nummergers) + 1 == PF.me.
- *
- * Allocates only `group_size` rbufs (NOT PF.numreducers); the loser tree has
- * `group_size` leaves. A small mapping table merger_leaf_ranks[1..group_size]
- * translates the local tree-leaf index (the `src` arg passed to PF_PutIn) to
- * the actual leaf reducer's MPI rank for MPI_Irecv `from` arguments.
- *
- * Called once per module from PF_MergerLoop. PF_term / PF_root are allocated
- * lazily.
+ * Called once at the start of PF_MergerLoop; the actual rbuf/loser-tree setup
+ * is then done by PF_InitTree using these fields.
  *
  * @return number of group leaves on success, -1 on error.
  */
-static int PF_MergerInit(void)
+static int pf_setup_merger_group(void)
 {
-	GETIDENTITY
 	int G = PF.nummergers;
 	int M = PF.nummappers, R = PF.numreducers;
 	int groupsz = 0;
@@ -2784,15 +2769,10 @@ static int PF_MergerInit(void)
 
 	if ( G <= 0 || !PF.is_merger ) return -1;
 
-	/* Count group membership and build the rank-translation table. */
 	for ( i = M; i < M + R; i++ )
 		if ( ((i - M) % G) + 1 == PF.me ) groupsz++;
 	PF.merger_groupsz = groupsz;
-	if ( groupsz < 1 ) {
-		MesPrint("[%d] PF_MergerInit: empty group (mergers=%d, mappers=%d, reducers=%d)",
-		         PF.me, G, M, R);
-		return -1;
-	}
+	if ( groupsz < 1 ) return -1;
 
 	if ( PF.merger_leaf_ranks == NULL ) {
 		PF.merger_leaf_ranks = (int*)Malloc1((LONG)(groupsz + 1) * sizeof(int),
@@ -2803,250 +2783,61 @@ static int PF_MergerInit(void)
 		for ( i = M; i < M + R; i++ )
 			if ( ((i - M) % G) + 1 == PF.me ) PF.merger_leaf_ranks[j++] = i;
 	}
-
-	/* Allocate PF_term, PF_newcpos, PF_newclen for (group_size + 1) slots. */
-	int nslots = groupsz + 1;
-	if ( PF_term == NULL && PF_allocatePFTerm(nslots) ) {
-		MesPrint("[%d] PF_MergerInit: PF_allocatePFTerm failed", PF.me);
-		return -1;
-	}
-
-	/* Allocate the merger's receive buffers. We must size each rbuf at least
-	   as large as the SENDER's sbuf chunk so MPI_Irecv doesn't truncate.
-	   Leaf reducer's sbuf size (PF_allocateSbuf non-master branch) is
-	   (sTop2 - lBuffer - 1)/(numtasks - 1) - (MaxTer/sizeof(WORD) + 2).
-	   We match that here. (Using /(numtasks-1) instead of /nslots wastes
-	   some lBuffer range but guarantees we can receive any chunk the
-	   leaf sends.) */
-	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1) / (PF.numtasks - 1);
-	if ( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2) )
-		size = (LONG)(2 * (AM.MaxTer/sizeof(WORD) + 2));
-
-	if ( PF.rbufs == NULL ) {
-		PF.rbufs = (PF_BUFFER**)Malloc1((LONG)nslots * sizeof(PF_BUFFER*),
-		                                "Merger: rbufs");
-		if ( PF.rbufs == NULL ) return -1;
-		if ( (PF.rbufs[0] = PF_AllocBuf(1, 0, 1)) == NULL ) return -1;
-		for ( i = 1; i < nslots; i++ ) {
-			if ( (PF.rbufs[i] = PF_AllocBuf(PF.numrbufs,
-			                                sizeof(WORD)*size, 1)) == NULL ) return -1;
-		}
-		/* Chain rbufs[1..nslots-1] into a contiguous lBuffer span, same as
-		   PF_InitTree:445-453, so the loser-tree's first-term path (where
-		   it relies on full[a] == buff[a] + MaxTer/sizeof(WORD) + 2 to
-		   distinguish "very first term" from a real fill) lines up. */
-		PF.rbufs[0]->buff[0] = AT.SS->lBuffer;
-		PF.rbufs[0]->full[0] = PF.rbufs[0]->fill[0] = PF.rbufs[0]->buff[0];
-		PF.rbufs[0]->stop[0] = PF.rbufs[1]->buff[0] = PF.rbufs[0]->buff[0] + 1;
-		PF.rbufs[1]->full[0] = PF.rbufs[1]->fill[0] = PF.rbufs[1]->buff[0];
-		for ( i = 2; i < nslots; i++ ) {
-			PF.rbufs[i-1]->stop[0] = PF.rbufs[i]->buff[0] = PF.rbufs[i-1]->buff[0] + size;
-			PF.rbufs[i]->full[0] = PF.rbufs[i]->fill[0] = PF.rbufs[i]->buff[0];
-		}
-		PF.rbufs[nslots-1]->stop[0] = PF.rbufs[nslots-1]->buff[0] + size;
-	}
-
-	/* Reset rbufs to initial state and post first MPI_Irecv per leaf. */
-	for ( i = 1; i < nslots; i++ ) {
-		PF.rbufs[i]->active = 0;
-		for ( j = 0; j < PF.rbufs[i]->numbufs; j++ ) {
-			PF.rbufs[i]->full[j] = PF.rbufs[i]->fill[j] = PF.rbufs[i]->buff[j]
-			                                           + AM.MaxTer/sizeof(WORD) + 2;
-			PF.rbufs[i]->request[j] = MPI_REQUEST_NULL;
-		}
-		PF_term[i] = PF.rbufs[i]->fill[PF.rbufs[i]->active];
-		*PF_term[i] = 0;
-		/* Workerix translation: src=i -> actual leaf rank PF.merger_leaf_ranks[i]. */
-		MesPrint("[%d] PF_MergerInit: posting Irecv from rank %d (slot %d, buf [%lld..%lld] %lld words)",
-		         PF.me, PF.merger_leaf_ranks[i], i,
-		         (long long)(PF.rbufs[i]->full[PF.rbufs[i]->active] - PF.rbufs[i]->buff[0]),
-		         (long long)(PF.rbufs[i]->stop[PF.rbufs[i]->active] - PF.rbufs[i]->buff[0]),
-		         (long long)(PF.rbufs[i]->stop[PF.rbufs[i]->active] - PF.rbufs[i]->full[PF.rbufs[i]->active]));
-		if ( PF_IRecvRbuf(PF.rbufs[i], PF.rbufs[i]->active,
-		                  PF.merger_leaf_ranks[i]) ) return -1;
-	}
-	PF.rbufs[0]->active = 0;
-	PF_term[0] = PF.rbufs[0]->buff[0];
-	PF_term[0][0] = 0;
-
-	/* Build the loser tree (numslaves = group_size). Mirrors PF_InitTree:476-515. */
-	int numslaves = groupsz;
-	int numnodes;
-	if ( numslaves < 3 ) numnodes = 1;
-	else {
-		numnodes = 2;
-		while ( numnodes < numslaves ) numnodes *= 2;
-		numnodes -= 1;
-	}
-	if ( PF_root == NULL ) {
-		PF_root = (NODE*)Malloc1((LONG)sizeof(NODE)*numnodes, "merger nodes in mergetree");
-		if ( PF_root == NULL ) return -1;
-	}
-	{
-		int src = 1;
-		for ( i = 0; i < numnodes; i++ ) {
-			if ( 2*(i+1) <= numnodes ) {
-				PF_root[i].left = &(PF_root[2*(i+1)-1]);
-				PF_root[i].lsrc = 0;
-			} else {
-				PF_root[i].left = 0;
-				PF_root[i].lsrc = (src < numslaves+1) ? src++ : 0;
-			}
-			PF_root[i].lloser = 0;
-		}
-		for ( i = 0; i < numnodes; i++ ) {
-			if ( 2*(i+1)+1 <= numnodes ) {
-				PF_root[i].rght = &(PF_root[2*(i+1)]);
-				PF_root[i].rsrc = 0;
-			} else {
-				PF_root[i].rght = 0;
-				PF_root[i].rsrc = (src < numslaves+1) ? src++ : 0;
-			}
-			PF_root[i].rloser = 0;
-		}
-	}
 	return groupsz;
 }
 /*
-	#] PF_MergerInit :
+	#] pf_setup_merger_group :
 	#[ PF_MergerLoop :
 */
 /**
- * Mapper-merger merge loop. Runs after the mapper's own EndSort + "done"-send.
- * Consumes sorted streams from its group of leaf reducers and forwards the
- * merged result to MASTER via the slave-side FlushOut branch (sort.c:2226).
- *
- * Phase 1: no prefix drain (kcap=0). Plain PF_GetLoser + PutOut, mirroring
- * the master's PF_EndSort merge loop (parallel.c:1238-1413) without the drain
- * fast path.
- *
- * The mapper's PF_allocateSbuf has already set up PF.sbufs[0]; re-invoking it
- * here redirects fout->PObuffer back to the sbuf (the mapper's post-EndSort
- * cleanup restored fout to its original PObuffer).
+ * Mapper-merger merge loop. Runs after the mapper's own EndSort + done-send.
+ * Sets up the merger-specific state (group rank table, sort context,
+ * sbuf redirection, in_merger_phase) and delegates to PF_EndSort, which
+ * shares the loser-tree merge body with the master. PF_EndSort uses
+ * pf_loser_src_to_rank() and PF.merger_groupsz to size the tree and route
+ * Irecvs to PF.merger_leaf_ranks[i].
  *
  * @return 0 on success, -1 on error.
  */
 LONG PF_MergerLoop(void)
 {
 	GETIDENTITY
-	MesPrint("[%d] PF_MergerLoop ENTER (G=%d)", PF.me, PF.nummergers);
 	if ( !PF.is_merger || PF.nummergers <= 0 ) return 0;
+
+	if ( pf_setup_merger_group() < 0 ) return -1;
 
 	NewSort(BHEAD0);
 	PF.parallel = 1;
-	/* Gate FlushOut routing (sort.c:2206/2226) so the merger forwards to
-	   MASTER (PF.merger_parent==MASTER on a merger rank) instead of taking
-	   the mapper-shuffle branch that fans out to all reducers. */
+	/* in_merger_phase gates:
+	   - sort.c FlushOut routing (sends to merger_parent == MASTER, not to reducers),
+	   - PF_LowMRsort (disables hash routing during merge phase),
+	   - PF_EndSort's slave-init branch (lets us fall into the shared merge body). */
 	PF.in_merger_phase = 1;
 
-	if ( PF_MergerInit() < 0 ) return -1;
-	MesPrint("[%d] PF_MergerInit done: groupsz=%d leaves[1]=%d",
-	         PF.me, PF.merger_groupsz,
-	         PF.merger_leaf_ranks ? PF.merger_leaf_ranks[1] : -1);
-
-	/* Re-arm fout -> sbuf redirection. The mapper's post-EndSort restore reset
-	   fout->PObuffer to its original; PF_allocateSbuf's non-master branch
-	   re-redirects to sbuf->buff[0]. PF.sbufs[0] already allocated by mapper. */
-	LONG size;
-	if ( (size = PF_allocateSbuf()) == 0 ) {
+	/* Redirect fout->PObuffer onto PF.sbufs[0] so PutOut accumulates into an
+	   MPI send buffer instead of disk. The mapper's PF_allocateSbuf already
+	   built PF.sbufs[0]; this call re-arms the redirection that the
+	   mapper-phase post-EndSort cleanup undid. */
+	if ( PF_allocateSbuf() == 0 ) {
 		MesPrint("[%d] PF_MergerLoop: PF_allocateSbuf failed", PF.me);
+		PF.in_merger_phase = 0;
 		return -1;
 	}
 
-	AR.CompressPointer = AR.CompressBuffer;
-	*AR.CompressPointer = 0;
-
-	FILEHANDLE *fout = AR.outfile;
-	WORD *oldbuff = fout->PObuffer;
-	WORD *oldstop = fout->POstop;
-	LONG  oldsize = fout->POsize;
-
-	POSITION position;
-	SeekScratch(fout, &position);
-
-	int oldgzipCompress = AR.gzipCompress;
-	AR.gzipCompress = 0;
-
-	/* Drive the loser tree. PF_loser=0 triggers the first-fill path inside
-	   PF_GetLoser which calls PF_PutIn on every leaf to seed PF_term. */
-	PF_loser = 0;
-	pf_compare_kcap_want = 0;   /* Phase 1: no K-cap on the merger. */
-
-	MesPrint("[%d] PF_MergerLoop: S->PolyFlag=%d AR.PolyFun=%d AR.PolyFunType=%d",
-	         PF.me, (int)AT.SS->PolyFlag, (int)AR.PolyFun, (int)AR.PolyFunType);
-
-	WORD *outterm;
-	WORD cc;
-	WORD *pp;
-	LONG noutterms = 0;
-	int err = 0;
-
-	LONG iter_cnt = 0;
-	while ( 1 ) {
-		iter_cnt++;
-		PF_loser = PF_GetLoser(PF_root);
-		if ( iter_cnt < 5 || iter_cnt % 50000 == 0 ) {
-			MesPrint("[%d] MergerLoop iter=%lld GetLoser=%d", PF.me, (long long)iter_cnt, (int)PF_loser);
-		}
-		if ( PF_loser == 0 ) break;
-		if ( PF_loser < 0 )  { err = -1; break; }
-
-		outterm = PF_term[PF_loser];
-		noutterms++;
-		if ( noutterms == 1 ) {
-			MesPrint("[%d] PF_MergerLoop: FIRST term received (loser=%d)", PF.me, PF_loser);
-		}
-		if ( noutterms % 10000 == 0 ) {
-			MesPrint("[%d] PF_MergerLoop: noutterms=%lld", PF.me, (long long)noutterms);
-		}
-
-		/* Coefficient-fixup path (mirrors PF_EndSort:1243-1263). */
-		if ( PF_newclen[PF_loser] != 0 ) {
-			outterm = PF_WorkSpace;
-			pp = PF_term[PF_loser];
-			cc = *pp;
-			while ( cc-- ) *outterm++ = *pp++;
-			outterm = (outterm[-1] > 0) ? outterm - outterm[-1] : outterm + outterm[-1];
-			if ( PF_newclen[PF_loser] > 0 ) cc =  (WORD)PF_newclen[PF_loser] - 1;
-			else                            cc = -(WORD)PF_newclen[PF_loser] - 1;
-			pp = PF_newcpos[PF_loser];
-			while ( cc-- ) *outterm++ = *pp++;
-			*outterm++ = PF_newclen[PF_loser];
-			*PF_WorkSpace = outterm - PF_WorkSpace;
-			outterm = PF_WorkSpace;
-			*PF_newcpos[PF_loser] = 0;
-			PF_newclen[PF_loser] = 0;
-		}
-
-		if ( PutOut(BHEAD outterm, &position, fout, 1) < 0 ) { err = -1; break; }
-	}
-
-	MesPrint("[%d] PF_MergerLoop: merge loop done, noutterms=%lld, flushing", PF.me, (long long)noutterms);
-	if ( !err && FlushOut(&position, fout, 0) ) err = -1;
-	MesPrint("[%d] PF_MergerLoop EXIT err=%d", PF.me, err);
-
-	/* Restore fout to its original PObuffer (matches mapper-phase cleanup). */
-	fout->PObuffer = oldbuff;
-	fout->POstop   = oldstop;
-	fout->POsize   = oldsize;
-	fout->POfill   = fout->POfull = fout->PObuffer;
-	AR.gzipCompress = oldgzipCompress;
+	/* Shared merge body (PF_InitTree + loser-tree drive + FlushOut). */
+	LONG ret = PF_EndSort();
 
 	PF.in_merger_phase = 0;
 
-	/* Free the loser tree (PF_root is module-local; reducer/master also free it). */
-	if ( PF_root ) { M_free(PF_root, "merger PF_root"); PF_root = NULL; }
-
-#ifdef PF_PROFILE
-	if ( PF.log ) {
-		UBYTE lbuf[24];
-		NumToStr(lbuf, AC.CModule);
-		fprintf(stderr, "[%d|%s] Merger loop done: %lld terms forwarded to master\n",
-		        PF.me, lbuf, (long long)noutterms);
-		fflush(stderr);
+	/* Restore fout. PF_EndSort writes through fout->PObuffer (= sbuf->buff[0]);
+	   after FlushOut+restore, we must un-redirect for the next module. */
+	{
+		FILEHANDLE *fout = AR.outfile;
+		fout->PObuffer = fout->POfill = fout->POfull = AR.outfile->PObuffer;
+		/* POstop/POsize are restored by EndSort's own cleanup. */
 	}
-#endif
-	return err;
+
+	return ret < 0 ? -1 : 0;
 }
 /*
 	#] PF_MergerLoop :
