@@ -1882,21 +1882,8 @@ static int PF_WaitAllSlaves(void)
 	//allocate an arraay for all the slaves (mappers and reducers) - numtaks + 1- for each slave and for
 	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
 
-	/* In the merger tier, leaf reducers' bulk data goes through the merger,
-	   so they don't participate in the WaitAllSlaves probe loop. Pre-mark
-	   leaf-reducer slots as done; reduce target count so the loop exits
-	   when all mappers have handshaked. PF_STDOUT_MSGTAG/PF_LOG_MSGTAG
-	   draining for leaves' WriteStats happens through PF_PutIn's wait loop
-	   on master once it enters the merge tree (PF_DrainErrorMessages). */
 	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; // reset array
-	if ( AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0 ) {
-		for ( i = PF.nummappers; i < PF.numtasks; i++ ) has_sent[i] = 1;
-	}
-	int target = PF.numtasks;
-	if ( AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0 ) {
-		target = PF.nummappers;
-	}
-	for ( readySlaves = 1; readySlaves < target; ) { //loop until all expected slaves are ready
+	for ( readySlaves = 1; readySlaves < PF.numtasks; ) { //loop until all expected slaves are ready
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
 			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
 				if ( ++next >= PF.numtasks ) next = 1;
@@ -1923,6 +1910,15 @@ static int PF_WaitAllSlaves(void)
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}
 				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers)
+					PF_Wait4Slave(next);
+				/* Merger tier: leaf reducer's data goes to a merger, not to
+				   master, so master's PF_InitTree Irecv from this leaf never
+				   exists. The leaf's explicit PF_Send handshake (sent from
+				   PF_ForwardTermsToMaster) needs to be drained here so the
+				   leaf can unblock and proceed into its sort. */
+				else if ( AC.sMRflag != NO_MAPREDUCE
+				          && PF.nummergers > 0
+				          && next >= PF.nummappers )
 					PF_Wait4Slave(next);
 				//MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next);
 /*
@@ -2728,15 +2724,17 @@ LONG PF_ForwardTermsToMaster()
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
 	oldposition = position;
-	/* When mergers are active, the leaf reducer does NOT send a "done"
-	   handshake to master. Master only expects done signals from mappers
-	   (which include the mapper-merger ranks 1..G) -- see PF_WaitAllSlaves
-	   where the target count is reduced to PF.nummappers when nummergers > 0.
-	   Reducer's bulk data goes to merger; merger sends to master; master
-	   never needs to count the leaf reducer in its loop. */
-	MesPrint("[%d] PF_ForwardTermsToMaster ENTER (merger_parent=%d)", PF.me, PF.merger_parent);
 	if(PF_StoreBuffer() == -1) return -1;
-	MesPrint("[%d] PF_StoreBuffer done, calling EndSort to send to %d", PF.me, PF.merger_parent);
+	/* Merger tier: bulk data goes to merger (not master), so the in-flow
+	   pre-handshake in PF_ISendSbuf (mpi.c) never fires for master. Send an
+	   explicit PF_BUFFER_MSGTAG to master now, after PF_StoreBuffer is done
+	   and before the local sort starts. Master's PF_WaitAllSlaves expects one
+	   such signal per slave (mappers + reducers) and drains it via
+	   PF_Wait4Slave so the leaf doesn't block on this PF_Send. */
+	if ( PF.nummergers > 0 ) {
+		PF_PreparePack();
+		PF_Send(MASTER, PF_BUFFER_MSGTAG);
+	}
 	FILEHANDLE *fout = AR.outfile;
 	WORD *oldbuff = fout->PObuffer;
 	WORD *oldstop = fout->POstop;
@@ -2974,14 +2972,22 @@ LONG PF_MergerLoop(void)
 	PF_loser = 0;
 	pf_compare_kcap_want = 0;   /* Phase 1: no K-cap on the merger. */
 
+	MesPrint("[%d] PF_MergerLoop: S->PolyFlag=%d AR.PolyFun=%d AR.PolyFunType=%d",
+	         PF.me, (int)AT.SS->PolyFlag, (int)AR.PolyFun, (int)AR.PolyFunType);
+
 	WORD *outterm;
 	WORD cc;
 	WORD *pp;
 	LONG noutterms = 0;
 	int err = 0;
 
+	LONG iter_cnt = 0;
 	while ( 1 ) {
+		iter_cnt++;
 		PF_loser = PF_GetLoser(PF_root);
+		if ( iter_cnt < 5 || iter_cnt % 50000 == 0 ) {
+			MesPrint("[%d] MergerLoop iter=%lld GetLoser=%d", PF.me, (long long)iter_cnt, (int)PF_loser);
+		}
 		if ( PF_loser == 0 ) break;
 		if ( PF_loser < 0 )  { err = -1; break; }
 
