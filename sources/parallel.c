@@ -1245,8 +1245,16 @@ int PF_EndSort(void)
 	   compression search. Master decisions drop from O(terms) to
 	   O(distinct-K-prefix-buckets). Disabled when S->PolyFlag != 0
 	   (PolyFun equal-terms path needs the full PF_GetLoser). */
+	/* The prefix-drain is a MASTER-side optimization. Disabled during the
+	   mapper-merger phase: pf_emit_compressed_bulk flushes a full buffer via
+	   WriteFile to disk, but the merger's fout is redirected to an MPI send
+	   buffer -- a drained merger would write merged data to a scratch file
+	   instead of sending it upstream. The merger does a plain PutOut merge
+	   (PutOut routes the slave MPI-send path correctly); the master still
+	   drains the merger streams it receives. */
 	int drain_active = ( AM.MR.HashPrefixWords > 0
-	                  && S->PolyFlag == 0 );
+	                  && S->PolyFlag == 0
+	                  && !PF.in_merger_phase );
 	int dobracketindex = ( AR.sLevel <= 0
 	                  && Expressions[AR.CurExpr].newbracketinfo
 	                  && ( fout == AR.outfile || fout == AR.hidefile ) ) ? 1 : 0;
