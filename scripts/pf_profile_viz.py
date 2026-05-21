@@ -14,12 +14,18 @@ and produces a self-contained interactive HTML report. Panels (single-run):
 - tail statistics         — p50/p95/max per phase per role
 - straggler gap           — (slowest rank wall − mean) / mean, per module
 - wait graph              — sankey of who-blocks-whom (core-seconds of wait)
-- imbalance heatmap       — per-rank wallclock, mapper top / reducer+master below
+- imbalance heatmap       — per-rank wallclock, mapper top / merge tier below
 - merge attribution       — MergePatches firings: largesize-full vs filepatches-cap
 - software throughput     — per-rank MB/s while MPI was actively sending
 - throughput reconciliation — wire (NIC) vs software (offered / while-active)
 - OS counters             — bytes_written, ctxt switches, RSS, disk %util, NIC
 - per-rank Gantt          — one figure per module
+
+When the run used the mapper-merger tier (PF_MERGERS>0), ranks 1..G carry the
+role "merger": they run the full mapper phase and then a second merge pass
+(MER_MERGE / MER_RECV_WAIT / MER_FORWARD_*) over a group of leaf reducers.
+Merger rows therefore show both the mapper phases and the merge phases, and
+appear as their own facet/column in the role-split panels.
 
 Compare mode adds a headline MR-vs-org panel (run wallclock, sort-side & master
 disk writes, bytes to master) and shows phase breakdown / critical-path /
@@ -58,19 +64,42 @@ PHASE_COLS = [
     ("t_mas_final_sort_us",    "MAS_FINAL_SORT",    "master"),
     ("t_mas_collect_us",       "MAS_COLLECT",       "master"),
     ("t_mas_merge_recv_wait_us","MAS_MERGE_RECV_WAIT","master"),
+    ("t_mer_merge_us",         "MER_MERGE",         "merger"),
+    ("t_mer_recv_wait_us",     "MER_RECV_WAIT",     "merger"),
+    ("t_mer_forward_wait_us",  "MER_FORWARD_WAIT",  "merger"),
+    ("t_mer_forward_mpi_us",   "MER_FORWARD_MPI",   "merger"),
 ]
 
 # Phases that are a sub-component of another phase (not additive with the
 # rest of their role's bar). They still get their own Gantt bar but are
 # skipped in the stacked phase-breakdown so the bar isn't double-counted.
-# MAS_MERGE_RECV_WAIT ⊂ MAS_FINAL_SORT.
-NON_ADDITIVE_PHASES = {"MAS_MERGE_RECV_WAIT"}
+# MAS_MERGE_RECV_WAIT ⊂ MAS_FINAL_SORT; MER_RECV_WAIT ⊂ MER_MERGE.
+NON_ADDITIVE_PHASES = {"MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT"}
+
+# Display order for roles. A run without a merger tier simply has no
+# "merger" rows and panels skip the absent role.
+ROLE_ORDER = ("mapper", "reducer", "merger", "master")
+
+# Which phase-role tags a given row-role displays. A mapper-merger rank runs
+# the full mapper phase and THEN the merge pass, so its row owns both the
+# mapper phases and the merger phases.
+ROLE_OWNS = {
+    "mapper":  ("mapper",),
+    "reducer": ("reducer",),
+    "merger":  ("mapper", "merger"),
+    "master":  ("master",),
+}
 
 ROLE_PHASES = {
-    "mapper":  [c for c, _, r in PHASE_COLS if r == "mapper"],
-    "reducer": [c for c, _, r in PHASE_COLS if r == "reducer"],
-    "master":  [c for c, _, r in PHASE_COLS if r == "master"],
+    role: [c for c, _, r in PHASE_COLS if r in owns]
+    for role, owns in ROLE_OWNS.items()
 }
+
+
+def present_roles(df: pd.DataFrame) -> list:
+    """Roles that actually have rows in this run, in display order."""
+    have = set(df["role"].unique())
+    return [r for r in ROLE_ORDER if r in have]
 
 DECISION_MATRIX = [
     {
@@ -159,6 +188,22 @@ DECISION_MATRIX = [
         "rationale": "Some reducers got more terms than others.",
     },
     {
+        "id": "merger_recv_bound",
+        "test": lambda d: d["merger"]["t_mer_merge_us"] > 0.0
+                          and d["merger"]["t_mer_recv_wait_us"] > 0.50 * d["merger"]["t_mer_merge_us"],
+        "diagnosis": "Mapper-mergers spend most of their merge blocked in PF_PutIn waiting for a leaf reducer's next sorted chunk (MER_RECV_WAIT > half of MER_MERGE) — the merge tier is starved by its leaf reducers, not merge-CPU-bound.",
+        "knob": "Speed up leaf-reducer delivery: more reducers (-r<N>) so each finishes & forwards sooner, OR raise reducer largesize/smallext, OR widen the merger tier (more PF_MERGERS so each merger fans in fewer reducers).",
+        "rationale": "A merger can't merge faster than its slowest leaf reducer delivers; the lever is the reducer critical path or a narrower per-merger fan-in, not merge-tree CPU.",
+    },
+    {
+        "id": "merger_forward_bound",
+        "test": lambda d: d["merger"]["t_mer_merge_us"] > 0.0
+                          and d["merger"]["t_mer_forward_wait_us"] > 0.30 * d["merger"]["wallclock_us"],
+        "diagnosis": "Mapper-mergers stall forwarding the merged stream to the master (MER_FORWARD_WAIT > 30% of merger wallclock) — the master consumes slower than the merge tier produces.",
+        "knob": "The bottleneck is downstream at the master, not the merge tier. Check MAS_MERGE_RECV_WAIT / MAS_FINAL_SORT; adding mergers won't help while the master is the slow consumer.",
+        "rationale": "Forward-wait means back-pressure from the master's k-way merge; the merge tier is delivering fine.",
+    },
+    {
         "id": "nic_saturated",
         "test": lambda d: _nic_max_gbps(d) > 0.85 * _nic_peak_gbps(),
         "diagnosis": "NIC link saturated (>85% of assumed peak): bandwidth-bound.",
@@ -179,7 +224,7 @@ DECISION_MATRIX = [
 def _nic_max_gbps(d: dict) -> float:
     """Pull the largest non-NaN nic_xmit_GBps across roles. NaN -> 0."""
     vals = []
-    for role in ("mapper", "reducer", "master"):
+    for role in ROLE_ORDER:
         v = d.get(role, {}).get("nic_xmit_GBps", 0.0)
         try:
             v = float(v)
@@ -215,9 +260,11 @@ def load_csv(run_dir: Path) -> pd.DataFrame:
             ts_col = col.replace("_us", suffix)
             if ts_col not in df.columns:
                 df[ts_col] = -1
-    for col in ("bytes_sent", "bytes_to_master"):
+    for col in ("bytes_sent", "bytes_to_master", "bytes_mer_to_master"):
         if col not in df.columns:
             df[col] = 0
+    if "nummergers" not in df.columns:
+        df["nummergers"] = 0
     df["t_map_hash_pack_us"] = (
         df["t_map_endsort_total_us"]
         - df["t_map_send_wait_us"]
@@ -239,8 +286,11 @@ def load_csv(run_dir: Path) -> pd.DataFrame:
     df["map_throughput_mbps"] = df["bytes_sent"] / map_send_us       # bytes/us = MB/s
     red_fwd_us = (df["t_red_forward_wait_us"] + df["t_red_forward_mpi_us"]).clip(lower=1)
     df["red_throughput_mbps"] = df["bytes_to_master"] / red_fwd_us
-    df.loc[df["bytes_sent"] == 0,       "map_throughput_mbps"] = float("nan")
-    df.loc[df["bytes_to_master"] == 0,  "red_throughput_mbps"] = float("nan")
+    mer_fwd_us = (df["t_mer_forward_wait_us"] + df["t_mer_forward_mpi_us"]).clip(lower=1)
+    df["mer_throughput_mbps"] = df["bytes_mer_to_master"] / mer_fwd_us
+    df.loc[df["bytes_sent"] == 0,          "map_throughput_mbps"] = float("nan")
+    df.loc[df["bytes_to_master"] == 0,     "red_throughput_mbps"] = float("nan")
+    df.loc[df["bytes_mer_to_master"] == 0, "mer_throughput_mbps"] = float("nan")
 
     leader = df[df["node_disk_time_in_io_ms"] >= 0].copy()
     if not leader.empty:
@@ -273,7 +323,10 @@ def load_csv(run_dir: Path) -> pd.DataFrame:
 
 def role_aggregates(df: pd.DataFrame) -> dict:
     agg = {}
-    for role in ("mapper", "reducer", "master"):
+    # Iterate every role (not just the ones present) so decision-matrix rules
+    # can index d["merger"] / d["reducer"] unconditionally — an absent role
+    # gets a zero-dict and its rules simply never fire.
+    for role in ROLE_ORDER:
         sub = df[df["role"] == role]
         if sub.empty:
             agg[role] = {col: 0.0 for col in df.select_dtypes("number").columns}
@@ -311,21 +364,29 @@ def evaluate_decision(df: pd.DataFrame) -> list:
 
 
 def fig_phase_breakdown(df: pd.DataFrame, title_suffix: str = "") -> go.Figure:
+    roles = present_roles(df)
+    if not roles:
+        return go.Figure()
     fig = make_subplots(
-        rows=1, cols=3, subplot_titles=("Mapper", "Reducer", "Master"),
+        rows=1, cols=len(roles), subplot_titles=[r.capitalize() for r in roles],
         shared_yaxes=False,
     )
-    for col_idx, role in enumerate(("mapper", "reducer", "master"), start=1):
+    # A merger column stacks both the mapper phases and the merge phase, so
+    # phase labels can recur across columns — dedupe the legend with a set.
+    shown = set()
+    for col_idx, role in enumerate(roles, start=1):
         sub = df[df["role"] == role]
         for phase_col, phase_label, phase_role in PHASE_COLS:
-            if phase_role != role or phase_label in NON_ADDITIVE_PHASES:
+            if phase_role not in ROLE_OWNS[role] or phase_label in NON_ADDITIVE_PHASES:
                 continue
             grouped = sub.groupby("module")[phase_col].mean() / 1.0e6
+            sl = phase_label not in shown
+            shown.add(phase_label)
             fig.add_trace(
                 go.Bar(
                     x=grouped.index, y=grouped.values, name=phase_label,
                     legendgroup=phase_label,
-                    showlegend=(col_idx == 1),
+                    showlegend=sl,
                 ),
                 row=1, col=col_idx,
             )
@@ -351,8 +412,8 @@ def fig_per_rank_gantt(df: pd.DataFrame, module: int) -> go.Figure:
     and max(last) across {RECV, COPY, MERGE} per rank and emit one bar.
     """
     sub = df[df["module"] == module].sort_values(["role", "rank"])
-    # Sort y-axis: master first, then mappers, then reducers, by rank within.
-    role_order = {"master": 0, "mapper": 1, "reducer": 2}
+    # Sort y-axis: master first, then mappers, mergers, reducers, by rank.
+    role_order = {"master": 0, "mapper": 1, "merger": 2, "reducer": 3}
     sub = sub.assign(__rorder=sub["role"].map(role_order)).sort_values(["__rorder", "rank"])
     y_labels = [f"r{r} ({role})" for r, role in zip(sub["rank"], sub["role"])]
     fig = go.Figure()
@@ -362,10 +423,10 @@ def fig_per_rank_gantt(df: pd.DataFrame, module: int) -> go.Figure:
         if first_col not in sub.columns or last_col not in sub.columns:
             continue
         # Filter: phase fired (first >= 0), positive window, and the rank's
-        # role matches the phase's role (so mapper rows don't show RED_* and
-        # vice versa even if a stray timestamp slips in).
-        mask = (sub[first_col] >= 0) & (sub[last_col] > sub[first_col]) \
-               & (sub["role"] == phase_role)
+        # role owns the phase's role (so mapper rows don't show RED_*; a
+        # merger row owns both the mapper phases and the merge phases).
+        owns = sub["role"].map(lambda rr: phase_role in ROLE_OWNS.get(rr, ()))
+        mask = (sub[first_col] >= 0) & (sub[last_col] > sub[first_col]) & owns
         rows = sub[mask]
         if rows.empty:
             continue
@@ -408,10 +469,10 @@ def fig_imbalance_heatmap(df: pd.DataFrame) -> go.Figure:
     """Imbalance heatmap split by module, two panels.
 
     - Top: mapper imbalance, rank x module, z = wallclock seconds.
-    - Bottom: reducer + master fused, with a blank-row separator between
-      the reducer block and the master row(s). Single colorscale across
-      reducer+master so the master row is directly comparable to its
-      reducers in absolute time.
+    - Bottom: the merge tier fused — reducer, then merger, then master,
+      each present block separated by a blank row. Single colorscale across
+      the block so the master row is directly comparable to the reducers
+      and mergers feeding it. (No merger tier ⇒ just reducer + master.)
     """
     def _pivot(role: str):
         sub = df[df["role"] == role]
@@ -424,36 +485,39 @@ def fig_imbalance_heatmap(df: pd.DataFrame) -> go.Figure:
 
     p_map = _pivot("mapper")
     p_red = _pivot("reducer")
+    p_mer = _pivot("merger")
     p_mas = _pivot("master")
 
-    if p_map is None and p_red is None and p_mas is None:
+    if all(p is None for p in (p_map, p_red, p_mer, p_mas)):
         return go.Figure()
 
     # Determine module axis (any non-empty pivot's columns work; they should match).
-    for p in (p_map, p_red, p_mas):
+    for p in (p_map, p_red, p_mer, p_mas):
         if p is not None:
             modules = p.columns.tolist()
             break
 
-    # Build fused reducer+master block (reducers first, blank separator, then master).
-    fused_y, fused_z = [], []
-    if p_red is not None:
-        for r in p_red.index.tolist():
-            fused_y.append(f"r{r} (reducer)")
-            fused_z.append(p_red.loc[r].reindex(modules).values)
-    if p_red is not None and p_mas is not None:
-        fused_y.append(" ")
-        fused_z.append([float("nan")] * len(modules))
-    if p_mas is not None:
-        for r in p_mas.index.tolist():
-            fused_y.append(f"r{r} (master)")
-            fused_z.append(p_mas.loc[r].reindex(modules).values)
+    # Fused bottom panel: reducer -> merger -> master (data-flow order toward
+    # the master), each present block separated by a blank row.
+    fused_y, fused_z, sep_rows, fused_blocks = [], [], [], []
+    for role_tag, pv in (("reducer", p_red), ("merger", p_mer), ("master", p_mas)):
+        if pv is None:
+            continue
+        if fused_y:                       # blank separator before this block
+            sep_rows.append(len(fused_y))
+            fused_y.append(" " * len(sep_rows))   # unique all-blank label
+            fused_z.append([float("nan")] * len(modules))
+        for r in pv.index.tolist():
+            fused_y.append(f"r{r} ({role_tag})")
+            fused_z.append(pv.loc[r].reindex(modules).values)
+        fused_blocks.append(role_tag)
 
     panels = []
     if p_map is not None:
         panels.append(("mapper",  "Mapper imbalance — wallclock per module"))
     if fused_y:
-        panels.append(("fused",   "Reducer + master (aside) — wallclock per module"))
+        panels.append(("fused",
+                       " + ".join(fused_blocks) + " (aside) — wallclock per module"))
 
     n = len(panels)
     row_heights = []
@@ -502,20 +566,19 @@ def fig_imbalance_heatmap(df: pd.DataFrame) -> go.Figure:
             x=modules,
             y=fused_y,
             colorscale="Cividis",
-            colorbar=dict(title="reducer/<br>master<br>time (s)", len=cb_len, y=cb_y),
+            colorbar=dict(title="merge tier<br>time (s)", len=cb_len, y=cb_y),
             zmin=0,
             hovertemplate="rank=%{y}<br>module=%{x}<br>time=%{z:.2f}s<extra></extra>",
         ), row=row_idx, col=1)
         fig.update_yaxes(title_text="rank", row=row_idx, col=1)
-        # Mark the separator with a horizontal line if both blocks present.
-        if p_red is not None and p_mas is not None:
-            sep_y = len(p_red)  # blank row sits at this y-index
-            fig.add_hline(y=sep_y - 0.5, line_dash="dot", line_color="black",
+        # Mark each block boundary with a horizontal line.
+        for sep in sep_rows:
+            fig.add_hline(y=sep - 0.5, line_dash="dot", line_color="black",
                           row=row_idx, col=1)
 
     fig.update_xaxes(title_text="module", row=n, col=1)
     fig.update_layout(
-        title="Imbalance per module (mapper top, reducer+master bottom)",
+        title="Imbalance per module (mapper top, merge tier bottom)",
         height=max(500, 22 * total_h + 180),
     )
     return fig
@@ -556,6 +619,14 @@ def fig_software_throughput(df: pd.DataFrame) -> go.Figure:
             panels.append(("reducer", red_pivot,
                            "Reducer->master forward MB/s per rank"))
 
+    mer_sub = df[df["role"] == "merger"]
+    if not mer_sub.empty:
+        mer_pivot = mer_sub.pivot_table(index="rank", columns="module",
+                                        values="mer_throughput_mbps", aggfunc="mean")
+        if mer_pivot.dropna(how="all").shape[0] > 0:
+            panels.append(("merger", mer_pivot,
+                           "Merger->master forward MB/s per rank"))
+
     if not panels:
         return go.Figure()
 
@@ -579,7 +650,8 @@ def fig_software_throughput(df: pd.DataFrame) -> go.Figure:
             z=pivot.values,
             x=pivot.columns.tolist(),
             y=[f"r{r}" for r in pivot.index.tolist()],
-            colorscale="Plasma" if role == "mapper" else "Cividis",
+            colorscale={"mapper": "Plasma", "reducer": "Cividis",
+                        "merger": "Viridis"}.get(role, "Cividis"),
             colorbar=dict(title=f"{role}<br>MB/s", len=cb_len, y=cb_y),
             zmin=0, zmax=peak_mbps,
             hovertemplate="rank=%{y}<br>module=%{x}<br>%{z:.0f} MB/s<extra></extra>",
@@ -607,7 +679,7 @@ def fig_os_counters(df: pd.DataFrame) -> go.Figure:
             "NIC RX GB/s (node-leader; -1 -> blank)",
         ),
     )
-    for role in ("mapper", "reducer", "master"):
+    for role in present_roles(df):
         sub = df[df["role"] == role]
         if sub.empty:
             continue
@@ -797,14 +869,22 @@ def fig_mr_effectiveness(df: pd.DataFrame) -> go.Figure:
     disk writes, mean shipped term size. In a non-MR run reducers are absent
     and 'out' falls back to slave→master bytes (ratio ≈ 1)."""
     has_red = (df["role"] == "reducer").any()
+    has_mer = (df["role"] == "merger").any()
     rows = []
     for module in sorted(df["module"].unique()):
         sub = df[df["module"] == module]
         m = sub[sub["role"] == "mapper"]
         r = sub[sub["role"] == "reducer"]
+        g = sub[sub["role"] == "merger"]
         s = sub[sub["role"] == "master"]
-        bytes_in = float(m["bytes_sent"].sum())
-        bytes_out = float(r["bytes_to_master"].sum()) if has_red and not r.empty else bytes_in
+        # Merger ranks are mapper ranks; their mapper-phase shuffle counts as in.
+        bytes_in = float(m["bytes_sent"].sum()) + float(g["bytes_sent"].sum())
+        if has_mer and not g.empty:
+            bytes_out = float(g["bytes_mer_to_master"].sum())   # mergers are the last hop
+        elif has_red and not r.empty:
+            bytes_out = float(r["bytes_to_master"].sum())
+        else:
+            bytes_out = bytes_in
         terms = float(sub["terms_sent"].sum())
         rows.append(dict(
             module=str(module), bytes_in=bytes_in, bytes_out=bytes_out,
@@ -812,6 +892,7 @@ def fig_mr_effectiveness(df: pd.DataFrame) -> go.Figure:
             bpt=(bytes_in / terms) if terms > 0 else float("nan"),
             io_map=float(m["io_write_bytes"].sum()),
             io_red=float(r["io_write_bytes"].sum()) if not r.empty else 0.0,
+            io_mer=float(g["io_write_bytes"].sum()) if not g.empty else 0.0,
             io_mas=float(s["io_write_bytes"].sum()),
         ))
     mods = [x["module"] for x in rows]
@@ -831,6 +912,8 @@ def fig_mr_effectiveness(df: pd.DataFrame) -> go.Figure:
     fig.add_hline(y=1.0, line_dash="dot", row=1, col=2)
     fig.add_trace(go.Bar(x=mods, y=[x["io_map"] / GB for x in rows], name="mapper io_write"), 2, 1)
     fig.add_trace(go.Bar(x=mods, y=[x["io_red"] / GB for x in rows], name="reducer io_write"), 2, 1)
+    if has_mer:
+        fig.add_trace(go.Bar(x=mods, y=[x["io_mer"] / GB for x in rows], name="merger io_write"), 2, 1)
     fig.add_trace(go.Bar(x=mods, y=[x["io_mas"] / GB for x in rows], name="master io_write"), 2, 1)
     fig.add_trace(go.Scatter(x=mods, y=[x["bpt"] for x in rows], mode="lines+markers",
                              name="bytes / term"), 2, 2)
@@ -862,6 +945,7 @@ def fig_critical_path(df: pd.DataFrame, modules=None) -> go.Figure:
         sub = df[df["module"] == module]
         m = sub[sub["role"] == "mapper"]
         r = sub[sub["role"] == "reducer"]
+        g = sub[sub["role"] == "merger"]
         s = sub[sub["role"] == "master"]
         wall_s = _module_wall_us(df, module) / 1e6
         stages = [("module wall", 0.0, wall_s, "lightgray", f"module {module} wallclock {wall_s:.1f}s")]
@@ -882,12 +966,19 @@ def fig_critical_path(df: pd.DataFrame, modules=None) -> go.Figure:
             sp = _span_s(r, ["t_red_forward_wait_first_us", "t_red_forward_mpi_first_us"],
                             ["t_red_forward_wait_last_us", "t_red_forward_mpi_last_us"])
             if sp:
-                stages.append(("reducer→master forward", sp[0], sp[1], None, "reducers shipping sorted stream to master"))
+                fwd_sink = "merger" if not g.empty else "master"
+                stages.append((f"reducer→{fwd_sink} forward", sp[0], sp[1], None,
+                               f"reducers shipping sorted stream to {fwd_sink}"))
         else:
             sp = _span_s(m, ["t_map_send_wait_first_us", "t_map_send_mpi_first_us"],
                             ["t_map_send_wait_last_us", "t_map_send_mpi_last_us"])
             if sp:
                 stages.append(("slave→master send", sp[0], sp[1], None, "slaves shipping to master (non-MR)"))
+        if not g.empty:
+            sp = _span_s(g, ["t_mer_merge_first_us"], ["t_mer_merge_last_us"])
+            if sp:
+                stages.append(("merger merge", sp[0], sp[1], None,
+                               "mapper-mergers k-way merging leaf reducers + forwarding to master"))
         sp = _span_s(s, ["t_mas_collect_first_us"], ["t_mas_collect_last_us"])
         if sp:
             stages.append(("master collect", sp[0], sp[1], None, "master receiving from reducers / slaves"))
@@ -933,6 +1024,14 @@ _COVERAGE_SEGMENTS = {
     "master":  [("MAS_DISTRIBUTE", "t_mas_distribute_us"),
                 ("MAS_FINAL_SORT", "t_mas_final_sort_us"),
                 ("MAS_COLLECT", "t_mas_collect_us")],
+    # A merger runs the mapper phase then the merge pass; MER_RECV/FORWARD
+    # are sub-components of MER_MERGE, so only MER_MERGE is disjoint. The
+    # gap between the mapper phase and the merge shows up as UNACCOUNTED
+    # (the merger idle, waiting for its leaf reducers to start delivering).
+    "merger":  [("MAP_GENERATOR", "t_map_generator_us"),
+                ("MAP_ENDSORT_TOTAL", "t_map_endsort_total_us"),
+                ("MAP_GETTERM_WAIT", "t_map_getterm_wait_us"),
+                ("MER_MERGE", "t_mer_merge_us")],
 }
 
 
@@ -941,9 +1040,13 @@ def fig_coverage(df: pd.DataFrame) -> go.Figure:
     explicit UNACCOUNTED segment (= wallclock − Σ phases). A large grey
     segment on some role means the profiler is blind there — candidate for a
     new PF_TIMER bracket."""
-    fig = make_subplots(rows=1, cols=3, subplot_titles=("Mapper", "Reducer", "Master"))
+    roles = present_roles(df)
+    if not roles:
+        return go.Figure()
+    fig = make_subplots(rows=1, cols=len(roles),
+                        subplot_titles=[r.capitalize() for r in roles])
     shown = set()
-    for ci, role in enumerate(("mapper", "reducer", "master"), start=1):
+    for ci, role in enumerate(roles, start=1):
         sub = df[df["role"] == role]
         if sub.empty:
             continue
@@ -987,6 +1090,9 @@ def fig_tail_stats(df: pd.DataFrame) -> go.Figure:
         "reducer": ["wallclock_us", "t_red_recv_wait_us", "t_red_buffer_copy_us",
                     "t_red_merge_patches_us", "t_red_final_sort_us", "t_red_forward_wait_us",
                     "t_red_store_us"],
+        "merger":  ["wallclock_us", "t_map_generator_us", "t_map_endsort_total_us",
+                    "t_mer_merge_us", "t_mer_recv_wait_us", "t_mer_forward_wait_us",
+                    "t_mer_forward_mpi_us"],
         "master":  ["wallclock_us", "t_mas_distribute_us", "t_mas_distribute_wait_us",
                     "t_mas_final_sort_us", "t_mas_merge_recv_wait_us", "t_mas_collect_us"],
     }
@@ -1020,7 +1126,7 @@ def fig_straggler_gap(df: pd.DataFrame) -> go.Figure:
     reducers — the load imbalance the role-mean panels hide."""
     fig = go.Figure()
     any_data = False
-    for role in ("mapper", "reducer"):
+    for role in ("mapper", "reducer", "merger"):
         sub = df[df["role"] == role]
         if sub.empty:
             continue
@@ -1046,7 +1152,9 @@ def fig_wait_graph(df: pd.DataFrame) -> go.Figure:
     all ranks and modules."""
     m = df[df["role"] == "mapper"]
     r = df[df["role"] == "reducer"]
+    g = df[df["role"] == "merger"]
     s = df[df["role"] == "master"]
+    has_mer = not g.empty
 
     def col(sub, c):
         return float(sub[c].sum()) / 1e6 if (not sub.empty and c in sub.columns) else 0.0
@@ -1058,28 +1166,47 @@ def fig_wait_graph(df: pd.DataFrame) -> go.Figure:
          "mappers blocked on full send buffers (reducer back-pressure)"),
         ("mappers",  "reducers", col(r, "t_red_recv_wait_us"),
          "reducers idle waiting for mapper terms"),
-        ("master",   "reducers", col(r, "t_red_forward_wait_us"),
-         "reducers blocked forwarding sorted stream to master"),
         ("mappers",  "master",   col(s, "t_mas_distribute_wait_us"),
          "master blocked in PF_Wait4Slave during term distribution"),
-        ("reducers", "master",   col(s, "t_mas_merge_recv_wait_us"),
-         "master blocked mid-merge waiting for a reducer's next sorted chunk (PF_PutIn)"),
         ("reducers", "master",   col(s, "t_mas_collect_us"),
          "master idle in end-of-module collect loop (last rank to report stats)"),
     ]
+    if has_mer:
+        # Merge tier: reducers feed the mergers, the mergers feed the master.
+        flows += [
+            ("mergers",  "reducers", col(r, "t_red_forward_wait_us"),
+             "reducers blocked forwarding sorted stream to their merger"),
+            ("reducers", "mergers",  col(g, "t_mer_recv_wait_us"),
+             "mergers blocked mid-merge waiting for a leaf reducer's next sorted chunk (PF_PutIn)"),
+            ("master",   "mergers",  col(g, "t_mer_forward_wait_us"),
+             "mergers blocked forwarding the merged stream to master"),
+            ("mergers",  "master",   col(s, "t_mas_merge_recv_wait_us"),
+             "master blocked mid-merge waiting for a merger's next sorted chunk (PF_PutIn)"),
+        ]
+    else:
+        flows += [
+            ("master",   "reducers", col(r, "t_red_forward_wait_us"),
+             "reducers blocked forwarding sorted stream to master"),
+            ("reducers", "master",   col(s, "t_mas_merge_recv_wait_us"),
+             "master blocked mid-merge waiting for a reducer's next sorted chunk (PF_PutIn)"),
+        ]
     flows = [f for f in flows if f[2] > 1e-6]
     if not flows:
         fig = go.Figure()
         fig.add_annotation(text="no significant wait time recorded", showarrow=False)
         fig.update_layout(title="Wait graph: who blocks whom", height=300)
         return fig
-    blockers = {"master": "master ▶ blocks", "mappers": "mappers ▶ block", "reducers": "reducers ▶ block"}
-    waiters = {"mappers": "mappers (idle)", "reducers": "reducers (idle)", "master": "master (idle)"}
+    blockers = {"master": "master ▶ blocks", "mappers": "mappers ▶ block",
+                "reducers": "reducers ▶ block", "mergers": "mergers ▶ block"}
+    waiters = {"mappers": "mappers (idle)", "reducers": "reducers (idle)",
+               "mergers": "mergers (idle)", "master": "master (idle)"}
+    bnodes = ("master", "mappers", "reducers") + (("mergers",) if has_mer else ())
+    wnodes = ("mappers", "reducers") + (("mergers",) if has_mer else ()) + ("master",)
     node_labels, bidx, widx = [], {}, {}
-    for k in ("master", "mappers", "reducers"):
+    for k in bnodes:
         bidx[k] = len(node_labels)
         node_labels.append(blockers[k])
-    for k in ("mappers", "reducers", "master"):
+    for k in wnodes:
         widx[k] = len(node_labels)
         node_labels.append(waiters[k])
     val = [f[2] for f in flows]
@@ -1194,15 +1321,15 @@ def fig_compare_headline(mr: pd.DataFrame, org: pd.DataFrame) -> go.Figure:
 SECTION_DOCS = {
     "module_dominance": "Which module is the run. Optimize the tall bars; the cumulative line tells you when you've covered most of the wall.",
     "effective_utilization": "Σ(rank wallclock) / (module wall × #ranks). Low % ⇒ many cores idle — the headline 'is parallelism working' number.",
-    "phase_breakdown": "Stacked phase time per module per role (means). Mapper bar still over-stacks: ENDSORT_TOTAL already contains SEND_WAIT/SEND_MPI/HASH_PACK — see 'phase coverage' for the non-double-counted view. MAS_MERGE_RECV_WAIT (⊂ MAS_FINAL_SORT) is shown only in the Gantt and tail-stats, not stacked here.",
+    "phase_breakdown": "Stacked phase time per module per role (means). Mapper bar still over-stacks: ENDSORT_TOTAL already contains SEND_WAIT/SEND_MPI/HASH_PACK — see 'phase coverage' for the non-double-counted view. MAS_MERGE_RECV_WAIT (⊂ MAS_FINAL_SORT) and MER_RECV_WAIT (⊂ MER_MERGE) are shown only in the Gantt and tail-stats, not stacked here. The merger column stacks the mapper phases plus MER_MERGE — a merger rank does both jobs.",
     "phase_coverage": "Disjoint phases + an explicit UNACCOUNTED residual. A big grey segment on a role = profiler blind spot worth a new PF_TIMER bracket.",
     "critical_path": "Per module, the time envelope of each pipeline stage vs the module-wall backdrop. Gaps between stages and leading/trailing slack against the backdrop are pipeline fill+drain — what overlap can't hide.",
     "mr_effectiveness": "The point of this fork. dedup ratio < 1 ⇒ reducers shrank the stream before the master; compare reducer vs master io_write to see disk saved.",
     "decision": "Heuristic rule matches → recommended next knob. Thresholds are starting points, not law.",
     "tail_statistics": "p50 / p95 / max per phase. Wallclock is set by the slowest rank — watch max/mean, not the means the other panels show.",
     "straggler_gap": "(slowest-rank wall − mean) / mean per module. High ⇒ load imbalance; cross-check the imbalance heatmap and (for reducers) hash distribution.",
-    "wait_graph": "Recorded wait time as flows from the role that holds things up to the role that idles. The reducers→master 'mid-merge' flow is MAS_MERGE_RECV_WAIT — the time the master sat blocked in PF_PutIn for a reducer's next sorted chunk (the real 'master waited for reducers' number); the second reducers→master flow is the end-of-module collect tail.",
-    "imbalance": "Per-rank wallclock heatmap, mapper top, reducer+master below.",
+    "wait_graph": "Recorded wait time as flows from the role that holds things up to the role that idles. The 'mid-merge' flow into the master is MAS_MERGE_RECV_WAIT — time the master sat blocked in PF_PutIn for its next sorted chunk (from reducers, or from mergers when the merge tier is active). With a merge tier you also see reducers→mergers (MER_RECV_WAIT) and master→mergers (MER_FORWARD_WAIT).",
+    "imbalance": "Per-rank wallclock heatmap, mapper top, merge tier (reducer → merger → master) below.",
     "merge_attribution": "Why MergePatches fired — large-buffer-full (→ largesize/smallext) vs patch-cap (→ filepatches). Picks the knob the decision matrix only guesses at.",
     "software_throughput": "Per-rank MB/s while MPI was actively sending (bytes / send-time). NaN = no traffic that module.",
     "throughput_reconciliation": "Wire (NIC, host-wide) vs software throughput. High while-active rate but low NIC ⇒ handshake/rendezvous overhead, not bandwidth.",
@@ -1276,23 +1403,27 @@ def render_compare(mr_dir: Path, org_dir: Path) -> Path:
     mr["__src"] = "MR"
     org["__src"] = "org"
     combined = pd.concat([mr, org], ignore_index=True)
+    roles = present_roles(combined)
     fig_phase = make_subplots(
-        rows=2, cols=3,
-        subplot_titles=("MR mapper", "MR reducer", "MR master",
-                        "org mapper", "org reducer", "org master"),
+        rows=2, cols=len(roles),
+        subplot_titles=[f"{src} {role}"
+                        for src in ("MR", "org") for role in roles],
     )
+    shown = set()
     for row_idx, src in enumerate(("MR", "org"), start=1):
         sub_all = combined[combined["__src"] == src]
-        for col_idx, role in enumerate(("mapper", "reducer", "master"), start=1):
+        for col_idx, role in enumerate(roles, start=1):
             sub = sub_all[sub_all["role"] == role]
             for phase_col, phase_label, phase_role in PHASE_COLS:
-                if phase_role != role or phase_label in NON_ADDITIVE_PHASES:
+                if phase_role not in ROLE_OWNS[role] or phase_label in NON_ADDITIVE_PHASES:
                     continue
                 grouped = sub.groupby("module")[phase_col].mean() / 1.0e6
+                sl = phase_label not in shown
+                shown.add(phase_label)
                 fig_phase.add_trace(go.Bar(
                     x=grouped.index, y=grouped.values, name=f"{src}/{phase_label}",
                     legendgroup=phase_label,
-                    showlegend=(row_idx == 1 and col_idx == 1),
+                    showlegend=sl,
                 ), row=row_idx, col=col_idx)
             fig_phase.update_xaxes(title_text="module", row=row_idx, col=col_idx)
             fig_phase.update_yaxes(title_text="time (s)", row=row_idx, col=col_idx)

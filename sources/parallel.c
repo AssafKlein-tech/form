@@ -441,6 +441,13 @@ static int PF_InitTree(void)
 		numtasks = PF.nummergers + 1;
 	else
 		numtasks = PF.numreducers + 1;
+	/* PF.rbufs is allocated once and cached across modules; size the array
+	   (and its PF_AllocBuf fill loop) to the largest numtasks this rank will
+	   ever pass, NOT the current module's. The per-module working loops
+	   below still use `numtasks`. Master: a non-MR module fans in from every
+	   rank -> PF.numtasks is the max. Merger: merger_groupsz+1, constant
+	   across all PF_MergerLoop calls, so its own numtasks is the max. */
+	int alloc_numtasks = PF.is_merger ? numtasks : PF.numtasks;
 	int workerIdx,numrbufs;
 	int i, j, src, numnodes;
 	int numslaves = numtasks - 1;
@@ -463,9 +470,9 @@ static int PF_InitTree(void)
 	//size = size / 512;
 
 	if ( rbuf == NULL ) {
-		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
+		if ( ( rbuf = (PF_BUFFER**)Malloc1(alloc_numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
 		if ( (rbuf[0] = PF_AllocBuf(1,0,1) ) == NULL ) return(-1);
-		for ( i = 1; i < numtasks; i++ ) {
+		for ( i = 1; i < alloc_numtasks; i++ ) {
 			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,1))) return(-1);
 		}
 	}
@@ -589,9 +596,13 @@ static WORD *PF_PutIn(int src)
 			very first term from this src
 */
 		{
-			PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
+#ifdef PF_PROFILE
+			int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+			                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
+#endif
+			PF_TIMER_BEGIN_RT(rw);
 			tag = PF_WaitRbuf(rbuf,a,&size);
-			PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+			PF_TIMER_END_RT(rw, _pf_rw);
 		}
 		rbuf->full[a] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) *rbuf->full[a]++ = 0;
@@ -648,9 +659,13 @@ newterms:
 		//MesPrint("[%d] PF_PutIn: Wait the next buffer to be filled from %d active buffer %d ", PF.me, workerIdx, next);
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 		{
-			PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
+#ifdef PF_PROFILE
+			int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+			                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
+#endif
+			PF_TIMER_BEGIN_RT(rw);
 			tag = PF_WaitRbuf(rbuf,next,&size);
-			PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+			PF_TIMER_END_RT(rw, _pf_rw);
 		}
 		//MesPrint("[%d] PF_PutIn: got new terms tag %d", PF.me, tag);
 		rbuf->full[next] += size;
@@ -694,10 +709,12 @@ newterms:
 */
 
 /**
- * Master prefix-drain bulk emit: copy a run of n_terms consecutive
- * compressed terms from rbuf (already verified to share the K-prefix
- * with the just-emitted term T_i) straight to fout's POfill, bypassing
- * PutOut and all per-term decompression.
+ * Prefix-drain bulk emit (master or mapper-merger): copy a run of n_terms
+ * consecutive compressed terms from rbuf (already verified to share the
+ * K-prefix with the just-emitted term T_i) straight to fout's POfill,
+ * bypassing PutOut and all per-term decompression. The buffer-full flush
+ * goes to disk on the master and upstream via MPI on a merger
+ * (branch on PF.in_merger_phase).
  *
  * Correctness:
  *   - Wire format both reducer and master produce is identical:
@@ -735,6 +752,22 @@ static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
 	while ( remaining > 0 ) {
 		LONG space = (LONG)(fi->POstop - p);
 		if ( space <= 0 ) {
+		  if ( PF.in_merger_phase ) {
+			/* Merger: the output buffer is an MPI send buffer, not a file.
+			   Flush the full buffer upstream to MASTER, mirroring PutOut's
+			   sbuf-flush block (sort.c). The merger's single send buffer is
+			   PF.sbufs[MASTER]; PF_WISendSbuf passes BUFFER framing through
+			   unchanged while PF.in_merger_phase is set. */
+			PF_BUFFER *sbuf = PF.sbufs[MASTER];
+			sbuf->fill[sbuf->active] = fi->POstop;
+			PF_WISendSbuf(PF_BUFFER_MSGTAG, PF.merger_parent);
+			p = fi->PObuffer = fi->POfill = fi->POfull
+			  = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active]
+			  = sbuf->buff[sbuf->active];
+			fi->POstop = sbuf->stop[sbuf->active];
+			space = (LONG)(fi->POstop - p);
+		  }
+		  else {
 			/* Flush. Same shape as PutOut's block. */
 			if ( fi->handle < 0 ) {
 				if ( ( RetCode = CreateFile(fi->name) ) >= 0 ) {
@@ -772,6 +805,7 @@ static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
 			UNLOCK(fi->pthreadslock);
 #endif
 			space = (LONG)(fi->POstop - p);
+		  }
 		}
 		{
 			LONG ncopy = (remaining < space) ? remaining : space;
@@ -1245,16 +1279,19 @@ int PF_EndSort(void)
 	   compression search. Master decisions drop from O(terms) to
 	   O(distinct-K-prefix-buckets). Disabled when S->PolyFlag != 0
 	   (PolyFun equal-terms path needs the full PF_GetLoser). */
-	/* The prefix-drain is a MASTER-side optimization. Disabled during the
-	   mapper-merger phase: pf_emit_compressed_bulk flushes a full buffer via
-	   WriteFile to disk, but the merger's fout is redirected to an MPI send
-	   buffer -- a drained merger would write merged data to a scratch file
-	   instead of sending it upstream. The merger does a plain PutOut merge
-	   (PutOut routes the slave MPI-send path correctly); the master still
-	   drains the merger streams it receives. */
+	/* The prefix-drain runs on the master AND on mapper-mergers. The drain
+	   invariant is K-prefix based: all terms sharing a K-prefix route to one
+	   reducer, so each reducer's -- and thus each merger leaf-group's --
+	   K-prefix set is disjoint; a drained run is guaranteed to be the whole
+	   bucket and no other input stream can hold those terms.
+	   pf_emit_compressed_bulk branches on PF.in_merger_phase: on the master
+	   it WriteFile-flushes a full buffer to the scratch file; on a merger it
+	   MPI-sends the full buffer upstream to MASTER (the merger's fout is
+	   redirected to a send buffer). The K-cap on PF_GetLoser's CompareTerms
+	   is likewise correct on the merger -- cross-leaf terms were routed to
+	   different reducers, so they differ within the first K words. */
 	int drain_active = ( AM.MR.HashPrefixWords > 0
-	                  && S->PolyFlag == 0
-	                  && !PF.in_merger_phase );
+	                  && S->PolyFlag == 0 );
 	int dobracketindex = ( AR.sLevel <= 0
 	                  && Expressions[AR.CurExpr].newbracketinfo
 	                  && ( fout == AR.outfile || fout == AR.hidefile ) ) ? 1 : 0;
@@ -1389,9 +1426,15 @@ int PF_EndSort(void)
 					}
 
 					rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
-					PF_TIMER_BEGIN(MAS_MERGE_RECV_WAIT);
-					tag = PF_WaitRbuf(rbuf, next, &size);
-					PF_TIMER_END(MAS_MERGE_RECV_WAIT);
+					{
+#ifdef PF_PROFILE
+						int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+						                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
+#endif
+						PF_TIMER_BEGIN_RT(rw);
+						tag = PF_WaitRbuf(rbuf, next, &size);
+						PF_TIMER_END_RT(rw, _pf_rw);
+					}
 					rbuf->full[next] += size;
 					if ( tag == PF_ENDBUFFER_MSGTAG ) {
 						*rbuf->full[next]++ = 0;
@@ -2845,8 +2888,14 @@ LONG PF_MergerLoop(void)
 	   next module's NewSort lands at sLevel=0 (AT.S0) instead of sub-sort.
 	   EndSort calls PF_EndSort first; PF_EndSort's master path returns 1
 	   here (in_merger_phase set), and EndSort then jumps to RetRetval which
-	   decrements sLevel. */
-	LONG ret = EndSort(BHEAD AM.S0->sBuffer, 0);
+	   decrements sLevel. MER_MERGE times the whole merge pass; the recv-wait
+	   sub-component is attributed to MER_RECV_WAIT inside PF_PutIn. */
+	LONG ret;
+	{
+		PF_TIMER_BEGIN(MER_MERGE);
+		ret = EndSort(BHEAD AM.S0->sBuffer, 0);
+		PF_TIMER_END(MER_MERGE);
+	}
 
 	PF.in_merger_phase = 0;
 

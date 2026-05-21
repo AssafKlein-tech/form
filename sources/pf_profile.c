@@ -325,11 +325,12 @@ void pf_profile_alloc_master(int numtasks)
 static void write_csv_header(FILE *fp)
 {
 	fprintf(fp,
-		"timestamp,module,expr,rank,role,nummappers,numreducers,wallclock_us,"
+		"timestamp,module,expr,rank,role,nummappers,numreducers,nummergers,wallclock_us,"
 		"t_map_generator_us,t_map_endsort_total_us,t_map_send_wait_us,t_map_send_mpi_us,t_map_getterm_wait_us,"
 		"t_red_recv_wait_us,t_red_buffer_copy_us,t_red_merge_patches_us,t_red_final_sort_us,t_red_forward_wait_us,t_red_forward_mpi_us,"
 		"t_mas_distribute_us,t_mas_distribute_wait_us,t_mas_final_sort_us,t_mas_collect_us,t_mas_merge_recv_wait_us,"
-		"bytes_sent,bytes_to_master,terms_sent,patches_built,buffers_received,merge_lbuffer_full,merge_max_patches,"
+		"t_mer_merge_us,t_mer_recv_wait_us,t_mer_forward_wait_us,t_mer_forward_mpi_us,"
+		"bytes_sent,bytes_to_master,terms_sent,patches_built,buffers_received,merge_lbuffer_full,merge_max_patches,bytes_mer_to_master,"
 		"io_rchar,io_wchar,io_read_bytes,io_write_bytes,io_syscr,io_syscw,"
 		"maxrss_kb,minflt,majflt,nvcsw,nivcsw,"
 		"node_disk_time_in_io_ms,node_wallclock_us,"
@@ -350,12 +351,20 @@ static void write_csv_header(FILE *fp)
 		"t_mas_distribute_wait_first_us,t_mas_distribute_wait_last_us,"
 		"t_mas_final_sort_first_us,t_mas_final_sort_last_us,"
 		"t_mas_collect_first_us,t_mas_collect_last_us,"
-		"t_mas_merge_recv_wait_first_us,t_mas_merge_recv_wait_last_us\n");
+		"t_mas_merge_recv_wait_first_us,t_mas_merge_recv_wait_last_us,"
+		"t_mer_merge_first_us,t_mer_merge_last_us,"
+		"t_mer_recv_wait_first_us,t_mer_recv_wait_last_us,"
+		"t_mer_forward_wait_first_us,t_mer_forward_wait_last_us,"
+		"t_mer_forward_mpi_first_us,t_mer_forward_mpi_last_us\n");
 }
 
-static const char *role_name(int rank, int nummappers)
+static const char *role_name(int rank, int nummappers, int nummergers)
 {
 	if ( rank == 0 ) return "master";
+	/* Mapper-mergers are mapper ranks 1..nummergers; they overlay a second
+	   merge role after their mapper phase. Tag them "merger" so the
+	   visualization can profile the merge tier separately. */
+	if ( nummergers > 0 && rank >= 1 && rank <= nummergers ) return "merger";
 	return (rank < nummappers) ? "mapper" : "reducer";
 }
 
@@ -369,20 +378,23 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 	const LONG *os = slot->os_diff;
 	const LONG *ex = slot->extras;
 	fprintf(fp,
-		"%lld,%d,%s,%d,%s,%d,%d,%lld,"
+		"%lld,%d,%s,%d,%s,%d,%d,%d,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,"
-		/* Gantt timestamps (16 phases x first,last). */
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,"
+		/* Gantt timestamps (20 phases x first,last). */
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
 		(long long)ts, module_num, expr_name ? expr_name : "",
-		rank, role_name(rank, nummappers), nummappers, numreducers,
+		rank, role_name(rank, nummappers, PF.nummergers),
+		nummappers, numreducers, PF.nummergers,
 		(long long)ex[PF_EX_WALLCLOCK_US],
 		(long long)p[PF_PHASE_MAP_GENERATOR],
 		(long long)p[PF_PHASE_MAP_ENDSORT_TOTAL],
@@ -400,6 +412,10 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)p[PF_PHASE_MAS_FINAL_SORT],
 		(long long)p[PF_PHASE_MAS_COLLECT],
 		(long long)p[PF_PHASE_MAS_MERGE_RECV_WAIT],
+		(long long)p[PF_PHASE_MER_MERGE],
+		(long long)p[PF_PHASE_MER_RECV_WAIT],
+		(long long)p[PF_PHASE_MER_FORWARD_WAIT],
+		(long long)p[PF_PHASE_MER_FORWARD_MPI],
 		(long long)ex[PF_EX_BYTES_SENT],
 		(long long)ex[PF_EX_BYTES_TO_MASTER],
 		(long long)ex[PF_EX_TERMS_SENT],
@@ -407,6 +423,7 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)ex[PF_EX_BUFFERS_RECEIVED],
 		(long long)ex[PF_EX_MERGE_LBUFFER_FULL],
 		(long long)ex[PF_EX_MERGE_MAX_PATCHES],
+		(long long)ex[PF_EX_BYTES_MER_TO_MASTER],
 		(long long)os[PF_OS_IO_RCHAR],
 		(long long)os[PF_OS_IO_WCHAR],
 		(long long)os[PF_OS_IO_READ_BYTES],
@@ -437,7 +454,11 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)pf[PF_PHASE_MAS_DISTRIBUTE_WAIT],(long long)pl[PF_PHASE_MAS_DISTRIBUTE_WAIT],
 		(long long)pf[PF_PHASE_MAS_FINAL_SORT],         (long long)pl[PF_PHASE_MAS_FINAL_SORT],
 		(long long)pf[PF_PHASE_MAS_COLLECT],            (long long)pl[PF_PHASE_MAS_COLLECT],
-		(long long)pf[PF_PHASE_MAS_MERGE_RECV_WAIT],    (long long)pl[PF_PHASE_MAS_MERGE_RECV_WAIT]);
+		(long long)pf[PF_PHASE_MAS_MERGE_RECV_WAIT],    (long long)pl[PF_PHASE_MAS_MERGE_RECV_WAIT],
+		(long long)pf[PF_PHASE_MER_MERGE],          (long long)pl[PF_PHASE_MER_MERGE],
+		(long long)pf[PF_PHASE_MER_RECV_WAIT],      (long long)pl[PF_PHASE_MER_RECV_WAIT],
+		(long long)pf[PF_PHASE_MER_FORWARD_WAIT],   (long long)pl[PF_PHASE_MER_FORWARD_WAIT],
+		(long long)pf[PF_PHASE_MER_FORWARD_MPI],    (long long)pl[PF_PHASE_MER_FORWARD_MPI]);
 }
 
 void pf_profile_dump_master_csv(int module_num, const char *expr_name,

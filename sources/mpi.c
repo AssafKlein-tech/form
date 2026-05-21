@@ -313,8 +313,18 @@ int PF_ISendSbuf(int to, int tag)
 #ifdef PF_PROFILE
 	int _pf_send_phase = -1, _pf_wait_phase = -1, _pf_bytes_idx = -1;
 	if ( PF.me != MASTER ) {
-		if ( AC.sMRflag != NO_MAPREDUCE && PF.me >= PF.nummappers && to == MASTER ) {
-			/* MR reducer -> master */
+		if ( PF.in_merger_phase ) {
+			/* mapper-merger forwarding the merged stream upstream to master.
+			   A merger is a mapper RANK, so this check must precede the
+			   reducer test below (which keys on PF.me >= PF.nummappers). */
+			_pf_send_phase = PF_PHASE_MER_FORWARD_MPI;
+			_pf_wait_phase = PF_PHASE_MER_FORWARD_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_MER_TO_MASTER;
+		} else if ( AC.sMRflag != NO_MAPREDUCE && PF.me >= PF.nummappers ) {
+			/* MR reducer forwarding its sorted stream upstream -- to the
+			   master, or to its mapper-merger when the merge tier is active
+			   (`to` is merger_parent then, not MASTER). A reducer's only
+			   PF_ISendSbuf calls are this forward, so no `to` test needed. */
 			_pf_send_phase = PF_PHASE_RED_FORWARD_MPI;
 			_pf_wait_phase = PF_PHASE_RED_FORWARD_WAIT;
 			_pf_bytes_idx  = PF_EX_BYTES_TO_MASTER;

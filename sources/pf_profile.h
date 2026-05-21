@@ -37,6 +37,15 @@ enum {
 	PF_PHASE_MAS_FINAL_SORT,       /* master: EndSort merge tree (includes MAS_MERGE_RECV_WAIT) */
 	PF_PHASE_MAS_COLLECT,          /* master: end-of-module PF_LongSingleReceive stats loop */
 	PF_PHASE_MAS_MERGE_RECV_WAIT,  /* master: MPI_Wait inside PF_PutIn -- blocked mid-merge for a child's (reducer's) next sorted chunk. Sub-component of MAS_FINAL_SORT, not additive with it. */
+	/* Merger phases. Mapper-merger ranks (1..nummergers) only; zero on every
+	   other rank and on non-merger runs. The merger reuses the master's
+	   loser-tree merge body, so MER_MERGE is its analogue of MAS_FINAL_SORT
+	   and MER_RECV_WAIT its analogue of MAS_MERGE_RECV_WAIT -- the runtime
+	   PF.in_merger_phase flag picks MER_* vs MAS_* at the shared call sites. */
+	PF_PHASE_MER_MERGE,            /* merger: total wall time of PF_MergerLoop's EndSort over the leaf-reducer streams */
+	PF_PHASE_MER_RECV_WAIT,        /* merger: MPI_Wait inside PF_PutIn -- blocked mid-merge for a leaf reducer's next sorted chunk. Sub-component of MER_MERGE, not additive with it. */
+	PF_PHASE_MER_FORWARD_WAIT,     /* merger: MPI_Wait when forwarding the merged stream to master */
+	PF_PHASE_MER_FORWARD_MPI,      /* merger: MPI_Isend forwarding the merged stream to master */
 	PF_PHASE_COUNT
 };
 
@@ -71,6 +80,7 @@ enum {
 	PF_EX_BUFFERS_RECEIVED,      /* reducer: chunks consumed in PF_StoreBuffer (1 per mapper-side send) */
 	PF_EX_MERGE_LBUFFER_FULL,    /* reducer: MergePatches firings caused by large buffer running out of room */
 	PF_EX_MERGE_MAX_PATCHES,     /* reducer: MergePatches firings caused by lPatch >= MaxPatches */
+	PF_EX_BYTES_MER_TO_MASTER,   /* merger: total bytes forwarded to master */
 	PF_EX_COUNT
 };
 
