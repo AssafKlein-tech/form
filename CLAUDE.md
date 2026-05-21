@@ -124,6 +124,7 @@ Three TCP-only files are kept as comparison artifacts: `bench_heavy_tcp.pbs`, `b
 |---|---|---|---|
 | `PF_SBUFS` | 2 | 10 | Cyclic send-buffer slots per (mapper, destination) |
 | `PF_RBUFS` | 2 | 2 | Cyclic receive-buffer slots per (reducer, source mapper) — see note below |
+| `PF_MERGERS` | 0 | min(M−1, R) | Mapper-merger tier — `G` mapper ranks (1..G) also merge reducer groups (0 = off). See "MRmpi reducer-merge tier" below. |
 | `PF_LOG` | 0 | — | ParFORM logging verbosity |
 | `PF_STATS` | 10 | — | Stats interval |
 
@@ -196,7 +197,8 @@ The map-reduce mode is controlled by three flags in `AC` (`structs.h`):
 Key per-role code paths:
 - **Mapper (`sort.c` `PF_LowMRsort`)** — terms are hashed and routed to a reducer via `PF_WISendSbuf` instead of being written to the local sort file. Each mapper holds a per-reducer send buffer (`PF.sbufs[dest]`).
 - **Reducer (`parallel.c` `PF_StoreBuffer` / `PF_ReducerInit`)** — receives terms from all mappers, stores patches to its local sort buffer, runs a standard merge sort, then forwards the sorted stream to the master.
-- **Master** — runs the merge tree as usual but receives only from reducers, shrinking the fan-in.
+- **Master** — runs the merge tree as usual but receives only from reducers (or from mergers when the merge tier is on), shrinking the fan-in.
+- **Merger (`parallel.c` `PF_MergerLoop`)** — optional; see "MRmpi reducer-merge tier" below.
 
 New MPI message tags (`parallel.h`):
 - `PF_SHUFFLE_MSGTAG` (110) — mapper → reducer: term data
@@ -205,10 +207,39 @@ New MPI message tags (`parallel.h`):
 
 `-r<N>` CLI flag (parsed in `startup.c`) sets `AM.ReducerPer`.
 
+### MRmpi reducer-merge tier (mapper-as-merger)
+
+An optional second merge layer between reducers and the master, enabled with
+`PF_MERGERS=G` (env, default 0 = off). The lowest `G` mapper ranks (`1..G`)
+overlay a **merger** role: after finishing their mapper phase they each consume
+the sorted streams of a group of leaf reducers, merge them, and forward one
+combined stream to the master — shrinking the master's loser-tree fan-in from
+`R` reducers to `G` mergers.
+
+- Leaf reducer `r` → merger `1 + ((r − M) % G)` (round-robin; no node-locality
+  yet — a node-local placement is planned in `.claude/plans/node-local-mergers.md`).
+- The merger **reuses the master's `PF_EndSort` merge body**: `PF.in_merger_phase`
+  gates all merger-specific routing, `pf_loser_src_to_rank()` is the single
+  src→MPI-rank rule, `PF_MergerLoop()` (`parallel.c`) is the ~50-line wrapper.
+- The K-prefix drain runs inside the merger phase too — `pf_emit_compressed_bulk`
+  MPI-sends the merged run upstream instead of `WriteFile`-to-disk.
+
+**`PF_InitTree` rbuf-array gotcha:** `PF.rbufs` is allocated once and cached
+across modules, so it must be sized to the rank's *maximum* `numtasks`
+(`alloc_numtasks = PF.is_merger ? numtasks : PF.numtasks`) — not the per-module
+value. A parallel non-MR module needs all `nummappers` leaves even after MR
+modules sized the master's tree to `nummergers+1`; getting this wrong overflows
+the cached array and hangs the run (cost an 11.5 h hung Spin job).
+
+**Status:** Phase 1 (the merger role) is committed on `MRmpi`; the drain-on-merger,
+the `PF_InitTree` fix, and the `MER_*` profiler phases are **uncommitted** on the
+working tree. Binary: `~/bin/parform.mergerdrain`. Full reference: the sort skill
+and `project_merger_wip.md`.
+
 ### Parallel Processing Files
 
 - `mpi.c` — MPI communication; `PF_WISendSbuf` routes sends to reducer or master
-- `parallel.c` + `parallel.h` — full MRmpi role dispatch loop; `PARALLELVARS` struct holds `nummappers`, `numreducers`, `sbufs`
+- `parallel.c` + `parallel.h` — full MRmpi role dispatch loop; `PARALLELVARS` struct holds `nummappers`, `numreducers`, `nummergers`, `sbufs`; `PF_MergerLoop` (merger tier)
 
 ## Key Files Quick Reference
 
@@ -220,7 +251,7 @@ New MPI message tags (`parallel.h`):
 | `sources/compcomm.c` | `on mapreduce;` keyword handling; per-module flag logic |
 | `sources/execute.c` | `sMRflag` state machine transitions between modules |
 | `sources/sort.c` | Sorting; `PF_LowMRsort()` decides mapper vs normal path |
-| `sources/parallel.c` | Master/mapper/reducer dispatch; `PF_StoreBuffer`, `PF_ReducerInit` |
+| `sources/parallel.c` | Master/mapper/reducer/merger dispatch; `PF_StoreBuffer`, `PF_ReducerInit`, `PF_MergerLoop` |
 | `sources/parallel.h` | `PARALLELVARS` struct; new MPI tags |
 | `sources/mpi.c` | `PF_WISendSbuf` — routes sends to reducer or master |
 | `sources/form3.h` | Master include, platform abstractions |

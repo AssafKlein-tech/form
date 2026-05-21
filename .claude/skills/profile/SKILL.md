@@ -29,11 +29,22 @@ Per (module, rank) row in `pf_profile.csv`:
     master idle for a *mapper* to be ready for the next bucket),
     `MAS_FINAL_SORT` (the whole `EndSort` merge tree), `MAS_MERGE_RECV_WAIT`
     (`MPI_Wait` inside `PF_PutIn` — master blocked mid-merge waiting for a
-    child's, i.e. a reducer's, next sorted chunk; this is the real "master
-    waited for reducers" number — it is a **sub-component of `MAS_FINAL_SORT`,
-    not additive** with it), `MAS_COLLECT` (end-of-module `PF_LongSingleReceive`
+    child's next sorted chunk — a reducer's, or a merger's when the merge
+    tier is active; this is the real "master waited for its children"
+    number — it is a **sub-component of `MAS_FINAL_SORT`, not additive**
+    with it), `MAS_COLLECT` (end-of-module `PF_LongSingleReceive`
     stats loop — effectively the wait for the last rank to finish and report).
-- Counters: `bytes_sent`, `bytes_to_master`, `terms_sent`, `patches_built`,
+  - **Merger (MR, only when `PF_MERGERS>0`):** `MER_MERGE` (the whole
+    `EndSort` merge pass `PF_MergerLoop` runs over a group of leaf
+    reducers — the merger analogue of `MAS_FINAL_SORT`), `MER_RECV_WAIT`
+    (`MPI_Wait` inside `PF_PutIn` blocked for a leaf reducer's next chunk —
+    **sub-component of `MER_MERGE`, not additive**), `MER_FORWARD_WAIT`,
+    `MER_FORWARD_MPI` (forwarding the merged stream to the master). A
+    mapper-merger is a mapper rank (1..G) that runs the full mapper phase
+    *then* the merge, so its CSV row carries both the `MAP_*` and the
+    `MER_*` timers; the viz tags it `role=merger` and shows both.
+- Counters: `bytes_sent`, `bytes_to_master`, `bytes_mer_to_master`
+  (merger: bytes forwarded to master), `terms_sent`, `patches_built`,
   `buffers_received` (reducer: chunks consumed in `PF_StoreBuffer`),
   `merge_lbuffer_full` (merge fired because the large buffer ran out of room),
   `merge_max_patches` (merge fired because `lPatch >= MaxPatches`). The two
@@ -184,8 +195,10 @@ run dir — self-contained interactive plotly. Every panel carries a one-line
 - **Effective utilization** — `Σ(rank wallclock) / (module wall × #ranks)` per
   module, with idle core-seconds on the second axis. The headline "is parallelism
   working" number; a thesis-grade metric for the MR-vs-org story.
-- **Phase breakdown** — stacked phase time per module, faceted mapper/reducer/master
-  (means). The mapper bar intentionally over-stacks — `MAP_ENDSORT_TOTAL` already
+- **Phase breakdown** — stacked phase time per module, faceted per role
+  (mapper / reducer / merger / master — the merger column appears only when
+  the run used `PF_MERGERS>0`, and stacks the mapper phases plus `MER_MERGE`).
+  The mapper bar intentionally over-stacks — `MAP_ENDSORT_TOTAL` already
   contains `SEND_WAIT`/`SEND_MPI`/`HASH_PACK`; use **Phase coverage** for the
   non-double-counted view.
 - **Phase coverage** — disjoint phases + an explicit `UNACCOUNTED` residual
@@ -209,19 +222,22 @@ run dir — self-contained interactive plotly. Every panel carries a one-line
 - **Wait graph** — sankey: flows from the role that holds things up to the role
   that idles (`MAP_GETTERM_WAIT`←master, `MAP_SEND_WAIT`←reducers, `RED_RECV_WAIT`
   ←mappers, `RED_FORWARD_WAIT`←master, `MAS_DISTRIBUTE_WAIT`←mappers,
-  `MAS_MERGE_RECV_WAIT`←reducers (master blocked mid-merge for a reducer's next
+  `MAS_MERGE_RECV_WAIT`←children (master blocked mid-merge for its next
   chunk — the real "master waited for reducers"), `MAS_COLLECT`←reducers
-  (end-of-module stats tail)). Values are core-seconds of wait. Tells you which
-  side of a rank the bottleneck is on.
-- **Imbalance heatmap** — per-rank wallclock, mapper top, reducer+master fused below.
+  (end-of-module stats tail)). With a merge tier active you also get
+  `MER_RECV_WAIT`←reducers and `MER_FORWARD_WAIT`←master flows. Values are
+  core-seconds of wait. Tells you which side of a rank the bottleneck is on.
+- **Imbalance heatmap** — per-rank wallclock, mapper top, the merge tier
+  (reducer → merger → master, blank-row separated) fused below.
 - **Merge attribution** — per module, summed over reducers: MergePatches firings
   caused by the large buffer running out (`merge_lbuffer_full` → bump
   `largesize`/`smallext`) vs the patch-count cap (`merge_max_patches` → bump
   `filepatches`), plus `buffers_received / patches_built`. Picks the knob the
   decision matrix only guesses at. (Both reasons can fire on one call so the stack
   can exceed `patches_built`.)
-- **Software throughput** — per-rank MB/s heatmap (mapper TX, reducer→master),
-  derived from `bytes_sent / send-time`. NIC peak in the title is from
+- **Software throughput** — per-rank MB/s heatmap (mapper TX, reducer→master
+  forward, and merger→master forward when the merge tier is active),
+  derived from `bytes / send-time`. NIC peak in the title is from
   `PF_PROFILE_NIC_PEAK_GBPS` (default 25 GB/s).
 - **Throughput reconciliation** — wire vs software per module: realized NIC TX
   GB/s (host-wide, node-leader — advisory unless `place=scatter:excl`) vs offered
@@ -277,6 +293,8 @@ Cheat-sheet (paraphrased):
 | Master `MAS_DISTRIBUTE_WAIT` dominates | Bigger `mProcessBucketSize` |
 | Any role: `nivcsw` > 50 | OS oversubscription — fewer ranks per node, `--bind-to core` |
 | Reducer `RED_FINAL_SORT` variance > 30% | Hash skew |
+| Merger `MER_RECV_WAIT > 0.5 × MER_MERGE` | Leaf reducers slow → more `-r<N>`, bigger reducer `largesize`, or more `PF_MERGERS` (narrower fan-in) |
+| Merger `MER_FORWARD_WAIT > 0.3 × wallclock` | Master is the slow consumer downstream — adding mergers won't help |
 | MR slower than org despite less I/O | Reduce reducer % OR check `PF_SHUFFLE_NOCOMPRESS` |
 | `nic_xmit_GBps > 0.85 × peak` on any node-leader | NIC saturated → fewer mpiprocs/node OR faster fabric |
 | Mappers high `MAP_SEND_WAIT` AND `nic_xmit_GBps < 0.30 × peak` | NIC idle → increase `PF_SBUFS`, check `UCX_RNDV_THRESH` |
@@ -293,12 +311,17 @@ points and adjust after a few real runs.
 - [sources/parallel.c](sources/parallel.c) — `PF_Processor` brackets all
   master/mapper/reducer phases; `PF_StoreBuffer` brackets `RED_RECV_WAIT`
   and `RED_MERGE_PATCHES`; `PF_ForwardTermsToMaster` brackets
-  `RED_FINAL_SORT`; `PF_PutIn` brackets `MAS_MERGE_RECV_WAIT` around its two
-  `PF_WaitRbuf` calls. Stat aggregation extends the existing
-  `PF_LongSinglePack` chain inside `#ifdef PF_PROFILE`.
+  `RED_FINAL_SORT`; `PF_MergerLoop` brackets `MER_MERGE`; `PF_PutIn`
+  brackets the three `PF_WaitRbuf` calls with a runtime-indexed timer that
+  picks `MER_RECV_WAIT` when `PF.in_merger_phase` else `MAS_MERGE_RECV_WAIT`.
+  Stat aggregation extends the existing `PF_LongSinglePack` chain inside
+  `#ifdef PF_PROFILE`.
 - [sources/mpi.c](sources/mpi.c) — `PF_ISendSbuf` brackets `SEND_WAIT`/
-  `SEND_MPI`. Attribution: MR mapper→reducer and non-MR slave→master are
-  both `MAP_SEND_*`; only MR reducer→master is `RED_FORWARD_*`.
+  `SEND_MPI`. Attribution (checked in this order): `PF.in_merger_phase` ⇒
+  `MER_FORWARD_*` + `bytes_mer_to_master`; an MR reducer (`PF.me >=
+  nummappers`) forwarding upstream — to master or to its merger — ⇒
+  `RED_FORWARD_*` + `bytes_to_master`; everything else (MR mapper→reducer,
+  non-MR slave→master) ⇒ `MAP_SEND_*` + `bytes_sent`.
 - [scripts/pf_profile_viz.py](scripts/pf_profile_viz.py) — visualization
   script. `DECISION_MATRIX` is the rule list.
 - [scripts/run_with_iostat.sh](scripts/run_with_iostat.sh) — optional
