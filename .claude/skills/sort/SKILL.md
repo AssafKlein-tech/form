@@ -185,7 +185,7 @@ Data flow: `mapper → reducer → merger → master` (vs `mapper → reducer �
 
 **`PF_InitTree` rbuf-array gotcha.** `PF.rbufs` is allocated once and cached across modules, so it must be sized to the rank's *maximum* `numtasks` — `alloc_numtasks = PF.is_merger ? numtasks : PF.numtasks` — not the per-module value. The master's `numtasks` varies (`nummergers+1` in an MR-merger module, `nummappers` in a parallel non-MR module); sizing the cached array from a small module's value overflows it when a later module needs more leaves → `MPI_Irecv` into garbage → hang. (This cost an 11.5 h hung Spin run; `small_test_red` never caught it because its first module is non-MR and caches the big size first.)
 
-**Status:** the merger role, drain-on-merger, the `PF_InitTree` fix, and the `MER_*` profiler phases are committed on `MRmpi` (`500e6da` / `4d3c9d4`). The **node-local-only placement** (strided round-robin and the `PF_MERGE_PLACEMENT` knob removed — node-local is the sole placement) is on the working tree, uncommitted. See `project_merger_wip.md`.
+**Status:** the merger role, drain-on-merger, the `PF_InitTree` fix, the `MER_*` profiler phases, and the **node-local-only placement** (strided round-robin and the `PF_MERGE_PLACEMENT` knob removed — node-local is the sole placement) are all committed on `MRmpi` (`500e6da` / `4d3c9d4` / `0b678fb`). See `project_merger_wip.md`.
 
 ### When the reducer fires terms to the master — and why you can't make it earlier
 

@@ -240,12 +240,11 @@ value. A parallel non-MR module needs all `nummappers` leaves even after MR
 modules sized the master's tree to `nummergers+1`; getting this wrong overflows
 the cached array and hangs the run (cost an 11.5 h hung Spin job).
 
-**Status:** the merger role, drain-on-merger, the `PF_InitTree` fix, and the
-`MER_*` profiler phases are **committed** on `MRmpi` (`500e6da` / `4d3c9d4`).
-The **node-local-only placement** (strided round-robin and the
-`PF_MERGE_PLACEMENT` knob removed; node-local is the sole placement) is on the
-working tree, **uncommitted**. Full reference: the sort skill and
-`project_merger_wip.md`.
+**Status:** the merger role, drain-on-merger, the `PF_InitTree` fix, the
+`MER_*` profiler phases, and the **node-local-only placement** (strided
+round-robin and the `PF_MERGE_PLACEMENT` knob removed — node-local is the sole
+placement) are all committed on `MRmpi` (`500e6da` / `4d3c9d4` / `0b678fb`).
+Full reference: the sort skill and `project_merger_wip.md`.
 
 ### Parallel Processing Files
 
