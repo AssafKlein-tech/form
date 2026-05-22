@@ -416,8 +416,13 @@ static int pf_loser_src_to_rank(int src)
 {
 	if ( AC.sMRflag != NO_MAPREDUCE && PF.is_merger && PF.merger_leaf_ranks )
 		return PF.merger_leaf_ranks[src];        /* merger: leaf reducer */
-	if ( AC.sMRflag != NO_MAPREDUCE && PF.me == MASTER && PF.nummergers > 0 )
-		return src;                              /* master with mergers: rank 1..G */
+	if ( AC.sMRflag != NO_MAPREDUCE && PF.me == MASTER && PF.nummergers > 0 ) {
+		/* master's merger leaves: node-local placement scatters mergers
+		   across nodes. merger_child_ranks ([0]=MASTER sentinel) carries the
+		   ascending merger rank list; built in PF_Processor. */
+		if ( PF.merger_child_ranks ) return PF.merger_child_ranks[src];
+		return src;
+	}
 	if ( AC.sMRflag == NO_MAPREDUCE && PF.me == MASTER )
 		return src;                              /* non-MR master: rank 1..N */
 	return src % PF.numreducers + PF.nummappers; /* MR master, no mergers */
@@ -2115,16 +2120,93 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF.is_merger = 0;
 		PF.merger_parent = MASTER;
 	} else {
-		int G = PF.nummergers;
-		/* Cap: cannot have more mergers than mappers-minus-master, nor more than reducers. */
-		if ( G > PF.nummappers - 1 ) G = PF.nummappers - 1;
-		if ( G > PF.numreducers )    G = PF.numreducers;
-		if ( G < 0 )                 G = 0;
-		PF.nummergers = G;
-		PF.is_merger     = ( G > 0 && PF.me >= 1 && PF.me <= G );
-		PF.merger_parent = ( G > 0 && PF.me >= PF.nummappers )
-		                   ? (1 + ((PF.me - PF.nummappers) % G))
-		                   : MASTER;
+		/* Merger tier (Phase 1 of the reducer merge tree). When PF_MERGERS>0
+		   the tier is ON; placement is always node-local -- exactly one merger
+		   per physical node, draining only that node's reducers, so the
+		   reducer->merger transfer stays intra-node (UCX sysv shm). The
+		   PF_MERGERS numeric value is just the on/off switch; the merger count
+		   is derived as the number of reducer-bearing nodes. If node-local
+		   placement cannot be realised (topology discovery failed, or a
+		   reducer-bearing node has no spare mapper to host its merger) the
+		   tier is disabled for this run -- reducers feed the master directly;
+		   the run still completes, just without the merger optimization. */
+		PF.is_merger     = 0;
+		PF.merger_parent = MASTER;
+		if ( PF.nummergers > 0 && PF.rank_node != NULL && PF.numnodes >= 1 ) {
+			int nn = PF.numnodes, M = PF.nummappers, P = PF.numtasks;
+			int *node_merger = (int*)malloc((size_t)nn*sizeof(int));
+			int *node_hasred = (int*)malloc((size_t)nn*sizeof(int));
+			int ok = ( node_merger != NULL && node_hasred != NULL );
+			if ( ok ) {
+				int n, r, G = 0;
+				for ( n = 0; n < nn; n++ ) { node_merger[n] = -1; node_hasred[n] = 0; }
+				/* lowest non-master mapper on each node hosts that node's merger */
+				for ( r = M - 1; r >= 1; r-- ) node_merger[PF.rank_node[r]] = r;
+				/* which nodes own at least one reducer */
+				for ( r = M; r < P; r++ )      node_hasred[PF.rank_node[r]] = 1;
+				/* a reducer-bearing node with no spare mapper cannot host a merger */
+				for ( n = 0; n < nn; n++ )
+					if ( node_hasred[n] && node_merger[n] < 0 ) ok = 0;
+				if ( ok ) {
+					for ( n = 0; n < nn; n++ ) if ( node_hasred[n] ) G++;
+					PF.nummergers    = G;
+					PF.is_merger     = ( node_hasred[PF.node_id]
+					                     && PF.me == node_merger[PF.node_id] );
+					PF.merger_parent = ( PF.me >= M )
+					                   ? node_merger[PF.rank_node[PF.me]]
+					                   : MASTER;
+					if ( PF.me == MASTER ) {
+						/* child table: merger ranks ascending, [0]=MASTER */
+						if ( PF.merger_child_ranks == NULL )
+							PF.merger_child_ranks =
+							    (int*)malloc((size_t)(P+1)*sizeof(int));
+						if ( PF.merger_child_ranks != NULL ) {
+							int g = 1, prev = -1, lo;
+							PF.merger_child_ranks[0] = MASTER;
+							for ( ;; ) {
+								lo = -1;
+								for ( n = 0; n < nn; n++ )
+									if ( node_hasred[n] && node_merger[n] > prev
+									     && ( lo < 0 || node_merger[n] < lo ) )
+										lo = node_merger[n];
+								if ( lo < 0 ) break;
+								PF.merger_child_ranks[g++] = lo;
+								prev = lo;
+							}
+						}
+					}
+				}
+			}
+			if ( !ok ) {
+				/* node-local placement not possible -- disable the merger tier */
+				if ( PF.me == MASTER ) {
+					static int warned = 0;
+					if ( !warned ) {
+						warned = 1;
+						MesPrint("PF: merger tier requested but node-local placement failed "
+						         "(topology/spare-mapper) -- running without mergers");
+					}
+				}
+				PF.nummergers    = 0;
+				PF.is_merger     = 0;
+				PF.merger_parent = MASTER;
+			}
+			if ( node_merger ) free(node_merger);
+			if ( node_hasred ) free(node_hasred);
+		} else {
+			/* PF_MERGERS=0, or node topology unavailable -- no merger tier */
+			PF.nummergers = 0;
+		}
+	}
+	/* One-time master announcement of the merger tier actually in effect,
+	   so a run is self-documenting. */
+	if ( PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0 ) {
+		static int s_merger_announced = 0;
+		if ( !s_merger_announced ) {
+			s_merger_announced = 1;
+			MesPrint("PF: merger tier active -- node-local, %d mergers across %d nodes",
+			         PF.nummergers, PF.numnodes);
+		}
 	}
 
 #ifdef MPI2
@@ -2813,15 +2895,16 @@ LONG PF_ForwardTermsToMaster()
  */
 static int pf_setup_merger_group(void)
 {
-	int G = PF.nummergers;
 	int M = PF.nummappers, R = PF.numreducers;
 	int groupsz = 0;
 	int i, j;
-
-	if ( G <= 0 || !PF.is_merger ) return -1;
+	/* Node-local placement: leaf reducer i belongs to this merger iff it sits
+	   on this merger's physical node. The merger groups form a disjoint
+	   partition of the reducers across mergers. */
+	if ( PF.nummergers <= 0 || !PF.is_merger || PF.rank_node == NULL ) return -1;
 
 	for ( i = M; i < M + R; i++ )
-		if ( ((i - M) % G) + 1 == PF.me ) groupsz++;
+		if ( PF.rank_node[i] == PF.node_id ) groupsz++;
 	PF.merger_groupsz = groupsz;
 	if ( groupsz < 1 ) return -1;
 
@@ -2832,7 +2915,7 @@ static int pf_setup_merger_group(void)
 		PF.merger_leaf_ranks[0] = MASTER;  /* sentinel: PF_term[0] is the zero term */
 		j = 1;
 		for ( i = M; i < M + R; i++ )
-			if ( ((i - M) % G) + 1 == PF.me ) PF.merger_leaf_ranks[j++] = i;
+			if ( PF.rank_node[i] == PF.node_id ) PF.merger_leaf_ranks[j++] = i;
 	}
 	return groupsz;
 }
@@ -3097,9 +3180,11 @@ int PF_Init(int *argc, char ***argv)
 				AM.MR.HashPrefixWords = PF_DRAIN_MAX_K;
 		}
 		if ( ( c = (char*)getenv("PF_MERGERS") ) != 0 ) {
+			/* On/off switch for the merger tier. Any value > 0 turns it on;
+			   placement is always node-local and the merger count is derived
+			   in PF_Processor as the number of reducer-bearing nodes. */
 			PF.nummergers = (int)atoi(c);
 			if ( PF.nummergers < 0 ) PF.nummergers = 0;
-			/* Final clamp deferred to PF_Processor where nummappers/numreducers are known. */
 		}
 	}
 #endif

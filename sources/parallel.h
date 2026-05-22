@@ -189,6 +189,10 @@ typedef struct ParallelVars {
 	int         merger_groupsz; /* derived per PF_Processor call on merger ranks only: # of leaf reducers feeding THIS merger */
 	int        *merger_leaf_ranks; /* merger-only: rank-list of group leaves (length merger_groupsz). Lazily allocated. */
 	int         in_merger_phase; /* set inside PF_MergerLoop: gates FlushOut routing (sort.c:2206) so merger sends to MASTER, not to reducers. */
+	int         numnodes;        /* number of physical (shared-memory) nodes; discovered once in PF_LibInit. */
+	int         node_id;         /* this rank's node, 0..numnodes-1; discovered once in PF_LibInit. */
+	int        *rank_node;       /* global rank -> node_id map (length numtasks); allocated once in PF_LibInit, NULL if discovery failed. */
+	int        *merger_child_ranks; /* master-only: [0]=MASTER sentinel, [1..nummergers]=merger global ranks ascending. Built in PF_Processor; used by pf_loser_src_to_rank. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */

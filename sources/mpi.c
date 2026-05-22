@@ -119,6 +119,64 @@ LONG PF_RealTime(int i)
 */
 
 /**
+ * Discover the physical-node (shared-memory domain) layout, once, right after
+ * MPI_Init. Splits MPI_COMM_WORLD by shared memory, gives every rank a
+ * node_id and the global rank->node map PF.rank_node. Collective; deterministic
+ * and identical on every rank. Powers the node-local merger placement.
+ * On any failure it leaves the single-node fallback (numnodes=1, rank_node=NULL)
+ * in place -- the merger tier is then disabled for the run (PF_Processor).
+ */
+static void pf_discover_node_topology(void)
+{
+	MPI_Comm node_comm;
+	int local_rank = 0, leader, *leaders, *distinct, nd, i;
+
+	PF.numnodes  = 1;
+	PF.node_id   = 0;
+	PF.rank_node = NULL;
+
+	if ( MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0,
+	                         MPI_INFO_NULL, &node_comm) != MPI_SUCCESS )
+		return;                       /* keep the single-node fallback */
+	MPI_Comm_rank(node_comm, &local_rank);
+	leader = PF.me;                   /* node-comm rank 0 owns the node identity */
+	MPI_Bcast(&leader, 1, MPI_INT, 0, node_comm);
+	MPI_Comm_free(&node_comm);
+
+	leaders  = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	distinct = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	PF.rank_node = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	if ( leaders == NULL || distinct == NULL || PF.rank_node == NULL ) {
+		if ( leaders )  free(leaders);
+		if ( distinct ) free(distinct);
+		if ( PF.rank_node ) { free(PF.rank_node); PF.rank_node = NULL; }
+		return;
+	}
+	MPI_Allgather(&leader, 1, MPI_INT, leaders, 1, MPI_INT, MPI_COMM_WORLD);
+
+	/* distinct leader ranks kept ascending -> node ids; identical on every rank */
+	nd = 0;
+	for ( i = 0; i < PF.numtasks; i++ ) {
+		int v = leaders[i], j, seen = 0;
+		for ( j = 0; j < nd; j++ ) if ( distinct[j] == v ) { seen = 1; break; }
+		if ( !seen ) {
+			int k = nd++;
+			while ( k > 0 && distinct[k-1] > v ) { distinct[k] = distinct[k-1]; k--; }
+			distinct[k] = v;
+		}
+	}
+	PF.numnodes = nd;
+	for ( i = 0; i < PF.numtasks; i++ ) {
+		int j;
+		for ( j = 0; j < nd; j++ )
+			if ( distinct[j] == leaders[i] ) { PF.rank_node[i] = j; break; }
+	}
+	PF.node_id = PF.rank_node[PF.me];
+	free(leaders);
+	free(distinct);
+}
+
+/**
  * Performs all library dependent initializations.
  *
  * @param  argcp  pointer to the number of arguments.
@@ -135,6 +193,8 @@ int PF_LibInit(int *argcp, char ***argvp)
 	ret = MPI_Comm_size(PF_COMM,&PF.numtasks);
 	if ( ret != MPI_SUCCESS ) return(ret);
 	PF.nummappers = PF.numtasks;
+
+	pf_discover_node_topology();
 
 	/* Initialization of packed communications. */
 	PF_packsize = PF_PACKSIZE/sizeof(int)*sizeof(int);

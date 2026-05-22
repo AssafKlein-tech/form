@@ -124,7 +124,7 @@ Three TCP-only files are kept as comparison artifacts: `bench_heavy_tcp.pbs`, `b
 |---|---|---|---|
 | `PF_SBUFS` | 2 | 10 | Cyclic send-buffer slots per (mapper, destination) |
 | `PF_RBUFS` | 2 | 2 | Cyclic receive-buffer slots per (reducer, source mapper) — see note below |
-| `PF_MERGERS` | 0 | min(M−1, R) | Mapper-merger tier — `G` mapper ranks (1..G) also merge reducer groups (0 = off). See "MRmpi reducer-merge tier" below. |
+| `PF_MERGERS` | 0 | — | Mapper-merger tier on/off switch — any value > 0 turns it on (the number itself is not the merger count). Placement is always node-local: one merger per reducer-bearing node; the count is derived. See "MRmpi reducer-merge tier" below. |
 | `PF_LOG` | 0 | — | ParFORM logging verbosity |
 | `PF_STATS` | 10 | — | Stats interval |
 
@@ -210,14 +210,23 @@ New MPI message tags (`parallel.h`):
 ### MRmpi reducer-merge tier (mapper-as-merger)
 
 An optional second merge layer between reducers and the master, enabled with
-`PF_MERGERS=G` (env, default 0 = off). The lowest `G` mapper ranks (`1..G`)
-overlay a **merger** role: after finishing their mapper phase they each consume
-the sorted streams of a group of leaf reducers, merge them, and forward one
-combined stream to the master — shrinking the master's loser-tree fan-in from
-`R` reducers to `G` mergers.
+`PF_MERGERS` (env, default 0 = off; any value > 0 turns it on — the number is
+just the switch). Placement is **always node-local**: exactly one merger per
+physical (shared-memory) node, hosted on that node's lowest non-master mapper
+rank, draining only that node's reducers. After finishing their mapper phase
+the merger ranks each consume the sorted streams of their node's leaf reducers,
+merge them, and forward one combined stream to the master — shrinking the
+master's loser-tree fan-in from `R` reducers to `G` mergers, and keeping the
+reducer→merger transfer **intra-node** (UCX `sysv` shm, off the NIC).
 
-- Leaf reducer `r` → merger `1 + ((r − M) % G)` (round-robin; no node-locality
-  yet — a node-local placement is planned in `.claude/plans/node-local-mergers.md`).
+- The merger count `G` is **derived** = number of reducer-bearing nodes; the
+  node layout is discovered once in `PF_LibInit` (`pf_discover_node_topology`,
+  `MPI_Comm_split_type(MPI_COMM_TYPE_SHARED)`).
+- Leaf reducer `r` → the merger on `r`'s node (`pf_setup_merger_group` /
+  `merger_child_ranks`). If node-local placement cannot be realised (topology
+  discovery failed, or a reducer-bearing node has no spare mapper) the tier is
+  **disabled for that run** — reducers feed the master directly; the run still
+  completes, just without the merger optimization (one master warning line).
 - The merger **reuses the master's `PF_EndSort` merge body**: `PF.in_merger_phase`
   gates all merger-specific routing, `pf_loser_src_to_rank()` is the single
   src→MPI-rank rule, `PF_MergerLoop()` (`parallel.c`) is the ~50-line wrapper.
@@ -231,10 +240,12 @@ value. A parallel non-MR module needs all `nummappers` leaves even after MR
 modules sized the master's tree to `nummergers+1`; getting this wrong overflows
 the cached array and hangs the run (cost an 11.5 h hung Spin job).
 
-**Status:** Phase 1 (the merger role) is committed on `MRmpi`; the drain-on-merger,
-the `PF_InitTree` fix, and the `MER_*` profiler phases are **uncommitted** on the
-working tree. Binary: `~/bin/parform.mergerdrain`. Full reference: the sort skill
-and `project_merger_wip.md`.
+**Status:** the merger role, drain-on-merger, the `PF_InitTree` fix, and the
+`MER_*` profiler phases are **committed** on `MRmpi` (`500e6da` / `4d3c9d4`).
+The **node-local-only placement** (strided round-robin and the
+`PF_MERGE_PLACEMENT` knob removed; node-local is the sole placement) is on the
+working tree, **uncommitted**. Full reference: the sort skill and
+`project_merger_wip.md`.
 
 ### Parallel Processing Files
 
