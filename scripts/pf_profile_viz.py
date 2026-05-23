@@ -24,8 +24,9 @@ and produces a self-contained interactive HTML report. Panels (single-run):
 When the run used the mapper-merger tier (PF_MERGERS>0), ranks 1..G carry the
 role "merger": they run the full mapper phase and then a second merge pass
 (MER_MERGE / MER_RECV_WAIT / MER_FORWARD_*) over a group of leaf reducers.
-Merger rows therefore show both the mapper phases and the merge phases, and
-appear as their own facet/column in the role-split panels.
+The merger facet shows only the merge-tier (MER_*) phases; a merger rank's
+mapper-phase work is folded into the Mapper facet instead (FACET_ROWS), so
+the merger panels stay free of mapper information.
 
 Compare mode adds a headline MR-vs-org panel (run wallclock, sort-side & master
 disk writes, bytes to master) and shows phase breakdown / critical-path /
@@ -81,12 +82,13 @@ NON_ADDITIVE_PHASES = {"MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT"}
 ROLE_ORDER = ("mapper", "reducer", "merger", "master")
 
 # Which phase-role tags a given row-role displays. A mapper-merger rank runs
-# the full mapper phase and THEN the merge pass, so its row owns both the
-# mapper phases and the merger phases.
+# the full mapper phase and THEN the merge pass, but the merger panels show
+# only the merge-tier (MER_*) phases — the mapper phase of a merger rank is
+# deliberately not surfaced here.
 ROLE_OWNS = {
     "mapper":  ("mapper",),
     "reducer": ("reducer",),
-    "merger":  ("mapper", "merger"),
+    "merger":  ("merger",),
     "master":  ("master",),
 }
 
@@ -95,11 +97,30 @@ ROLE_PHASES = {
     for role, owns in ROLE_OWNS.items()
 }
 
+# Which CSV row-roles feed each panel facet. A mapper-merger rank carries the
+# CSV role "merger" but also ran the full mapper phase, so it feeds the
+# "mapper" facet too — its mapper-phase work is surfaced there (combined with
+# ROLE_OWNS, which keeps only the mapper phases in that facet). The merger
+# facet is fed solely by merger rows and shows only the MER_* phases.
+FACET_ROWS = {
+    "mapper":  ("mapper", "merger"),
+    "reducer": ("reducer",),
+    "merger":  ("merger",),
+    "master":  ("master",),
+}
+
+
+def facet_df(df: pd.DataFrame, facet: str) -> pd.DataFrame:
+    """Rows that feed a given panel facet (merger ranks feed 'mapper' too)."""
+    return df[df["role"].isin(FACET_ROWS[facet])]
+
 
 def present_roles(df: pd.DataFrame) -> list:
-    """Roles that actually have rows in this run, in display order."""
+    """Facets that have feeding rows in this run, in display order. The
+    'mapper' facet is present whenever there are mapper *or* merger rows."""
     have = set(df["role"].unique())
-    return [r for r in ROLE_ORDER if r in have]
+    return [r for r in ROLE_ORDER
+            if any(rr in have for rr in FACET_ROWS[r])]
 
 DECISION_MATRIX = [
     {
@@ -371,11 +392,12 @@ def fig_phase_breakdown(df: pd.DataFrame, title_suffix: str = "") -> go.Figure:
         rows=1, cols=len(roles), subplot_titles=[r.capitalize() for r in roles],
         shared_yaxes=False,
     )
-    # A merger column stacks both the mapper phases and the merge phase, so
-    # phase labels can recur across columns — dedupe the legend with a set.
+    # The merger column shows only the MER_* phases; a merger rank's mapper
+    # phase is folded into the Mapper column instead (FACET_ROWS). Phase
+    # labels never recur across columns now, but dedupe the legend anyway.
     shown = set()
     for col_idx, role in enumerate(roles, start=1):
-        sub = df[df["role"] == role]
+        sub = facet_df(df, role)
         for phase_col, phase_label, phase_role in PHASE_COLS:
             if phase_role not in ROLE_OWNS[role] or phase_label in NON_ADDITIVE_PHASES:
                 continue
@@ -411,7 +433,15 @@ def fig_per_rank_gantt(df: pd.DataFrame, module: int) -> go.Figure:
     for. To switch to a single 'shuffle window' bar, compute the min(first)
     and max(last) across {RECV, COPY, MERGE} per rank and emit one bar.
     """
-    sub = df[df["module"] == module].sort_values(["role", "rank"])
+    sub = df[df["module"] == module]
+    # A mapper-merger rank ran the mapper phase and THEN the merge pass.
+    # Show it as two timeline rows: a 'mapper' copy carrying the MAP_* bars
+    # and the original 'merger' row carrying the MER_* bars. The phase filter
+    # (ROLE_OWNS) splits the bars between the two copies, so the merger row
+    # shows no mapper information.
+    mer = sub[sub["role"] == "merger"]
+    if not mer.empty:
+        sub = pd.concat([sub, mer.assign(role="mapper")], ignore_index=True)
     # Sort y-axis: master first, then mappers, mergers, reducers, by rank.
     role_order = {"master": 0, "mapper": 1, "merger": 2, "reducer": 3}
     sub = sub.assign(__rorder=sub["role"].map(role_order)).sort_values(["__rorder", "rank"])
@@ -422,9 +452,9 @@ def fig_per_rank_gantt(df: pd.DataFrame, module: int) -> go.Figure:
         last_col  = phase_col.replace("_us", "_last_us")
         if first_col not in sub.columns or last_col not in sub.columns:
             continue
-        # Filter: phase fired (first >= 0), positive window, and the rank's
+        # Filter: phase fired (first >= 0), positive window, and the display
         # role owns the phase's role (so mapper rows don't show RED_*; a
-        # merger row owns both the mapper phases and the merge phases).
+        # merger rank's 'mapper' copy shows MAP_* and its 'merger' row MER_*).
         owns = sub["role"].map(lambda rr: phase_role in ROLE_OWNS.get(rr, ()))
         mask = (sub[first_col] >= 0) & (sub[last_col] > sub[first_col]) & owns
         rows = sub[mask]
@@ -604,7 +634,9 @@ def fig_software_throughput(df: pd.DataFrame) -> go.Figure:
     """
     peak_mbps = _nic_peak_gbps() * 1000.0
     panels = []
-    map_pivot = (df[df["role"] == "mapper"]
+    # The mapper panel includes merger ranks' mapper-phase TX (FACET_ROWS);
+    # the merger panel below shows only the merger->master forward.
+    map_pivot = (facet_df(df, "mapper")
                  .pivot_table(index="rank", columns="module",
                               values="map_throughput_mbps", aggfunc="mean"))
     if not map_pivot.empty:
@@ -1024,14 +1056,12 @@ _COVERAGE_SEGMENTS = {
     "master":  [("MAS_DISTRIBUTE", "t_mas_distribute_us"),
                 ("MAS_FINAL_SORT", "t_mas_final_sort_us"),
                 ("MAS_COLLECT", "t_mas_collect_us")],
-    # A merger runs the mapper phase then the merge pass; MER_RECV/FORWARD
-    # are sub-components of MER_MERGE, so only MER_MERGE is disjoint. The
-    # gap between the mapper phase and the merge shows up as UNACCOUNTED
-    # (the merger idle, waiting for its leaf reducers to start delivering).
-    "merger":  [("MAP_GENERATOR", "t_map_generator_us"),
-                ("MAP_ENDSORT_TOTAL", "t_map_endsort_total_us"),
-                ("MAP_GETTERM_WAIT", "t_map_getterm_wait_us"),
-                ("MER_MERGE", "t_mer_merge_us")],
+    # Merger panels show only the merge tier. MER_RECV/FORWARD are
+    # sub-components of MER_MERGE, so MER_MERGE is the one disjoint phase.
+    # Everything else on a merger rank's wallclock — the mapper phase it
+    # ran first, plus any idle wait for its leaf reducers — falls into
+    # UNACCOUNTED here by design.
+    "merger":  [("MER_MERGE", "t_mer_merge_us")],
 }
 
 
@@ -1090,15 +1120,14 @@ def fig_tail_stats(df: pd.DataFrame) -> go.Figure:
         "reducer": ["wallclock_us", "t_red_recv_wait_us", "t_red_buffer_copy_us",
                     "t_red_merge_patches_us", "t_red_final_sort_us", "t_red_forward_wait_us",
                     "t_red_store_us"],
-        "merger":  ["wallclock_us", "t_map_generator_us", "t_map_endsort_total_us",
-                    "t_mer_merge_us", "t_mer_recv_wait_us", "t_mer_forward_wait_us",
-                    "t_mer_forward_mpi_us"],
+        "merger":  ["wallclock_us", "t_mer_merge_us", "t_mer_recv_wait_us",
+                    "t_mer_forward_wait_us", "t_mer_forward_mpi_us"],
         "master":  ["wallclock_us", "t_mas_distribute_us", "t_mas_distribute_wait_us",
                     "t_mas_final_sort_us", "t_mas_merge_recv_wait_us", "t_mas_collect_us"],
     }
     rows = []
     for role, cols in role_cols.items():
-        sub = df[df["role"] == role]
+        sub = facet_df(df, role)
         if sub.empty:
             continue
         for c in cols:
@@ -1321,8 +1350,8 @@ def fig_compare_headline(mr: pd.DataFrame, org: pd.DataFrame) -> go.Figure:
 SECTION_DOCS = {
     "module_dominance": "Which module is the run. Optimize the tall bars; the cumulative line tells you when you've covered most of the wall.",
     "effective_utilization": "Σ(rank wallclock) / (module wall × #ranks). Low % ⇒ many cores idle — the headline 'is parallelism working' number.",
-    "phase_breakdown": "Stacked phase time per module per role (means). Mapper bar still over-stacks: ENDSORT_TOTAL already contains SEND_WAIT/SEND_MPI/HASH_PACK — see 'phase coverage' for the non-double-counted view. MAS_MERGE_RECV_WAIT (⊂ MAS_FINAL_SORT) and MER_RECV_WAIT (⊂ MER_MERGE) are shown only in the Gantt and tail-stats, not stacked here. The merger column stacks the mapper phases plus MER_MERGE — a merger rank does both jobs.",
-    "phase_coverage": "Disjoint phases + an explicit UNACCOUNTED residual. A big grey segment on a role = profiler blind spot worth a new PF_TIMER bracket.",
+    "phase_breakdown": "Stacked phase time per module per role (means). Mapper bar still over-stacks: ENDSORT_TOTAL already contains SEND_WAIT/SEND_MPI/HASH_PACK — see 'phase coverage' for the non-double-counted view. MAS_MERGE_RECV_WAIT (⊂ MAS_FINAL_SORT) and MER_RECV_WAIT (⊂ MER_MERGE) are shown only in the Gantt and tail-stats, not stacked here. The merger column shows only the MER_* phases — a merger rank's mapper-phase work is counted in the Mapper column instead.",
+    "phase_coverage": "Disjoint phases + an explicit UNACCOUNTED residual. A big grey segment on a role = profiler blind spot worth a new PF_TIMER bracket — except the Merger facet, whose UNACCOUNTED also holds the merger rank's mapper phase (broken out in the Mapper facet) plus the idle gap before its leaf reducers start delivering.",
     "critical_path": "Per module, the time envelope of each pipeline stage vs the module-wall backdrop. Gaps between stages and leading/trailing slack against the backdrop are pipeline fill+drain — what overlap can't hide.",
     "mr_effectiveness": "The point of this fork. dedup ratio < 1 ⇒ reducers shrank the stream before the master; compare reducer vs master io_write to see disk saved.",
     "decision": "Heuristic rule matches → recommended next knob. Thresholds are starting points, not law.",
@@ -1413,7 +1442,7 @@ def render_compare(mr_dir: Path, org_dir: Path) -> Path:
     for row_idx, src in enumerate(("MR", "org"), start=1):
         sub_all = combined[combined["__src"] == src]
         for col_idx, role in enumerate(roles, start=1):
-            sub = sub_all[sub_all["role"] == role]
+            sub = facet_df(sub_all, role)
             for phase_col, phase_label, phase_role in PHASE_COLS:
                 if phase_role not in ROLE_OWNS[role] or phase_label in NON_ADDITIVE_PHASES:
                     continue

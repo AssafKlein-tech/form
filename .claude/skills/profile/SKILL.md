@@ -42,7 +42,12 @@ Per (module, rank) row in `pf_profile.csv`:
     `MER_FORWARD_MPI` (forwarding the merged stream to the master). A
     mapper-merger is a mapper rank (1..G) that runs the full mapper phase
     *then* the merge, so its CSV row carries both the `MAP_*` and the
-    `MER_*` timers; the viz tags it `role=merger` and shows both.
+    `MER_*` timers. The viz tags it `role=merger`, but the **merger panels
+    show only the `MER_*` phases** — a merger rank's `MAP_*` work is folded
+    into the **mapper** facet instead (`FACET_ROWS` in `pf_profile_viz.py`),
+    so merger graphs stay free of mapper information. In the per-rank Gantt
+    a merger rank appears as two timeline rows: `rN (mapper)` for `MAP_*`
+    and `rN (merger)` for `MER_*`.
 - Counters: `bytes_sent`, `bytes_to_master`, `bytes_mer_to_master`
   (merger: bytes forwarded to master), `terms_sent`, `patches_built`,
   `buffers_received` (reducer: chunks consumed in `PF_StoreBuffer`),
@@ -197,7 +202,8 @@ run dir — self-contained interactive plotly. Every panel carries a one-line
   working" number; a thesis-grade metric for the MR-vs-org story.
 - **Phase breakdown** — stacked phase time per module, faceted per role
   (mapper / reducer / merger / master — the merger column appears only when
-  the run used `PF_MERGERS>0`, and stacks the mapper phases plus `MER_MERGE`).
+  the run used `PF_MERGERS>0`, and stacks only the `MER_*` phases; the merger
+  ranks' mapper-phase work is counted in the mapper column instead).
   The mapper bar intentionally over-stacks — `MAP_ENDSORT_TOTAL` already
   contains `SEND_WAIT`/`SEND_MPI`/`HASH_PACK`; use **Phase coverage** for the
   non-double-counted view.
