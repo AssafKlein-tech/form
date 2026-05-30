@@ -591,13 +591,16 @@ int AllocSetups(void)
 	   (parallel.c:476/:2816/:3056), so growing smallext on the reducer would be
 	   pure RAM waste. */
 	{
+		/* Gate strictly on -r<N> (AM.Prepercentage>0). Without -r the run is
+		   non-MR -- every rank is a plain slave, none is a reducer -- so the
+		   override must NOT fire, otherwise a non-MR run that happens to read a
+		   form.set containing `reducerlargesize` would wrongly enlarge ~half its
+		   ranks (the reducerpercent default is 50). We deliberately do NOT honor
+		   the reducerpercent form.set fallback here: real MR runs always pass
+		   -r<N> (CLAUDE.md: "activated at runtime with -r<N>"); a reducerpercent-
+		   only MR run simply inherits the mapper largesize (safe degradation). */
 		int rpercent = AM.Prepercentage;
-		if ( rpercent == 0 ) {
-			SETUPPARAMETERS *sprp = GetSetupPar((UBYTE *)"reducerpercent");
-			if ( sprp ) rpercent = (int)sprp->value;
-		}
-		if ( rpercent <= 0 || rpercent >= 50 ) rpercent = 50;
-		if ( PF.me != MASTER ) {
+		if ( rpercent > 0 && rpercent < 50 && PF.me != MASTER ) {
 			int nr = (PF.numtasks - 1) * rpercent / 100;
 			if ( nr < 2 ) nr = 2;
 			int nm = PF.numtasks - nr;
