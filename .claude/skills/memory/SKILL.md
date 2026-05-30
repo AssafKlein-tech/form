@@ -12,7 +12,7 @@ Key files: `sources/setfile.c` (form.set parsing + AllocSort), `sources/parallel
 ```
                  ┌──────────────────────────────────┐
                  │  AllocSort: lBuffer + sBuffer    │  ← largesize + smallextension
-                 │  (combined alloc, setfile.c:974) │     (with hidden floor)
+                 │ (combined alloc, setfile.c:1000) │     (with hidden floor)
                  ├──────────────────────────────────┤
                  │  POBuffer (scratch sort file)    │  ← sortiosize
                  ├──────────────────────────────────┤
@@ -40,17 +40,18 @@ Values in form.set are **bytes**, not WORDs (setfile.c stores them as bytes; All
 
 | Parameter | Default | Allocates | Where (file:line) |
 |---|---|---|---|
-| `largesize` | 800 MB | `lBuffer` portion (large sort buffer) | [setfile.c:974](../../../sources/setfile.c#L974) |
-| `smallsize` | 150 MB | `sBuffer` (small sort buffer, top half) | [setfile.c:944](../../../sources/setfile.c#L944) |
-| `smallextension` | (auto = 1.5×smallsize) | `sBuffer` extension; co-allocated with `lBuffer` | [setfile.c:974](../../../sources/setfile.c#L974) |
+| `largesize` | 800 MB | `lBuffer` portion (large sort buffer); combined alloc with sBuffer + extension | [setfile.c:1000](../../../sources/setfile.c#L1000) |
+| `smallsize` | 150 MB | `sBuffer` (small sort buffer; positioned at `lTop`) | [setfile.c:1003](../../../sources/setfile.c#L1003) |
+| `smallextension` | (auto = 1.5×smallsize) | `sBuffer` extension; co-allocated with `lBuffer` | [setfile.c:1000](../../../sources/setfile.c#L1000) |
 | `scratchsize` | 500 MB | scratch-file POBuffer per rank (`AR.infile->PObuffer`); also `PF.slavebuf` on slaves | [execute.c:753](../../../sources/execute.c#L753) |
-| `sortiosize` | 200 KB | `sort->file.PObuffer` (sort-file IO block) | [setfile.c:983](../../../sources/setfile.c#L983) |
+| `sortiosize` | 200 KB | `sort->file.PObuffer` (sort-file IO block) | [setfile.c:1009](../../../sources/setfile.c#L1009) |
 | `compresssize` | (small) | scratch-file compression buffer | — |
-| `termsinsmall` | (auto) | `sort->sPointer` array (8 bytes × `2×termsinsmall`) | [setfile.c:952](../../../sources/setfile.c#L952) |
+| `termsinsmall` | (auto) | `sort->sPointer` array (8 bytes × `2×termsinsmall`) | [setfile.c:978](../../../sources/setfile.c#L978) |
 | `largepatches` | 256 | `sort->Patches[]` & friends (small) | [fsizes.h:131](../../../sources/fsizes.h#L131) |
 | `filepatches` | 256 | `sort->fPatches[]`; **also drives the sort buffer floor** ↓ | [fsizes.h:132](../../../sources/fsizes.h#L132) |
+| **`reducerlargesize`** | **0 (= inherit `largesize`)** | **per-role override: replaces `LargeSize` on reducer ranks only when > 0. Only lBuffer is decoupled — see "why no reducersmallsize" below** | [setfile.c:580-610](../../../sources/setfile.c#L580) |
 
-**`#: ScratchSize` in the .frm overrides `scratchsize` from form.set** (and overrides default), per [setfile.c:513](../../../sources/setfile.c#L513). Other directives:
+**`#: ScratchSize` in the .frm overrides `scratchsize` from form.set** (and overrides default), per [setfile.c:516](../../../sources/setfile.c#L516). Other directives:
 
 - `#: MaxTermSize` (default ~20K) → `AM.MaxTer` in bytes — also enters the floor formula
 - `#: WorkSpace` (default ~40M) → `AT.WorkSpace`, allocated per worker thread / per process; bounds how big a single term can grow during pattern matching
@@ -59,7 +60,7 @@ Values in form.set are **bytes**, not WORDs (setfile.c stores them as bytes; All
 
 ## The hidden floor: why your largesize gets silently raised
 
-[setfile.c:911-918](../../../sources/setfile.c#L911) enforces:
+[setfile.c:937-944](../../../sources/setfile.c#L937) enforces:
 
 ```
 LargeSize + SmallEsize  ≥  filepatches × ((sortiosize/4 + COMPINC) × 4 + 2 × MaxTer)
@@ -82,15 +83,22 @@ floor = 256 × ((96300812/4 + 2)×4 + 2×1200000)
 Attempted to allocate 25267409920 bytes — allocating AllocSort: lBuffer+sBuffer
 ```
 
-To honor a small `largesize`, **also lower `sortiosize` and `filepatches`** — they multiply into the floor. Reasonable parform values:
+To honor a small `largesize`, **also lower `sortiosize` and `filepatches`** — they multiply into the floor. **Current production values (the Phase-B / split4096 baseline that beat v3 by ~24%):**
 
 ```
-sortiosize       1000000      # 1 MB IO block
-filepatches      32           # default 256 was overkill
-largepatches     32
+largesize       2000000000   # 2 GB
+smallsize        100000000   # 100 MB
+smallextension  1500000000   # 1.5 GB
+sortiosize         4000000   # 4 MB
+filepatches            128
+largepatches          1024
 ```
 
-New floor: `32 × ((1000000/4+2)×4 + 2×1200000) = 32 × 3,400,008 = 109 MB` ✓ trivial.
+Floor at these values: `128 × ((4000000/4+2)×4 + 2×1200000) = 128 × 6,400,008 = 819 MB` ✓ well below `largesize+smallext` = 3.5 GB.
+
+**Per-role lBuffer** *(added 2026-05-23, this branch)*: `reducerlargesize` form.set key overrides the mapper `largesize` on reducer ranks only (when > 0). Designed for the asymmetry analysed in `docs/mr_scaling_analysis.md` §10 — mapper-side local sort is the DRAM-latency hazard on the critical path; reducer is 42–100 % idle and benefits from a bigger `largesize` for more cross-mapper combining. Role is inferred from `PF.me` vs `AM.Prepercentage` (`-r` on the CLI) at AllocSort time — **not** `AM.ReducerPer` (which is assigned *after* AllocSort in `RecalcSetups`, see [[feedback_setfile_recalcsetups_order]]). The first reducer rank prints `[reducer] reducerlargesize -> N bytes` to confirm. Active in `~/bin/parform.bufdecouple`.
+
+**Why no `reducersmallsize` / `reducersmallextension`** *(decided 2026-05-23)*: the reducer never writes its `sBuffer` in MR mode — `PF_StoreBuffer` memcpy's incoming terms straight into `lBuffer` and resets `S->sTerms = 0` at the end of each buffer ([parallel.c:962-965](../../../sources/parallel.c#L962)). The reducer's `EndSort` (called via `PF_ForwardTermsToMaster`, [parallel.c:2883](../../../sources/parallel.c#L2883)) therefore enters with `sTerms = 0`, making the `SplitMerge` + `ComPress` + small-buffer-to-large-buffer copy at [sort.c:948-1142](../../../sources/sort.c#L948) all no-ops; the path goes straight into `MergePatches` over lBuffer patches. Separately, the per-source shuffle buffer arena is now anchored at the **mapper** `largesize + smallextension` via `PF.shuffle_arena_words` ([setfile.c:579](../../../sources/setfile.c#L579), used at [parallel.c:476](../../../sources/parallel.c#L476)/`:2816`/`:3056`), so growing `smallextension` on the reducer doesn't grow the shuffle slot either. Both keys would be pure RAM waste. Only `largesize` is decoupled.
 
 ## ParFORM-specific allocations
 
@@ -104,12 +112,30 @@ Allocated on each slave when `AC.RhsExprInModuleFlag` is set (any module that re
 
 ### `PF.sbufs[]` ([parallel.c:1969 region, allocateSbuf](../../../sources/parallel.c#L1969))
 
-Each mapper holds a per-destination cyclic send buffer. Master-side: `min(LARGEBUFFER/numtasks, AM.ScratSize-1)` per slot. Worker-side: `(sTop2 - lBuffer - 1) / (numtasks-1) - (MaxTer/sizeof(WORD)+2)` per slot. **Knobs:**
+Each mapper holds a per-destination cyclic send buffer. Master-side: `min(LARGEBUFFER/numtasks, AM.ScratSize-1)` per slot. Worker-side: `(sTop2 - lBuffer - 1) / (numtasks-1) - (MaxTer/sizeof(WORD)+2)` per slot.
+
+**Per-source receive buffers (`PF.rbufs[]`, [`PF_InitTree` parallel.c:473](../../../sources/parallel.c#L473), [`PF_ReducerInit` parallel.c:2812](../../../sources/parallel.c#L2812), [`PF_allocateSbuf` parallel.c:3046](../../../sources/parallel.c#L3046))** follow the formula *(updated 2026-05-23 to fix the shuffle-pair bug introduced by `reducer*` form.set keys)*:
+
+```c
+size = (PF.shuffle_arena_words - 1) / (PF.numtasks - 1);
+```
+
+floored at `2 * MaxTermSize`. **`PF.shuffle_arena_words`** ([parallel.h:206](../../../sources/parallel.h#L206)) is set once in `setfile.c::RecalcSetups` **before** the per-role `reducer*` override block, so its value equals the MAPPER's form.set sort-buffer arena (`largesize + smallextension`) in WORDs — **identical on every rank**. The divisor `PF.numtasks - 1` is the global MPI rank count (mpi.c:193). Both factors are constant across ranks, so sender slot == receiver slot for every (mapper→reducer, reducer→master|merger, merger→master) pair, regardless of whether `reducerlargesize` / `reducersmallsize` / `reducersmallextension` are set.
+
+Consequences:
+- Slot 0 of `rbuf[1..numtasks-1]` is a slice of `AT.SS->lBuffer` on the master (lines 484–492 of PF_InitTree, where local `numtasks` is the fan-in: `nummergers + 1` with mergers, `numreducers + 1` without). On the reducer, `rbufs` are malloc'd separately (free=0 in PF_AllocBuf), not from lBuffer.
+- **A reducer's larger lBuffer (from `reducerlargesize`) is no longer carved up into rbufs.** It is fully available for patch accumulation in `PF_StoreBuffer` — more sorted runs hold before `MergePatches` flushes them to disk. *This* is the per-role decoupling payoff.
+- **The merger tier still does NOT grow per-source receive buffer size.** It changes how many rbuf slots point into the master's lBuffer (from `numreducers` to `nummergers`), but each slot is the fixed `(shuffle_arena_words-1)/(PF.numtasks-1)`. The genuine merger benefits live in parallelised sift / lower Irecv count / drain-at-every-level (see `docs/mr_scaling_analysis.md` §7).
+- The only way to grow per-source buffer size is (a) bigger MAPPER-side `largesize`/`smallextension`, or (b) a deeper code change that introduces a per-pair size negotiation. The previous "swap `PF.numtasks-1` for local `numtasks-1`" idea was rejected because it would re-introduce the merger inheritance problem (mergers' mapper-phase arena can't hold reducer-sized chunks).
+
+`PF_LongMulti*` handles overflow by chunking, so under-sized per-source buffers manifest as more rendezvous handshakes, not data loss. See [[project_buffer_size_coupling]] and the merger-tier reference in CLAUDE.md.
+
+**Knobs:**
 
 - `PF_SBUFS` env (default 2, cap 10) — slots per mapper destination. Bumping to 3 hides one `Isend` latency, cost is one extra slot per dest.
 - `PF_RBUFS` env (default 2, **cap 2 since 2026-05-05**) — slots per reducer source. Cap was 4; clamped down to 2 in [parallel.c:2425](../../../sources/parallel.c#L2425) because (a) `numrbufs > 2` was buggy: `PF_InitTree:424` only armed the active slot and `PF_PutIn:589`'s newterms wait on slot `next` reached unarmed slot 2 on the 2nd wrap → `MPI_Get_count` on uninit `type[2]` → `MPI_ERR_TYPE`. (b) Even if pre-posting were fixed, depth >2 buys nothing: chunks are ~17 MB rendezvous (above 1 MB eager limit), receiver memcpy ≥10× faster than network, so concurrent CTS handshakes share the same TCP link without speedup. Production v3 instrumentation showed 0 mapper stall on 1-node and ≤0.5% on 4-node. The depth-1-effective queue is correct for this workload. Multi-deep IRecv design deferred at [/home/assafklein/.claude/plans/eager-cuddling-wreath.md](../../../../.claude/plans/eager-cuddling-wreath.md); reopen only if PF_SBUFS rises >2 or interconnect changes (RDMA).
 
-### `PF_packbuf` ([mpi.c:58](../../../sources/mpi.c#L58))
+### `PF_packbuf` ([mpi.c:61](../../../sources/mpi.c#L61))
 
 ```c
 #define PF_PACKSIZE 1600
@@ -215,16 +241,19 @@ For pthreads (TFORM): `SMALLBUFFER` 300M, `LARGEBUFFER` 1.5G — bigger because 
 
 ## Code anchors
 
-- [setfile.c:865-1008](../../../sources/setfile.c#L865) — `AllocSort` (the actual mallocs)
-- [setfile.c:911-918](../../../sources/setfile.c#L911) — the hidden floor
-- [setfile.c:944-946](../../../sources/setfile.c#L944) — bytes→WORDs conversion (`/sizeof(WORD)`)
-- [setfile.c:559-578](../../../sources/setfile.c#L559) — top-level form.set → AllocSort wiring
+- [setfile.c:891-1030](../../../sources/setfile.c#L891) — `AllocSort` (the actual mallocs)
+- [setfile.c:937-944](../../../sources/setfile.c#L937) — the hidden floor
+- [setfile.c:970-972](../../../sources/setfile.c#L970) — bytes→WORDs conversion (`/sizeof(WORD)`)
+- [setfile.c:556-625](../../../sources/setfile.c#L556) — top-level form.set → AllocSort wiring (incl. per-role reducer\* overrides)
 - [tools.c:576-618](../../../sources/tools.c#L576) — `LocateFile`, the form.set search order
 - [execute.c:753-757](../../../sources/execute.c#L753) — `PF.slavebuf` malloc
 - [execute.c:885-902](../../../sources/execute.c#L885) — end-of-module PF broadcasts
+- [parallel.c:473](../../../sources/parallel.c#L473) — `PF_InitTree` per-source recv buffer size (`/(PF.numtasks-1)`)
+- [parallel.c:2812](../../../sources/parallel.c#L2812) — `PF_ReducerInit` same formula
+- [parallel.c:3003-3070](../../../sources/parallel.c#L3003) — `PF_allocateSbuf` (master vs worker sbuf sizing)
 - [parallel.c:2389-2425](../../../sources/parallel.c#L2389) — PF env-var parsing (`PF_SBUFS`, `PF_RBUFS`)
-- [parallel.c:2267-2326](../../../sources/parallel.c#L2267) — `PF_allocateSbuf` (master vs worker sizing)
-- [mpi.c:58](../../../sources/mpi.c#L58) — `PF_PACKSIZE` (the 1600-byte cap)
-- [mpi.c:1080-1103](../../../sources/mpi.c#L1080) — flaw description for `PF_LongMultiBroadcast`
-- [fsizes.h:107-165](../../../sources/fsizes.h#L107) — all default sizes
-- [structs.h:1427](../../../sources/structs.h#L1427) — `M_const`/`AM` memory fields
+- [mpi.c:61](../../../sources/mpi.c#L61) — `PF_PACKSIZE` (the 1600-byte cap)
+- [mpi.c:193-195](../../../sources/mpi.c#L193) — `PF.numtasks` set once via `MPI_Comm_size`
+- [mpi.c:2019-2081](../../../sources/mpi.c#L2019) — `PF_LongMultiBroadcast` (post-`adeb92f` growable-buffer path)
+- [fsizes.h:107-167](../../../sources/fsizes.h#L107) — all default sizes
+- [structs.h:1522](../../../sources/structs.h#L1522) — `AM.ReducerPer` (used by the reducer\* per-role lookup)

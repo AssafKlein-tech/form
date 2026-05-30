@@ -62,6 +62,18 @@ current-scale win:
    sort's random access into the 100–600 MB `smallsize` buffer — currently in
    generation's shadow, but the structural risk to watch.
 
+7. **Per-role `largesize` decoupling pays off — measured −14.1 % on Spin (2026-05-28).**
+   The §10 hypothesis (mapper smaller / reducer larger) was A/B-tested on
+   `zeus_combined_q` 8 × 30 × 150 GB: bufdecouple (mapper `largesize 1 GB`,
+   `smallsize 50 MB`, `reducerlargesize 5 GB`) ran in **8,680 s** vs baseline
+   (2 GB everywhere) **10,098 s** — Δ = −1,418 s. **91 % of the saving is module
+   11 alone (−31 %)**, where the bigger reducer absorbed the mapper stream
+   faster and **mapper `send_wait` dropped 75 %** (388 → 95 s). Modules 10 and
+   12 saw essentially no change — module 10 was Generator-bound (`send_wait`
+   only 87 s in baseline) and module 12 was already at `send_wait = 0`. The
+   lever helps wherever the profile shows real mapper send-wait stall; outside
+   those modules it's neutral. See [[project_bufdecouple_result]].
+
 **Bottom line.** The merge tree is worth building, but as **insurance for the large-`R`
 regime** (memory/Irecv-count safety + parallelising the non-drained sift), not as a
 near-term speed-up. The dominant lever for "scale up and stay compute-bound" is
@@ -191,7 +203,7 @@ that must be parallelised.
 | **Disk** | reducer spills when `T/R > C_buf` ⇒ `R ≥ T/C_buf` | **Mis-modelled.** The reducer stores received terms as **patches on local disk** and merges them in `EndSort` — `C_buf` is the patch *chunk size*, not a spill threshold. Measured ~1.6 GB/reducer (≈89 patches); the **master** writes the bulk (273 GB final output). Per-reducer patch volume scales with the received slice and shrinks with `R`; binds only near local `/gtmp` capacity — far off today. |
 | **Mapper memory** | send-buffer memory `∝ R` ⇒ `R ≤ R_max` | **Refuted as stated.** The `R` send-buffers subdivide a fixed arena; total memory ≈ constant in `R`. What grows is *per-buffer smallness*. |
 | **Merger/master memory** | recv-buffer memory `∝ W` | **Refuted as stated.** Same fixed-arena subdivision (`PF_InitTree`: `size = (sTop2−lBuffer−1)/(numtasks−1)`, floored at `2·MaxTer`). Memory ≈ flat in fan-in. |
-| **Fan-in (real form)** | — | The genuine fan-in limit is **buffer granularity**: each recv buffer = `arena/(fan-in·numrbufs)` must stay ≥ `2·MaxTer` (hard) and ≥ the UCX rendezvous threshold `256 KB` (soft — below it, transfers go eager and throughput drops). With `arena≈3.6 GB`, that soft cap is in the **thousands** — not binding for any realistic `W`. |
+| **Fan-in (real form)** | — | The receive-buffer size formula is `arena/(PF.numtasks − 1)` (parallel.c:473) — **divided by the global rank count, not the local fan-in** — so per-source size is invariant of `W`. The genuine fan-in limit is therefore the prefetcher (§6, `W ≈ 8–12`) and the loser-tree management overhead (more later at `R ≳ 100`, §7), not buffer-granularity-per-fan-in as previously claimed. Per-source buffer = arena / (PF.numtasks − 1) must still stay ≥ `2·MaxTer` (hard) and ≥ `256 KB` (UCX rendezvous soft), but that is a rank-density constraint on `PF.numtasks`, not a fan-in constraint on `W`. |
 | **Network** | `X_cross/wallclock → Q·B_nic` | **Confirmed as a wall, but ~70× away.** Measured ~175 MB/s/node vs ~12,375 MB/s NIC = **1.4 %**. |
 | **Master compute** | tree caps `Θ(D·log R)` → `Θ(D·log W_M)` | **Confirmed — but the drain already collapsed `log R`.** Without the drain master `final_sort` is `Θ(D·log R)` (nopfx: 9,256 s); with it ≈ `Θ(D)` (1,251 s). The tree's remaining job is the *non-drained* sift and the Irecv-count, not `log R` on the bulk. |
 | **Per-node RAM** | (not in plan) | Aggregate RSS vs node RAM. 2026-05-22 sustained **60 ranks/node** at 5–7 GB peak RSS on 200 GB nodes; lifetime-peak sums overcount (peaks not coincident across modules), so real headroom exceeds `ranks × peak`. **Still the closest non-compute wall** — watch it as `form.set` buffers or ranks/node grow. |
@@ -317,6 +329,27 @@ because every output byte passes through the master on its way to the output fil
    at any depth because the routing invariant (a K-prefix → one reducer) is
    depth-invariant. Cost stays `Θ(D/n[k])` per node, `Θ(L·D)` total memcpy distributed
    across the tree — the master still does only `Θ(D)`.
+4. ~~**Grow the master's per-source receive buffer from `largebuf/R` to `largebuf/G`**.~~
+   *(Retracted 2026-05-23 after re-reading the code.)* The earlier claim that the
+   merger tier grows per-source buffer size is wrong by the code. `PF_InitTree`
+   ([parallel.c:473](../../sources/parallel.c#L473)), `PF_ReducerInit`
+   ([parallel.c:2812](../../sources/parallel.c#L2812)), and `PF_allocateSbuf`
+   ([parallel.c:3046](../../sources/parallel.c#L3046)) all compute
+   `size = (sTop2 − lBuffer − 1) / (PF.numtasks − 1)` — **divided by the global
+   MPI rank count (`PF.numtasks`), not by the local loser-tree fan-in.**
+   `PF.numtasks` is set once at `PF_LibInit` ([mpi.c:193](../../sources/mpi.c#L193))
+   and never reassigned, so the merger tier (which lowers the *local* `numtasks`
+   from `numreducers + 1` to `nummergers + 1`) **does not change per-source
+   buffer size**. What it does change is *how many* `rbuf` slots point into
+   `lBuffer` (lines 484–492: the loop runs to the local `numtasks`); the rest of
+   `lBuffer` arena is unused. For a dRGT-style 5n × 64 × -r17 run with G = 5:
+   per-source buffer ≈ 3.5 GB / 319 ≈ 11 MB regardless of merger config — not
+   400 MB. The genuine merger-tier benefits remain points 1–3 above (parallelised
+   sift, lower Irecv count, drain at every level). If per-source buffer size *is*
+   the binding factor on some future workload, the lever is bigger `largesize` /
+   `smallextension`, not the merger tier. (A code change to swap `PF.numtasks − 1`
+   for the local `numtasks − 1` at the three sites above would make the merger
+   tier behave as the earlier claim assumed; flagged in §11.)
 
 **What the merge tree cannot do:** speed up generation (modules 9/10/11 are
 generation-bound); shrink `D`; help module 11 at all (no sortable output); or help the
@@ -411,11 +444,11 @@ run is mapper-`Generator`-bound (Section 3); everything below is set to
 | **`largepatches`** | **1024** | Phase-B sweep: `fp=128/lp=1024` beats v3 by ~24 % | High — measured |
 | **`filepatches`** | **128** | Same sweep | High — measured |
 | **`smallextension`** | **1.5 GB** | Phase-B sweep: `sext=1.5G` adds ~17 % | High — measured |
-| **`smallsize`** | **Decouple: mapper smaller, reducer keep/grow** (current single value 100 MB) | Mapper's local sort is the §6 DRAM-latency hazard — a smaller mapper-side `smallsize` (toward L3 ≈ tens of MB) makes it cache-resident; reducer's use is different (the patch arena) and has slack | **Hypothesis — needs per-role code change** (§11) |
+| **`smallsize`** | **Shrink globally toward L3** (no per-role key) | Mapper's local sort is the §6 DRAM-latency hazard — a smaller `smallsize` (toward L3 ≈ tens of MB) makes it cache-resident. **Not decoupled per role**: the reducer never writes `sBuffer` in MR mode (`PF_StoreBuffer` memcpy's straight to lBuffer; `EndSort` enters with `sTerms = 0`), so a smaller `smallsize` doesn't hurt it. The `setfile.c:922` floor `16·MaxTer` ≈ 19 MB clamps any too-small value silently. | **Hypothesis — global shrink in flight 2026-05-23** |
 | **`scratchsize`** | **400 MB** | Inherited; not the lever | Low priority |
 | **`sortiosize`** | **4 MB** | Inherited; not the lever | Low priority |
 | **`processbucketsize`** | **50–100** | Smaller bucket → finer mapper load balance; 2026-05-22 used 50 | Medium |
-| **`largesize`** | **Decouple: mapper smaller (~512 MB–1 GB), reducer larger (~3–4 GB)** (current single value 2 GB) | Asymmetric work: **bigger on the mapper hurts twice** — (a) local sort spans a >L3 region ⇒ DRAM-latency compares on the critical path (§6), (b) RAM not spent on more mapper ranks. **Bigger on the reducer helps** — more sorted runs co-resident ⇒ more combining (incl. cross-mapper, which only the reducer sees) ⇒ fewer/larger patches ⇒ less EndSort work. The reducer's cache + RAM cost lands on its 42–100 % idle budget; ~17 % of ranks, so cluster RAM swing is net positive | **Hypothesis — needs per-role code change** (§11) |
+| **`largesize`** | **Decouple: mapper ~1 GB, reducer ~5 GB** — via the `reducerlargesize` form.set key (per-role plumbing landed 2026-05-23). Only `largesize` is decoupled; `smallsize` / `smallextension` are not — the reducer never writes its sBuffer and the shuffle arena is anchored at the mapper values | Asymmetric work: bigger on the mapper hurts twice (cache + RAM); bigger on the reducer absorbs the mapper stream faster ⇒ less `send_wait` stall. **Measured 2026-05-28: this exact setting cut Spin wallclock 14.1 % on `zeus_combined_q` 8 × 30 × 150 GB layout, with 91 % of the win on module 11 alone (mapper `send_wait` −75 %, reducer `recv_wait` −33 %)** | **Confirmed — first clean A/B on combined queue (§0 point 7, [[project_bufdecouple_result]])** |
 | **Master fan-in `W_M`** | **`8–16`** (low end of `[16, 32]`) | Prefetcher cap (§6) + shallow loser tree | Model-derived |
 | **Merger fan-in `W_m`** | **`8–12`** | Prefetcher stream cap (§6); recv buffers stay above the 256 KB rendezvous threshold | Model-derived |
 | **Tree depth `L`** | **`L = 1`** while `R ≲ ~75`; `L = 2` only at `R ≳ 100–150`; `L = 3` only beyond `R ≳ 1000` | Measured at `R=43, 74`: tree ≤ 3 %; the crossover is past `R=74` | Measured + extrapolation |
@@ -456,11 +489,14 @@ specific** and is exactly what motivates the asymmetric tune.
    peak sums overcount, so dense HT deployments are worth trying).
 4. The **merge tree** — build it now as depth-general infrastructure, but measured
    ≤ 3 % at `R ≤ 74`: a `g ≳ 4` / `R ≳ 100` optimisation, not a `g = 1` one.
-5. **Per-role buffer decoupling** (§11) — the most attractive untested lever: shrink
-   the mapper-side `largesize`/`smallsize` (cache-resident local sort + freed RAM for
-   more mappers) while growing the reducer-side (more combining, paid from the
-   reducer's idle budget). Needs a small `setfile.c` / `AllocSort` change so values
-   can be chosen per role.
+5. **Per-role `largesize` decoupling** — *now measured (2026-05-28).* mapper
+   `largesize 1 GB / smallsize 50 MB` + `reducerlargesize 5 GB` beat the
+   single-value 2 GB baseline by **−14.1 %** on Spin (8 × 30 × 150 GB
+   `zeus_combined_q`). 91 % of the win is module 11 (the no-sortable-output
+   transform module where mappers were piling on the reducer): mapper
+   `send_wait` −75 %, reducer `recv_wait` −33 %. Set this on any heavy
+   workload whose profile shows non-trivial mapper `send_wait`; neutral
+   elsewhere.
 
 ---
 
@@ -483,14 +519,153 @@ specific** and is exactly what motivates the asymmetric tune.
    count and the mapper local-sort LLC-miss rate with
    `perf stat -e LLC-load-misses,l2_rqsts.*` to validate the `W ≈ 8–12` cap (§6) and
    quantify the local-sort DRAM-latency hazard.
-6. **Per-role buffer decoupling — joint Spin sweep + small code change.** Currently
-   `form.set` ties `largesize` and `smallsize` to a single value for every rank, but
-   mapper and reducer use them very differently (§10 coupling). The hypothesis: on the
-   mapper, shrink both to ~L3-sized regions to make the local sort cache-resident
-   (§6) and free RAM for more mappers; on the reducer, grow `largesize` (~3–4 GB) so
-   lBuffer holds more sorted runs and combines more before extracting patches — paid
-   for out of the reducer's 42–100 % idle budget. Test plan: (a) small per-role
-   plumbing in `setfile.c` / `AllocSort` so the values can be set per role; (b) joint
-   Spin sweep of mapper-`{largesize, smallsize}` × reducer-`largesize` while pushing
-   workers/node to absorb the freed RAM; (c) per-role reducer lBuffer high-water-mark
-   instrumentation to confirm the reducer-side growth is genuinely used.
+6. **Per-role lBuffer decoupling — closed 2026-05-28.** Code (single
+   `reducerlargesize` form.set key in `setfile.c::RecalcSetups`) and matched-
+   queue A/B both landed. Result: mapper `1 GB / 50 MB` + `reducerlargesize
+   5 GB` beats `2 GB everywhere` by **−14.1 %** on Spin (8 × 30 × 150 GB,
+   `zeus_combined_q`). 91 % of the win is module 11 (no-sortable-output
+   transform), driven by mapper `send_wait −75 %`. The two siblings tried
+   initially (`reducersmallsize`, `reducersmallextension`) were dropped on a
+   code re-read: reducer never writes `sBuffer` (`PF_StoreBuffer` memcpy's
+   straight to `lBuffer`; reducer-`EndSort` enters with `sTerms = 0`) and the
+   shuffle arena is anchored at the mapper values via
+   `PF.shuffle_arena_words`, so they would be RAM waste. Two follow-ups
+   remain open: (a) sweep `reducerlargesize` across {3, 4, 5, 7} GB to
+   bracket the optimum; (b) per-role reducer lBuffer high-water-mark
+   instrumentation to confirm the 5 GB allocation is genuinely *used* on
+   module 11. See [[project_bufdecouple_result]].
+
+7. **Shuffle-pair bug from per-role decoupling — resolved with `PF.shuffle_arena_words`.**
+   *(Discovered + fixed 2026-05-23 while bringing up the per-role decoupling A/B.)*
+   The first `parform.bufdecouple` binary divided by the *local* arena at each
+   formula site — so a reducer with `reducerlargesize=6 GB` sent shuffle slots
+   sized to its own arena (~32 MB) into a master/merger expecting mapper-arena
+   sized slots (~10 MB), producing certain `MPI_ERR_TRUNCATE` on the first
+   reducer→master flush. **The fix** captures the mapper-arena once in
+   `setfile.c::RecalcSetups` *before* the `reducer*` override into a new global
+   `PF.shuffle_arena_words` ([parallel.h:206](../../sources/parallel.h#L206)),
+   and the three formula sites (`PF_InitTree:473`, `PF_ReducerInit:2812`,
+   `PF_allocateSbuf:3050`) all use it. Result: every rank computes the same
+   slot size regardless of role; the reducer's grown `lBuffer` is now used
+   exclusively for patch accumulation in `PF_StoreBuffer` (the actual
+   decoupling payoff). The alternative — switching the divisor to the local
+   `numtasks` to grow per-source buffer by `R/G` — was rejected because it
+   would re-introduce the merger inheritance problem (mergers carry mapper-
+   phase allocation; they can't hold reducer-sized chunks). If shuffle
+   throughput later turns out message-rate-bound, a *separate* dedicated
+   shuffle arena (sized independently of the sort buffer) is the cleaner path.
+
+---
+
+## 12. The dRGT_h3_9 calibration — a new regime past Spin
+
+*Appended 2026-05-23. Spin (`g=1` per §2) is generation-bound and the MR
+pipeline downstream of the diagram-load handles it comfortably. dRGT_h3_9
+is the first workload that **breaks an assumption baked into §3–§10**:
+that the diagram-load itself is in the noise. It isn't, structurally.*
+
+### What changes at dRGT scale
+
+The §2 workload model implicitly assumes the diagram-load is a small fixed
+overhead (Spin: ~125 s on the master, producing 4,078,125 terms — exactly
+`25 × 25 × 25 × 261` = vertex combinatorics, zero merging). dRGT keeps the
+same script structure but the id substitution itself is on a different
+scale:
+
+| | Spin (`diags45`) | dRGT (`diags9`) |
+|---|---|---|
+| Top-level factors | 14 | 10 |
+| Vertex factors | 4, summands `[25, 25, 25, 261]` | 3, **summands `[399, 399, 399]`** |
+| Propagator factors | single-term (`I*prop(...)`) | **rich inner sums (~11 terms each)** |
+| Pure vertex combinatorics | `25 × 25 × 25 × 261 = 4.08 M` | `399³ × ~11³ ≈ 83 B` |
+| Diagram-load wallclock | ~125 s | **walltimes serially** (8h+ killed in `4075662`) |
+| Diagram-load wraps in | `off parallel;` | `off parallel;` |
+
+**The bottleneck migrates.** Spin's heavy modules are 9/10/11 (per §3),
+i.e. inside the doall, and the diagram-load is in the 0.6 % "other"
+bucket. dRGT *cannot reach* those modules in the bare MR variant — the
+serial diagram-load on the master consumes the whole budget.
+
+### The structural fix: split the id
+
+`scripts/split_id.py` rewrites a giant `id diags<N>` substitution as a
+sum of `K` opaque-symbol chunks + `K` parallel substitutions inside a
+single `on parallel;` module. Algebraic equivalence by construction
+(opaque symbols substituted back rewrite the same product). The
+optimal-K math, from a two-term cost model:
+
+```
+T(K) ≈ T_props · K  +  V_total / min(K, M)
+       └ serial ┘     └─── parallel ───┘
+```
+
+- `T_props` = work per opaque-symbol-triple in the first id (calibrated
+  for dRGT as `prop_distribution³ ≈ 1300`, from the first split run's
+  module-3 output exactly equal to `4096 × 1300 = 5,324,800`).
+- `V_total` = raw module-4 expansion count (~83 B for dRGT).
+- `M` = mapper rank count (~265 at 5n × 64 × -r17).
+
+`K_opt = √(V_total/T_props) ≈ 8000` for dRGT, but anywhere in
+`[256, 8000]` is essentially indistinguishable in total time and **all
+mapper-bound at `V_total/M`** beyond `K = M`. Catastrophic K (e.g.
+399³ ≈ 64 M, one chunk per summand): first-id serial regrows to
+`V_total · T_props` and recreates the original wall.
+
+### Splitter validation: zero merging in the first split id (dRGT)
+
+The first dRGT split run (`4075681`, in flight as of this addendum)
+emits `expr1 Terms in output = 5,324,800` at the end of module 3 —
+exactly `4096 × 1300`. **Zero merging at this stage**, confirming
+splitter correctness structurally (each opaque-symbol triple stays
+distinct, by construction). Whether dRGT's *real* `.sort:Diagram Loaded`
+(module 4 in the split variant — equivalent to Spin's full diagram-load)
+will or won't merge depends on the vertex's within-summand scalar-only
+parallelism, which is unmeasured.
+
+### Why the §5 walls don't move (dRGT)
+
+The §5 wall enumeration was per-rank; the dRGT diagram-load violates
+none of those resource walls. It violates a wall §5 didn't enumerate:
+**single-rank serial-CPU throughput on a script-level `off parallel;`
+section**. The fix isn't a per-rank or per-tier knob — it's a
+script-level rewrite (the split). Updated wall taxonomy:
+
+| Wall class | §5 enumerated? | Lever |
+|---|---|---|
+| Per-rank disk / memory / NIC | yes | layout, form.set, merger tier |
+| Master loser-tree fan-in | yes | drain (K-prefix), merger tier |
+| Master memcpy throughput `Θ(D)` | yes | drain (already irreducible) |
+| **Serial off-parallel module wallclock** | **no — Spin was small enough not to notice** | **script-level split (the splitter)** |
+
+### Per-role/per-script implication
+
+§5's "compute-bound condition" needs an additional clause:
+
+> **(d) Every `off parallel;` module has either (i) trivial work — say
+> ≤ a few minutes serial — *or* a structural rewrite (e.g. id split via
+> `scripts/split_id.py`) that distributes the work into a parallel
+> module.**
+
+For Spin this clause is satisfied trivially (every off-parallel section
+is small). For dRGT and any workload with large id substitutions, the
+clause requires action — generated via the splitter, then validated
+byte-identical against a small-scale baseline (or the Spin oracle).
+
+### Connection to §10 / §11
+
+§10's settings table is unchanged for dRGT — the merger tier, K-prefix,
+form.set buffers, layout, all apply the same way once the diagram-load
+is unblocked. Only the **first** entry of §10's priority ordering
+shifts: for workloads where the bare MR variant has a serial-id wall,
+"split the bare id" precedes "add mappers" because adding mappers does
+nothing until the work is parallelizable.
+
+§11's open questions all remain open. The splitter introduces a small
+new measurement target: the **per-vertex scalar-coef merger fraction**
+(do dRGT's 399 summands per vertex group into fewer canonical tensor
+patterns?). The cheapest probe is a `B gi, deltaF, Mom, dotp, prop;
+.sort;` inserted before `.sort:Diagram Loaded;` in a split variant —
+if the post-bracket term count drops materially vs without bracket, the
+vertex has merger fraction worth exploiting; if not, the raw upper
+bound (~83 B) is the real count. Not yet measured; bracket+MR broadcast
+of `AR.BracketOn` in ParFORM is unconfirmed in the code.

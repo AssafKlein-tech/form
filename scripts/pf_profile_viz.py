@@ -69,13 +69,37 @@ PHASE_COLS = [
     ("t_mer_recv_wait_us",     "MER_RECV_WAIT",     "merger"),
     ("t_mer_forward_wait_us",  "MER_FORWARD_WAIT",  "merger"),
     ("t_mer_forward_mpi_us",   "MER_FORWARD_MPI",   "merger"),
+    # Mapper-attack instrumentation: sub-phases that decompose the
+    # MAP_GENERATOR / MAP_ENDSORT_TOTAL parents. All marked NON_ADDITIVE so
+    # they show up in Gantt + per-rank breakdown but don't double-count
+    # against the parent in the stacked phase-breakdown panel.
+    ("t_map_small_flush_total_us", "MAP_SMALL_FLUSH_TOTAL", "mapper"),
+    ("t_map_splitmerge_us",        "MAP_SPLITMERGE",        "mapper"),
+    ("t_map_compress_batch_us",    "MAP_COMPRESS_BATCH",    "mapper"),
+    ("t_map_hash_route_us",        "MAP_HASH_ROUTE",        "mapper"),
+    ("t_map_delta_compress_us",    "MAP_DELTA_COMPRESS",    "mapper"),
+    ("t_map_sbuf_copy_us",         "MAP_SBUF_COPY",         "mapper"),
+    ("t_map_testsub_us",           "MAP_TESTSUB",           "mapper"),
+    ("t_map_normalize_us",         "MAP_NORMALIZE",         "mapper"),
+    ("t_map_preppoly_us",          "MAP_PREPPOLY",          "mapper"),
+    ("t_map_storeterm_us",         "MAP_STORETERM",         "mapper"),
+    ("t_red_store_total_us",       "RED_STORE_TOTAL",       "reducer"),
 ]
 
 # Phases that are a sub-component of another phase (not additive with the
 # rest of their role's bar). They still get their own Gantt bar but are
 # skipped in the stacked phase-breakdown so the bar isn't double-counted.
 # MAS_MERGE_RECV_WAIT ⊂ MAS_FINAL_SORT; MER_RECV_WAIT ⊂ MER_MERGE.
-NON_ADDITIVE_PHASES = {"MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT"}
+# The mapper-attack sub-phases sit inside MAP_GENERATOR / MAP_ENDSORT_TOTAL
+# and RED_STORE_TOTAL sits inside the reducer wallclock (it parents the
+# existing RED_BUFFER_COPY / RED_MERGE_PATCHES that are themselves additive).
+NON_ADDITIVE_PHASES = {
+    "MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT",
+    "MAP_SMALL_FLUSH_TOTAL", "MAP_SPLITMERGE", "MAP_COMPRESS_BATCH",
+    "MAP_HASH_ROUTE", "MAP_DELTA_COMPRESS", "MAP_SBUF_COPY",
+    "MAP_TESTSUB", "MAP_NORMALIZE", "MAP_PREPPOLY", "MAP_STORETERM",
+    "RED_STORE_TOTAL",
+}
 
 # Display order for roles. A run without a merger tier simply has no
 # "merger" rows and panels skip the absent role.
@@ -161,6 +185,63 @@ DECISION_MATRIX = [
         "diagnosis": "Mappers hash-pack CPU-bound.",
         "knob": "Code: review the hash kernel (murmur3-AVX512 already in use); consider per-rank load reporting.",
         "rationale": "Hash work is per-term; vectorization is the only lever.",
+    },
+    # ---- Mapper-attack rules (plan i-want-to-attack-dazzling-gizmo.md). ----
+    # Gated by t_map_generator_us > 0 to suppress on non-mapper rows.
+    {
+        "id": "compress_batch_redundant",
+        "test": lambda d: d["mapper"]["t_map_generator_us"] > 0
+                          and d["mapper"]["t_map_compress_batch_us"] > 0.05 * d["mapper"]["t_map_generator_us"]
+                          and d["mapper"]["t_map_delta_compress_us"] > 0.05 * d["mapper"]["t_map_generator_us"],
+        "diagnosis": "Mapper does TWO compression passes per term (ComPress batch + per-reducer delta) and both are >5% of Generator time. The batch pass writes to compressSpace; the per-reducer pass re-compresses against AR.CompressPointers[dst]. Only the second pass matters for the wire.",
+        "knob": "Candidate 1a: skip ComPress at sort.c:958 for MR mappers; PutOut already handles raw terms.",
+        "rationale": "Removing the first pass cuts one full term walk per small-buffer flush with no reducer-side change.",
+    },
+    {
+        "id": "sort_shift_candidate",
+        "test": lambda d: d["mapper"]["t_map_generator_us"] > 0
+                          and d["mapper"]["t_map_splitmerge_us"] > 0.04 * d["mapper"]["t_map_generator_us"]
+                          and d["reducer"]["wallclock_us"] > 0
+                          and d["reducer"]["t_red_recv_wait_us"] > 0.40 * d["reducer"]["wallclock_us"],
+        "diagnosis": "Mapper-side SplitMerge is non-trivial (>4% of Generator) AND reducers have headroom (recv_wait >40% of reducer wallclock). The sort work can move to the reducer.",
+        "knob": "Candidate 1b: add a SplitMerge inside PF_StoreBuffer (parallel.c:954); skip the mapper SplitMerge. Pick 1b-i (drop wire compression) if map_compression_ratio < 1.5, otherwise 1b-ii (per-destination radix on mapper to preserve compression).",
+        "rationale": "Total sort work is conserved; moving it to idle reducers shifts the bottleneck off the critical path.",
+    },
+    {
+        "id": "compression_not_earning",
+        "test": lambda d: d["mapper"]["map_bytes_postcompress"] > 0
+                          and d["mapper"]["map_compression_ratio"] < 1.2,
+        "diagnosis": "Per-reducer delta compression saves <20% of wire bytes -- it's mostly CPU overhead. Likely caused by hash-spread routing breaking shared-prefix opportunities.",
+        "knob": "Set PF_SHUFFLE_NOCOMPRESS=1 for a one-shot benchmark. If wallclock improves, the compress block (sort.c:1940-2020) is a candidate to skip on the lowmr_sort path.",
+        "rationale": "Compression earns its CPU only when shared-prefix runs are long; murmur3 hashing typically destroys that locality.",
+    },
+    {
+        "id": "normalize_underchanged",
+        "test": lambda d: d["mapper"]["t_map_generator_us"] > 0
+                          and d["mapper"]["t_map_normalize_us"] > 0.50 * d["mapper"]["t_map_generator_us"]
+                          and d["mapper"]["map_norm_clean_in"] > 0
+                          and (d["mapper"]["map_norm_changed"] / max(d["mapper"]["map_norm_clean_in"], 1)) < 0.30,
+        "diagnosis": "Normalize dominates Generator (>50%) but actually modifies the term less than 30% of the time. Most calls are wasted work.",
+        "knob": "Candidate 2b: add an early-out in Normalize (normal.c:193) using a cheap clean-term predicate (DIRTYFLAG check on subterms).",
+        "rationale": "If 70%+ of calls return unchanged, even a partial detector that skips a third of them is several % wallclock.",
+    },
+    {
+        "id": "testsub_prev_rule_repeats",
+        "test": lambda d: d["mapper"]["t_map_generator_us"] > 0
+                          and d["mapper"]["t_map_testsub_us"] > 0.30 * d["mapper"]["t_map_generator_us"]
+                          and d["mapper"]["map_terms_in"] > 0
+                          and (d["mapper"]["map_testsub_prev_rule_hit"] / max(d["mapper"]["map_terms_in"], 1)) > 0.30,
+        "diagnosis": "TestSub is >30% of Generator AND >30% of terms match the same rule as the previous term. An LRU-1 cache would short-circuit a substantial fraction of pattern scans.",
+        "knob": "Candidate 2c: cache the last successful rule index in proces.c:Generator; retry it before the full TestSub scan.",
+        "rationale": "Hot symbolic expansions tend to emit runs of structurally-similar terms; the cache hit rate measured here is the realised ceiling for the optimization.",
+    },
+    {
+        "id": "gen_other_dominates",
+        "test": lambda d: d["mapper"]["t_map_generator_us"] > 0
+                          and d["mapper"]["t_map_gen_other_us"] > 0.40 * d["mapper"]["t_map_generator_us"],
+        "diagnosis": "Generator residual (MAP_GENERATOR minus TestSub+Normalize+PrepPoly+StoreTerm) is >40% of Generator -- the bottleneck is NOT in the instrumented sub-calls. Likely cache misses on term walks, or an unwrapped helper (PolyFunMul, TakeIDfunction, ReNumber, Deferred).",
+        "knob": "Add finer-grained timers (PolyFunMul, TakeIDfunction) and re-profile, OR try candidate 2e (term-arena alignment + prefetch).",
+        "rationale": "Without more instrumentation we can't pick between cache-bound and unwrapped-callee; do the cheap instrumentation pass first.",
     },
     {
         "id": "master_merge_recv_bound",
@@ -284,13 +365,51 @@ def load_csv(run_dir: Path) -> pd.DataFrame:
     for col in ("bytes_sent", "bytes_to_master", "bytes_mer_to_master"):
         if col not in df.columns:
             df[col] = 0
+    # Mapper-attack counters: backfill 0 for older CSVs that pre-date the
+    # new instrumentation, so the viz can run against historical runs.
+    for col in ("map_sbuf_flushes", "map_bytes_precompress", "map_bytes_postcompress",
+                "map_bytes_shuffled", "map_terms_in", "map_norm_clean_in",
+                "map_norm_changed", "map_testsub_prev_rule_hit",
+                "map_testsub_no_match", "red_bytes_received"):
+        if col not in df.columns:
+            df[col] = 0
     if "nummergers" not in df.columns:
         df["nummergers"] = 0
+    # Legacy derived "hash+pack" residual. With the new instrumentation
+    # MAP_HASH_ROUTE + MAP_DELTA_COMPRESS + MAP_SBUF_COPY are observed
+    # directly, so the gap is now small (residual = whatever the timers
+    # don't catch, e.g. the int allow_compress declaration). Kept for
+    # comparison with historical CSVs.
     df["t_map_hash_pack_us"] = (
         df["t_map_endsort_total_us"]
         - df["t_map_send_wait_us"]
         - df["t_map_send_mpi_us"]
     ).clip(lower=0)
+    # Derived: directly-observed sum of mapper PutOut sub-phases. If this
+    # ≈ t_map_hash_pack_us, the 14% gap is fully attributed; otherwise the
+    # residual = (hash_pack − putout_observed) lives outside the wrapped
+    # call sites and merits further instrumentation.
+    df["t_map_putout_observed_us"] = (
+        df["t_map_hash_route_us"]
+        + df["t_map_delta_compress_us"]
+        + df["t_map_sbuf_copy_us"]
+    )
+    # Derived: Generator residual once known sub-phases are subtracted.
+    # Large value => bottleneck is cache/memory or an unwrapped sub-call.
+    df["t_map_gen_other_us"] = (
+        df["t_map_generator_us"]
+        - df["t_map_testsub_us"]
+        - df["t_map_normalize_us"]
+        - df["t_map_preppoly_us"]
+        - df["t_map_storeterm_us"]
+    ).clip(lower=0)
+    # Derived: wire compression ratio. Numerator >> denominator -> compression
+    # is paying for itself; numerator ≈ denominator -> compression is mostly
+    # CPU overhead with no bytes saved (signal for plan 1b-i).
+    df["map_compression_ratio"] = (
+        df["map_bytes_precompress"] / df["map_bytes_postcompress"].clip(lower=1)
+    )
+    df.loc[df["map_bytes_postcompress"] == 0, "map_compression_ratio"] = float("nan")
     df["t_red_store_us"] = (
         df["wallclock_us"]
         - df["t_red_recv_wait_us"]
