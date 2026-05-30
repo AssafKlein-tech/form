@@ -12,6 +12,46 @@ The profiler works for both **MR** (`on mapreduce;`) and **non-MR** parform
 runs — the same binary, same CSV schema. This is what enables direct
 side-by-side comparison.
 
+## CRITICAL: pf_profile measures only the paths it wraps — when to switch to VTune
+
+**The PF_TIMER phases only cover code that was explicitly wrapped. A
+bottleneck in an unwrapped path is silently mis-charged to whatever
+wrapped phase encloses it.** This bit hard on Spin:
+
+- pf_profile reported the mapper "generation-bound, GEN_OTHER = 74% of
+  Generator." Two added instrumentation passes (`parform.mapperprof`,
+  `parform.mapperprof2`) drilled the residual but never explained it.
+- VTune sampling then showed the truth: **~30% of mapper CPU was
+  `PMPI_Ssend`** — the end-of-module stats-collection barrier. The
+  `MAP_SEND_*` timers never saw it (they wrap the `MPI_Isend` shuffle at
+  mpi.c:456, NOT the synchronous Ssend at mpi.c:432). That blocking time
+  was charged to `MAP_GENERATOR` because the buffer flush fires inside
+  StoreTerm inside the per-term loop → the phantom "GEN_OTHER."
+
+**Rule:** pf_profile is reliable for the *relative split across the phases
+it wraps* (mapper send-wait vs reducer recv-wait vs master merge) and for
+the decision-matrix knob picks. It is NOT a trustworthy whole-of-CPU
+breakdown. If a residual (GEN_OTHER or any phase) is large, or you suspect
+MPI-wait is mischarged, **switch to VTune sampling** — it sees every
+symbol (incl. libmpi/kernel) with no "did I wrap it" blind spot. Do not
+keep adding PF_TIMER passes to chase a residual.
+
+Full VTune recipe + Zeus gotchas: auto-memory **`project_vtune_setup`**
+and **`project_vtune_mapper_hotspots`**. One-liners:
+- perf is absent on all Zeus compute nodes; VTune 2024.2 is the only
+  sampling profiler. The `module load vtune` is broken — the wrapper
+  `runs/Adquanta/vtune_wrap.sh` uses the absolute binary
+  `/usr/local/intel_oneapi2024/vtune/2024.2/bin64/vtune`.
+- must pass `-knob sampling-mode=sw` (no sep driver, paranoid=2 → no HW
+  sampling); add `-knob enable-stack-collection=true` for caller chains.
+- `vtune_wrap.sh` profiles only `PERF_TARGET_RANK` (default 1, a mapper);
+  all other ranks exec parform directly. Result dir lands in
+  `$PF_PROFILE_DIR` as `vtune_hotspots_rank1_<host>` — glob it.
+- report: `$VT -report hotspots -r <dir> -format csv -csv-delimiter ';'`
+  (parse defensively, rows ragged); `-report gprof-cc` for callers.
+- **production runs must use a non-PF_PROFILE binary** — the profiler
+  build cost ~16-18% wallclock (clock_gettime + PF_LongSingleSend bloat).
+
 ## What it captures
 
 Per (module, rank) row in `pf_profile.csv`:
