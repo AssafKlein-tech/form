@@ -470,7 +470,10 @@ static int PF_InitTree(void)
 /*
 		this is the size we have in the combined sortbufs for one slave
 */
-	size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
+	/* Use PF.shuffle_arena_words (mapper-config arena, identical on every rank)
+	   so sender slot == receiver slot across all (mapper,reducer,merger,master)
+	   pairs even when reducer* form.set overrides grow the reducer's local arena. */
+	size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	//size = size / 512;
 
@@ -898,7 +901,13 @@ newsrc: ;
 	}
 	PF_TIMER_INC(PF_EX_BUFFERS_RECEIVED);
 
+	/* RED_STORE_TOTAL covers per-buffer processing cost (memcpy + maybe a
+	   MergePatches), excluding the recv wait above. Baseline for plan 1b
+	   which would add a SplitMerge inside this window. */
+	PF_TIMER_BEGIN(RED_STORE_TOTAL);
 	sSpace = rbuf->full[a] - rbuf->fill[a];
+	/* Per-link reducer bandwidth: bytes consumed per buffer. */
+	PF_TIMER_ADD_BYTES(PF_EX_RED_BYTES_RECEIVED, sSpace * sizeof(WORD));
 	//MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace);
 	lSpace = sSpace + (S->lFill - S->lBuffer)
 				 - (AM.MaxTer/sizeof(WORD))*((LONG)S->lPatch);
@@ -958,6 +967,7 @@ newsrc: ;
 	S->PoinFill = S->sPointer;
 	*(S->PoinFill) = S->sFill = S->sBuffer;
 	PF_TIMER_END(RED_BUFFER_COPY);
+	PF_TIMER_END(RED_STORE_TOTAL);
 	a = rbuf->active = next;
 	goto newsrc;
 }
@@ -1244,17 +1254,19 @@ int PF_EndSort(void)
 	   mapper-phase done-handshake; the master has been the one waiting on
 	   it. */
 	if ( PF.me == MASTER )
+	{
 		PF_WaitAllSlaves();
+		LONG cpu = TimeCPU(1);
+		WORD cpart = (WORD)(cpu%1000);
+		cpart /= 10;
+		WORD rpart = cpu / 1000;
+		MesPrint("[%d] PF_EndSort: All slaves started endsort Time: %7l.%2i", PF.me, rpart, cpart);
+	}
 /*
 		Now collect the terms of all slaves and merge them.
 		PF_GetLoser gives the position of the smallest term, which is the real
 		work. The smallest term needs to be copied to the outbuf: use PutOut.
 */
-	LONG cpu = TimeCPU(1);
-	WORD cpart = (WORD)(cpu%1000);
-	cpart /= 10;
-	WORD rpart = cpu / 1000;
-	MesPrint("[%d] PF_EndSort: All slaves started endsort Time: %7l.%2i", PF.me, rpart, cpart);
 	PF_InitTree();
 	if ( AR.PolyFun == 0 ) { S->PolyFlag = 0; }
 	else if ( AR.PolyFunType == 1 ) { S->PolyFlag = 1; }
@@ -2802,7 +2814,8 @@ int PF_ReducerInit()
 	PF_BUFFER **rbuf = PF.rbufs;
 	int numtasks = PF.nummappers; 
 	int numrbufs = PF.numrbufs; //for each mapper
-	LONG size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
+	/* Use PF.shuffle_arena_words (mapper-config arena) -- same rationale as PF_InitTree:473. */
+	LONG size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
 	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
@@ -3036,7 +3049,13 @@ LONG PF_allocateSbuf()
 		}
 	}
 	else{
-		size = (AT.SS->sTop2 - AT.SS->lBuffer - 1)/(PF.numtasks - 1);
+		/* Worker sbuf -- used by mapper (->reducer shuffle), reducer (->master
+		   or merger forward), and merger (->master forward). All three are in
+		   the shuffle-pair chain: receiver Irecv capacity is sized by
+		   PF.shuffle_arena_words (PF_InitTree:473 / PF_ReducerInit:2812), so
+		   the sender slot must use the same arena to avoid MPI_ERR_TRUNCATE
+		   when a reducer's local arena is larger via reducer* form.set keys. */
+		size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
 		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 		if( sbuf == 0){

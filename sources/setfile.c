@@ -93,6 +93,7 @@ SETUPPARAMETERS setupparameters[] =
 	,{(UBYTE *)"path",                       PATHVALUE, 0, (LONG)curdirp}
 	,{(UBYTE *)"procedureextension",       STRINGVALUE, 0, (LONG)procedureextension}
 	,{(UBYTE *)"processbucketsize",     NUMERICALVALUE, 0, (LONG)DEFAULTPROCESSBUCKETSIZE}
+	,{(UBYTE *)"reducerlargesize",      NUMERICALVALUE, 0, (LONG)0}
 	,{(UBYTE *)"reducerpercent",        NUMERICALVALUE, 0, (LONG)DEFAULTREDUCERPERCENT}
 	,{(UBYTE *)"resettimeonclear",          ONOFFVALUE, 0, (LONG)1}
 	,{(UBYTE *)"scratchsize",           NUMERICALVALUE, 0, (LONG)SCRATCHSIZE}
@@ -568,6 +569,49 @@ int AllocSetups(void)
 	sp = GetSetupPar((UBYTE *)"sortiosize");
 	IOsize = sp->value;
 	if ( IOsize < AM.MaxTer ) { IOsize = AM.MaxTer; sp->value = IOsize; }
+#ifdef WITHMPI
+	/* Shuffle-buffer arena: ALL ranks must agree on the sbuf/rbuf slot size so
+	   sender flush <= receiver Irecv capacity. We anchor it to the MAPPER form.set
+	   values (the values just read above, BEFORE the per-role reducer override
+	   block below). This is the SAME value on every rank, so PF_InitTree:473,
+	   PF_ReducerInit:2812, and PF_allocateSbuf:3022/:3046 all give matching sizes
+	   regardless of the reducer's larger local arena. */
+	PF.shuffle_arena_words = ((LONG)LargeSize + (LONG)SmallEsize) / (LONG)sizeof(WORD);
+	/* Per-role lBuffer: reducer ranks read `reducerlargesize` when set (>0),
+	   else fall back to the mapper `largesize` above. Role is derived the same
+	   way as parallel.c:2118-2122 (PF.me >= numtasks-numreducers).
+	   NOTE: AM.ReducerPer is assigned further down in this function (line ~770),
+	   AFTER AllocSort runs above. Use AM.Prepercentage (set by DoTail from -r
+	   in startup.c) instead -- that's what AM.ReducerPer gets clamped to.
+	   Fallback: form.set `reducerpercent` -> default 50.
+	   smallsize / smallextension are NOT decoupled per role: the reducer never
+	   stores terms in sBuffer (PF_StoreBuffer memcpy's straight to lBuffer; the
+	   sTerms=0 reducer-EndSort skips the small-buffer path), and the shuffle
+	   arena is anchored at the mapper values via PF.shuffle_arena_words
+	   (parallel.c:476/:2816/:3056), so growing smallext on the reducer would be
+	   pure RAM waste. */
+	{
+		int rpercent = AM.Prepercentage;
+		if ( rpercent == 0 ) {
+			SETUPPARAMETERS *sprp = GetSetupPar((UBYTE *)"reducerpercent");
+			if ( sprp ) rpercent = (int)sprp->value;
+		}
+		if ( rpercent <= 0 || rpercent >= 50 ) rpercent = 50;
+		if ( PF.me != MASTER ) {
+			int nr = (PF.numtasks - 1) * rpercent / 100;
+			if ( nr < 2 ) nr = 2;
+			int nm = PF.numtasks - nr;
+			if ( PF.me >= nm ) {
+				SETUPPARAMETERS *sp2 = GetSetupPar((UBYTE *)"reducerlargesize");
+				if ( sp2 && sp2->value > 0 ) {
+					LargeSize = sp2->value;
+					if ( PF.me == nm )
+						MesPrint("[reducer] reducerlargesize -> %l bytes", LargeSize);
+				}
+			}
+		}
+	}
+#endif
 #ifndef WITHPTHREADS
 #ifdef WITHZLIB
 	for ( j = 0; j < 2; j++ ) { AR.Fscr[j].ziosize = IOsize; }

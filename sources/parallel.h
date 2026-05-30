@@ -202,6 +202,12 @@ typedef struct ParallelVars {
 	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
+	LONG        shuffle_arena_words; /* mapper-config sort buffer arena in WORDs = (mapper-largesize + mapper-smallextension)/sizeof(WORD).
+	                                    Set once in setfile.c::RecalcSetups BEFORE the per-role reducer override, so it's the SAME value
+	                                    on every rank. All three shuffle-buffer formula sites (PF_InitTree:473, PF_ReducerInit:2812,
+	                                    PF_allocateSbuf:3046) use this instead of the LOCAL arena (AT.SS->sTop2-AT.SS->lBuffer), so
+	                                    sender and receiver always agree on the slot size -- prevents MPI_ERR_TRUNCATE when the
+	                                    reducer* form.set overrides grow the reducer's local arena beyond the mapper's. */
 } PARALLELVARS;
 
 extern PARALLELVARS PF;

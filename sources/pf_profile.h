@@ -26,7 +26,36 @@ enum {
 	PF_PHASE_MAP_SEND_WAIT,        /* mapper: MPI_Wait inside PF_WISendSbuf */
 	PF_PHASE_MAP_SEND_MPI,         /* mapper: MPI_Isend post */
 	PF_PHASE_MAP_GETTERM_WAIT,     /* mapper: blocked in PF_RecvWbuf waiting for master to dispatch terms (pair to MAS_DISTRIBUTE_WAIT) */
+	/* Mapper sub-phases inside the per-term hot path. Splitting the previously
+	   uncounted "hash+pack" gap (see plan i-want-to-attack-dazzling-gizmo.md)
+	   into its constituent slices so we can attribute the 14% directly instead
+	   of by subtraction. */
+	PF_PHASE_MAP_SMALL_FLUSH_TOTAL,/* mapper: total wall time of small-buffer flush at sort.c:5024 (SplitMerge+ComPress+PutOut loop) */
+	PF_PHASE_MAP_SPLITMERGE,       /* mapper: SplitMerge call inside the small-buffer flush (sort.c:5034) */
+	PF_PHASE_MAP_COMPRESS_BATCH,   /* mapper: ComPress call inside the small-buffer flush (sort.c:958) -- the first (potentially redundant) compression pass */
+	PF_PHASE_MAP_HASH_ROUTE,       /* mapper: hash + dst calculation per term in PutOut (sort.c:1892-1927) */
+	PF_PHASE_MAP_DELTA_COMPRESS,   /* mapper: per-reducer delta compress block in PutOut (sort.c:1940-2020) */
+	PF_PHASE_MAP_SBUF_COPY,        /* mapper: NCOPY of the compressed term into the per-reducer sendbuf (sort.c:2089-2099) */
+	/* Generator sub-phases. Wrap per-term inner work in proces.c Generator
+	   so MAP_GENERATOR can be decomposed into Normalize / TestSub / PrepPoly
+	   / StoreTerm / (derived) GEN_OTHER. */
+	PF_PHASE_MAP_TESTSUB,          /* mapper: TestSub call in Generator (proces.c) */
+	PF_PHASE_MAP_NORMALIZE,        /* mapper: Normalize call in Generator (normal.c:193 callee, wrapped at proces.c call site) */
+	PF_PHASE_MAP_PREPPOLY,         /* mapper: PrepPoly call in Generator (proces.c:3361) -- should be ~0 in MR modules */
+	PF_PHASE_MAP_STORETERM,        /* mapper: StoreTerm call in Generator -- small-buffer write cost */
+	/* Phase-2 Generator sub-phases: drilling into GEN_OTHER (74% of mapper
+	   time on Spin per mapperprof CSV). All five experimental module-splits
+	   ended within noise band, confirming the bottleneck is per-term work
+	   inside Generator()'s level-dispatch loop, not module boundaries.
+	   Wrapping the heaviest calls inside that loop so the next profile run
+	   can attribute the GEN_OTHER residual to specific FORM primitives. */
+	PF_PHASE_MAP_TESTMATCH,        /* mapper: TestMatch call inside Generator's do-while (proces.c:4049) -- per-rule pattern scan, likely the dominant slice of GEN_OTHER */
+	PF_PHASE_MAP_TESTSUB_POSTMATCH,/* mapper: TestSub call after TestMatch returned non-zero (proces.c:4051) -- different from MAP_TESTSUB which wraps the entry-side call */
+	PF_PHASE_MAP_POLYFUNMUL,       /* mapper: PolyFunMul calls in Generator (proces.c:3304,3331,3337,3345) -- polynomial multiplication in PolyNormFlag handling */
+	PF_PHASE_MAP_TAKEIDFUNCTION,   /* mapper: TakeIDfunction call in Generator (proces.c:3353) -- when idfunctionflag is set after Normalize */
+	PF_PHASE_MAP_PUTBRACKET,       /* mapper: PutBracket call in Generator (proces.c:3407) -- bracket emission before StoreTerm */
 	PF_PHASE_RED_RECV_WAIT,        /* reducer: PF_WaitAnyRbuf in PF_StoreBuffer */
+	PF_PHASE_RED_STORE_TOTAL,      /* reducer: total wall time of one PF_StoreBuffer pass (includes recv wait + memcpy + maybe MergePatches) -- baseline for 1b which would add SplitMerge here */
 	PF_PHASE_RED_BUFFER_COPY,      /* reducer: term-by-term memcpy of an arrived buffer into the sort patch */
 	PF_PHASE_RED_MERGE_PATCHES,    /* reducer: MergePatches calls */
 	PF_PHASE_RED_FINAL_SORT,       /* reducer: EndSort in PF_ForwardTermsToMaster */
@@ -81,6 +110,19 @@ enum {
 	PF_EX_MERGE_LBUFFER_FULL,    /* reducer: MergePatches firings caused by large buffer running out of room */
 	PF_EX_MERGE_MAX_PATCHES,     /* reducer: MergePatches firings caused by lPatch >= MaxPatches */
 	PF_EX_BYTES_MER_TO_MASTER,   /* merger: total bytes forwarded to master */
+	/* Counters added for the mapper-attack instrumentation plan
+	   (i-want-to-attack-dazzling-gizmo.md). Each tests a specific candidate
+	   optimization's premise (e.g. how often Normalize would short-circuit). */
+	PF_EX_MAP_SBUF_FLUSHES,      /* mapper: PF_WISendSbuf calls -- average payload = BYTES_SENT/this */
+	PF_EX_MAP_BYTES_PRECOMPRESS, /* mapper: sum raw term bytes entering per-reducer delta compress (sort.c:1946) -- compression ratio numerator */
+	PF_EX_MAP_BYTES_POSTCOMPRESS,/* mapper: sum compressed bytes emitted into per-reducer CompressBuffers -- compression ratio denominator */
+	PF_EX_MAP_BYTES_SHUFFLED,    /* mapper: sum of MPI_Isend size in PF_ISendSbuf (mpi.c:445) -- bandwidth sanity check */
+	PF_EX_MAP_TERMS_IN,          /* mapper: terms entering Generator -- denominator for the fractional counters below */
+	PF_EX_MAP_NORM_CLEAN_IN,     /* mapper: terms arriving at Normalize with the dirty flag clear -- candidate 2b ceiling */
+	PF_EX_MAP_NORM_CHANGED,      /* mapper: Normalize returns with the term modified -- candidate 2b realised benefit */
+	PF_EX_MAP_TESTSUB_PREV_RULE_HIT, /* mapper: TestSub picked the same rule as the previous term -- candidate 2c LRU-1 value */
+	PF_EX_MAP_TESTSUB_NO_MATCH,  /* mapper: TestSub returned 0 (no match) -- candidate 2c pure-overhead path */
+	PF_EX_RED_BYTES_RECEIVED,    /* reducer: bytes consumed in PF_StoreBuffer -- per-link bandwidth */
 	PF_EX_COUNT
 };
 
@@ -178,6 +220,23 @@ extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
 	} while (0)
 #define PF_TIMER_ADD_BYTES(idx, n) (pf_extras[(idx)] += (LONG)(n))
 #define PF_TIMER_INC(idx) (pf_extras[(idx)]++)
+#define PF_TIMER_ADD_COUNT(idx, n) (pf_extras[(idx)] += (LONG)(n))
+/* Conditional timer: same shape as PF_TIMER_BEGIN/END but only accumulates
+   when `cond` is true at BEGIN time. The local `_pf_t_##P` carries the gate
+   (set to -1.0 when disabled). Lets us write straight-line code instead of
+   duplicating bodies for MR-only call sites in shared functions like PutOut. */
+#define PF_TIMER_BEGIN_IF(P, cond) \
+	double _pf_t_##P = (cond) ? MPI_Wtime() : -1.0; \
+	if (_pf_t_##P >= 0.0 && pf_phase_first_us[PF_PHASE_##P] < 0) \
+		pf_phase_first_us[PF_PHASE_##P] = (LONG)((_pf_t_##P - pf_module_t0) * 1.0e6)
+#define PF_TIMER_END_IF(P) \
+	do { \
+		if (_pf_t_##P >= 0.0) { \
+			double _pf_now_##P = MPI_Wtime(); \
+			pf_phase_us[PF_PHASE_##P] += (LONG)((_pf_now_##P - _pf_t_##P) * 1.0e6); \
+			pf_phase_last_us[PF_PHASE_##P] = (LONG)((_pf_now_##P - pf_module_t0) * 1.0e6); \
+		} \
+	} while (0)
 
 /* API. */
 void pf_profile_reset_module(void);
@@ -198,6 +257,9 @@ void pf_profile_dump_master_csv(int module_num, const char *expr_name,
 #define PF_TIMER_END_RT(name, idx) ((void)0)
 #define PF_TIMER_ADD_BYTES(idx, n) ((void)0)
 #define PF_TIMER_INC(idx) ((void)0)
+#define PF_TIMER_ADD_COUNT(idx, n) ((void)0)
+#define PF_TIMER_BEGIN_IF(P, cond) ((void)0)
+#define PF_TIMER_END_IF(P) ((void)0)
 
 #endif /* PF_PROFILE */
 

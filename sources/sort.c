@@ -1890,6 +1890,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		else {
 		#ifdef WITHMPI
 			if (lowmr_sort ) {
+				PF_TIMER_BEGIN(MAP_HASH_ROUTE);
 #ifdef DEBUGGING
 				pf_hash_histogram(term);  /* no-op unless PF_HASH_HISTOGRAM=1 */
 #endif
@@ -1908,7 +1909,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 					end = start + AM.MR.HashPrefixWords;
 #ifdef BITSINWORD == 16
 				while( start < end ) {
-					UWORD w = (UWORD)(*start++);    
+					UWORD w = (UWORD)(*start++);
 					term_hash = (term_hash << 13) | (term_hash >> (BITSINWORD - 13));
 					term_hash ^= w;
 				}
@@ -1926,6 +1927,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				dst = term_hash % PF.numreducers + PF.nummappers;
 				mpi_dest = dst;  /* mapper: sbuf index == MPI dest */
 				r = rr = AR.CompressPointers[dst];
+				PF_TIMER_END(MAP_HASH_ROUTE);
 			}
 #endif
 			int allow_compress = 1;
@@ -1937,6 +1939,13 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			   the term is written raw. */
 			if ( lowmr_sort && PF_shuffle_nocompress ) allow_compress = 0;
 #endif
+#ifdef WITHMPI
+			/* Pre-compress size in bytes per term -- numerator for the
+			   wire compression ratio (decides 1b-i vs 1b-ii). lowmr_sort-gated
+			   so non-MR mapper writes to scratch don't pollute the counter. */
+			if (lowmr_sort) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_PRECOMPRESS, (*term) * sizeof(WORD));
+#endif
+			PF_TIMER_BEGIN_IF(MAP_DELTA_COMPRESS, lowmr_sort);
 			if ( allow_compress && !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
 			if ( dobracketindex ) {
 				PutBracketInIndex(BHEAD term,position);
@@ -2067,6 +2076,13 @@ nocompress:
 				PutBracketInIndex(BHEAD term,position);
 			}
 		}
+		PF_TIMER_END_IF(MAP_DELTA_COMPRESS);
+#ifdef WITHMPI
+		/* Post-compress size in bytes per term -- denominator for the
+		   wire compression ratio. i is now the (possibly-compressed) length
+		   in WORDs that will land in the per-reducer compress buffer. */
+		if (lowmr_sort) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_POSTCOMPRESS, i * sizeof(WORD));
+#endif
 		}
 		ret = i;
 		ADDPOS(*position,i*sizeof(WORD));
@@ -2077,6 +2093,7 @@ nocompress:
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
 			if( fi->POfill + i >= fi->POstop ) {
+				PF_TIMER_INC(PF_EX_MAP_SBUF_FLUSHES);
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
@@ -2086,6 +2103,7 @@ nocompress:
 			}
 		}
 #endif
+		PF_TIMER_BEGIN_IF(MAP_SBUF_COPY, lowmr_sort);
 		p = fi->POfill;
 		do {
 			if ( p >= fi->POstop ) {
@@ -2093,6 +2111,7 @@ nocompress:
 			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
 				if (!sbuf) sbuf = PF.sbufs[dst];
 				sbuf->fill[sbuf->active] = fi->POstop;
+				if (lowmr_sort) PF_TIMER_INC(PF_EX_MAP_SBUF_FLUSHES);
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
@@ -2181,11 +2200,12 @@ nocompress:
 			else *p++ = *term++;
 		} while ( --i > 0 );
 #ifdef WITHMPI
-		if ( lowmr_sort ) 
+		if ( lowmr_sort )
 			sbuf->fill[sbuf->active] = sbuf->full[sbuf->active] = p;
 		//maybe I can remove it after updateing the sbuf in the first mpi section
-#endif		
+#endif
 		fi->POfull = fi->POfill = p;
+		PF_TIMER_END_IF(MAP_SBUF_COPY);
 	}
 /*
 	if ( AP.DebugFlag ) {
@@ -5025,19 +5045,26 @@ int StoreTerm(PHEAD WORD *term)
 /*
 	The small buffer is full. It has to be sorted and written.
 */
+		PF_TIMER_BEGIN(MAP_SMALL_FLUSH_TOTAL);
 		tover = over = S->sTerms;
 		ss = S->sPointer;
 		ss[over] = 0;
 #ifdef SPLITTIME
 		PrintTime((UBYTE *)"Before SplitMerge");
 #endif
-		ss[SplitMerge(BHEAD ss,over)] = 0;
+		{
+			PF_TIMER_BEGIN(MAP_SPLITMERGE);
+			ss[SplitMerge(BHEAD ss,over)] = 0;
+			PF_TIMER_END(MAP_SPLITMERGE);
+		}
 #ifdef SPLITTIME
 		PrintTime((UBYTE *)"After SplitMerge");
 #endif
 		sSpace = 0;
 		if ( over > 0 ) {
+			PF_TIMER_BEGIN(MAP_COMPRESS_BATCH);
 			sSpace = ComPress(ss,&RetCode);
+			PF_TIMER_END(MAP_COMPRESS_BATCH);
 			S->TermsLeft -= over - RetCode;
 		}
 		sSpace++;
@@ -5093,6 +5120,7 @@ int StoreTerm(PHEAD WORD *term)
 		S->sTerms = 0;
 		S->PoinFill = S->sPointer;
 		*(S->PoinFill) = S->sFill = S->sBuffer;
+		PF_TIMER_END(MAP_SMALL_FLUSH_TOTAL);
 	}
 	j = *term;
 	while ( --j >= 0 ) *S->sFill++ = *term++;

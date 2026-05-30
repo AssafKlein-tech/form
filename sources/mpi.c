@@ -398,6 +398,16 @@ int PF_ISendSbuf(int to, int tag)
 			_pf_bytes_idx  = PF_EX_BYTES_SENT;
 		}
 	}
+	/* MAP_BYTES_SHUFFLED isolates the MR mapper->reducer fan-in from the
+	   BYTES_SENT bucket (which also includes non-MR slave->master traffic).
+	   Lets the viz compute per-link shuffle bandwidth without subtracting
+	   non-shuffle bytes. Only count when we're an MR mapper and the tag
+	   carries shuffle data. */
+	int _pf_count_shuffle = (PF.me < PF.nummappers && PF.me != MASTER
+	                          && !PF.in_merger_phase
+	                          && AC.sMRflag != NO_MAPREDUCE
+	                          && (tag == PF_SHUFFLE_MSGTAG || tag == PF_BUFFER_MSGTAG
+	                              || tag == PF_ENDSHUFFLE_MSGTAG || tag == PF_ENDBUFFER_MSGTAG));
 #endif
 
 	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) {
@@ -447,6 +457,7 @@ int PF_ISendSbuf(int to, int tag)
 		PF_TIMER_END_RT(isend, _pf_send_phase);
 #ifdef PF_PROFILE
 		if ( _pf_bytes_idx >= 0 ) pf_extras[_pf_bytes_idx] += (LONG)size * (LONG)sizeof(WORD);
+		if ( _pf_count_shuffle ) pf_extras[PF_EX_MAP_BYTES_SHUFFLED] += (LONG)size * (LONG)sizeof(WORD);
 #endif
 	}
 

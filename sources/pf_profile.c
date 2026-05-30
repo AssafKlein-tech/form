@@ -330,7 +330,18 @@ static void write_csv_header(FILE *fp)
 		"t_red_recv_wait_us,t_red_buffer_copy_us,t_red_merge_patches_us,t_red_final_sort_us,t_red_forward_wait_us,t_red_forward_mpi_us,"
 		"t_mas_distribute_us,t_mas_distribute_wait_us,t_mas_final_sort_us,t_mas_collect_us,t_mas_merge_recv_wait_us,"
 		"t_mer_merge_us,t_mer_recv_wait_us,t_mer_forward_wait_us,t_mer_forward_mpi_us,"
+		/* Mapper-attack instrumentation: split the previously uncounted 14% gap
+		   in the per-term hot path. See plan i-want-to-attack-dazzling-gizmo.md. */
+		"t_map_small_flush_total_us,t_map_splitmerge_us,t_map_compress_batch_us,"
+		"t_map_hash_route_us,t_map_delta_compress_us,t_map_sbuf_copy_us,"
+		"t_map_testsub_us,t_map_normalize_us,t_map_preppoly_us,t_map_storeterm_us,"
+		"t_red_store_total_us,"
+		"t_map_testmatch_us,t_map_testsub_postmatch_us,t_map_polyfunmul_us,"
+		"t_map_takeidfunction_us,t_map_putbracket_us,"
 		"bytes_sent,bytes_to_master,terms_sent,patches_built,buffers_received,merge_lbuffer_full,merge_max_patches,bytes_mer_to_master,"
+		"map_sbuf_flushes,map_bytes_precompress,map_bytes_postcompress,map_bytes_shuffled,"
+		"map_terms_in,map_norm_clean_in,map_norm_changed,map_testsub_prev_rule_hit,map_testsub_no_match,"
+		"red_bytes_received,"
 		"io_rchar,io_wchar,io_read_bytes,io_write_bytes,io_syscr,io_syscw,"
 		"maxrss_kb,minflt,majflt,nvcsw,nivcsw,"
 		"node_disk_time_in_io_ms,node_wallclock_us,"
@@ -355,7 +366,23 @@ static void write_csv_header(FILE *fp)
 		"t_mer_merge_first_us,t_mer_merge_last_us,"
 		"t_mer_recv_wait_first_us,t_mer_recv_wait_last_us,"
 		"t_mer_forward_wait_first_us,t_mer_forward_wait_last_us,"
-		"t_mer_forward_mpi_first_us,t_mer_forward_mpi_last_us\n");
+		"t_mer_forward_mpi_first_us,t_mer_forward_mpi_last_us,"
+		"t_map_small_flush_total_first_us,t_map_small_flush_total_last_us,"
+		"t_map_splitmerge_first_us,t_map_splitmerge_last_us,"
+		"t_map_compress_batch_first_us,t_map_compress_batch_last_us,"
+		"t_map_hash_route_first_us,t_map_hash_route_last_us,"
+		"t_map_delta_compress_first_us,t_map_delta_compress_last_us,"
+		"t_map_sbuf_copy_first_us,t_map_sbuf_copy_last_us,"
+		"t_map_testsub_first_us,t_map_testsub_last_us,"
+		"t_map_normalize_first_us,t_map_normalize_last_us,"
+		"t_map_preppoly_first_us,t_map_preppoly_last_us,"
+		"t_map_storeterm_first_us,t_map_storeterm_last_us,"
+		"t_red_store_total_first_us,t_red_store_total_last_us,"
+		"t_map_testmatch_first_us,t_map_testmatch_last_us,"
+		"t_map_testsub_postmatch_first_us,t_map_testsub_postmatch_last_us,"
+		"t_map_polyfunmul_first_us,t_map_polyfunmul_last_us,"
+		"t_map_takeidfunction_first_us,t_map_takeidfunction_last_us,"
+		"t_map_putbracket_first_us,t_map_putbracket_last_us\n");
 }
 
 static const char *role_name(int rank, int nummappers, int nummergers)
@@ -383,7 +410,12 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		"%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,"
+		/* mapper-attack timers (11 phase-1 + 5 phase-2 = 16 new phases) */
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		/* mapper-attack counters (10 new) */
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,"
@@ -391,7 +423,11 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
-		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		/* Gantt timestamps for 11 phase-1 + 5 phase-2 = 16 new phases x first,last */
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
 		(long long)ts, module_num, expr_name ? expr_name : "",
 		rank, role_name(rank, nummappers, PF.nummergers),
 		nummappers, numreducers, PF.nummergers,
@@ -416,6 +452,22 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)p[PF_PHASE_MER_RECV_WAIT],
 		(long long)p[PF_PHASE_MER_FORWARD_WAIT],
 		(long long)p[PF_PHASE_MER_FORWARD_MPI],
+		(long long)p[PF_PHASE_MAP_SMALL_FLUSH_TOTAL],
+		(long long)p[PF_PHASE_MAP_SPLITMERGE],
+		(long long)p[PF_PHASE_MAP_COMPRESS_BATCH],
+		(long long)p[PF_PHASE_MAP_HASH_ROUTE],
+		(long long)p[PF_PHASE_MAP_DELTA_COMPRESS],
+		(long long)p[PF_PHASE_MAP_SBUF_COPY],
+		(long long)p[PF_PHASE_MAP_TESTSUB],
+		(long long)p[PF_PHASE_MAP_NORMALIZE],
+		(long long)p[PF_PHASE_MAP_PREPPOLY],
+		(long long)p[PF_PHASE_MAP_STORETERM],
+		(long long)p[PF_PHASE_RED_STORE_TOTAL],
+		(long long)p[PF_PHASE_MAP_TESTMATCH],
+		(long long)p[PF_PHASE_MAP_TESTSUB_POSTMATCH],
+		(long long)p[PF_PHASE_MAP_POLYFUNMUL],
+		(long long)p[PF_PHASE_MAP_TAKEIDFUNCTION],
+		(long long)p[PF_PHASE_MAP_PUTBRACKET],
 		(long long)ex[PF_EX_BYTES_SENT],
 		(long long)ex[PF_EX_BYTES_TO_MASTER],
 		(long long)ex[PF_EX_TERMS_SENT],
@@ -424,6 +476,16 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)ex[PF_EX_MERGE_LBUFFER_FULL],
 		(long long)ex[PF_EX_MERGE_MAX_PATCHES],
 		(long long)ex[PF_EX_BYTES_MER_TO_MASTER],
+		(long long)ex[PF_EX_MAP_SBUF_FLUSHES],
+		(long long)ex[PF_EX_MAP_BYTES_PRECOMPRESS],
+		(long long)ex[PF_EX_MAP_BYTES_POSTCOMPRESS],
+		(long long)ex[PF_EX_MAP_BYTES_SHUFFLED],
+		(long long)ex[PF_EX_MAP_TERMS_IN],
+		(long long)ex[PF_EX_MAP_NORM_CLEAN_IN],
+		(long long)ex[PF_EX_MAP_NORM_CHANGED],
+		(long long)ex[PF_EX_MAP_TESTSUB_PREV_RULE_HIT],
+		(long long)ex[PF_EX_MAP_TESTSUB_NO_MATCH],
+		(long long)ex[PF_EX_RED_BYTES_RECEIVED],
 		(long long)os[PF_OS_IO_RCHAR],
 		(long long)os[PF_OS_IO_WCHAR],
 		(long long)os[PF_OS_IO_READ_BYTES],
@@ -458,7 +520,23 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)pf[PF_PHASE_MER_MERGE],          (long long)pl[PF_PHASE_MER_MERGE],
 		(long long)pf[PF_PHASE_MER_RECV_WAIT],      (long long)pl[PF_PHASE_MER_RECV_WAIT],
 		(long long)pf[PF_PHASE_MER_FORWARD_WAIT],   (long long)pl[PF_PHASE_MER_FORWARD_WAIT],
-		(long long)pf[PF_PHASE_MER_FORWARD_MPI],    (long long)pl[PF_PHASE_MER_FORWARD_MPI]);
+		(long long)pf[PF_PHASE_MER_FORWARD_MPI],    (long long)pl[PF_PHASE_MER_FORWARD_MPI],
+		(long long)pf[PF_PHASE_MAP_SMALL_FLUSH_TOTAL], (long long)pl[PF_PHASE_MAP_SMALL_FLUSH_TOTAL],
+		(long long)pf[PF_PHASE_MAP_SPLITMERGE],        (long long)pl[PF_PHASE_MAP_SPLITMERGE],
+		(long long)pf[PF_PHASE_MAP_COMPRESS_BATCH],    (long long)pl[PF_PHASE_MAP_COMPRESS_BATCH],
+		(long long)pf[PF_PHASE_MAP_HASH_ROUTE],        (long long)pl[PF_PHASE_MAP_HASH_ROUTE],
+		(long long)pf[PF_PHASE_MAP_DELTA_COMPRESS],    (long long)pl[PF_PHASE_MAP_DELTA_COMPRESS],
+		(long long)pf[PF_PHASE_MAP_SBUF_COPY],         (long long)pl[PF_PHASE_MAP_SBUF_COPY],
+		(long long)pf[PF_PHASE_MAP_TESTSUB],           (long long)pl[PF_PHASE_MAP_TESTSUB],
+		(long long)pf[PF_PHASE_MAP_NORMALIZE],         (long long)pl[PF_PHASE_MAP_NORMALIZE],
+		(long long)pf[PF_PHASE_MAP_PREPPOLY],          (long long)pl[PF_PHASE_MAP_PREPPOLY],
+		(long long)pf[PF_PHASE_MAP_STORETERM],         (long long)pl[PF_PHASE_MAP_STORETERM],
+		(long long)pf[PF_PHASE_RED_STORE_TOTAL],       (long long)pl[PF_PHASE_RED_STORE_TOTAL],
+		(long long)pf[PF_PHASE_MAP_TESTMATCH],         (long long)pl[PF_PHASE_MAP_TESTMATCH],
+		(long long)pf[PF_PHASE_MAP_TESTSUB_POSTMATCH], (long long)pl[PF_PHASE_MAP_TESTSUB_POSTMATCH],
+		(long long)pf[PF_PHASE_MAP_POLYFUNMUL],        (long long)pl[PF_PHASE_MAP_POLYFUNMUL],
+		(long long)pf[PF_PHASE_MAP_TAKEIDFUNCTION],    (long long)pl[PF_PHASE_MAP_TAKEIDFUNCTION],
+		(long long)pf[PF_PHASE_MAP_PUTBRACKET],        (long long)pl[PF_PHASE_MAP_PUTBRACKET]);
 }
 
 void pf_profile_dump_master_csv(int module_num, const char *expr_name,
