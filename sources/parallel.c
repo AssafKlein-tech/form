@@ -1313,6 +1313,18 @@ int PF_EndSort(void)
 	                  && Expressions[AR.CurExpr].newbracketinfo
 	                  && ( fout == AR.outfile || fout == AR.hidefile ) ) ? 1 : 0;
 
+#if defined(WITHMPI) && defined(WITHZLIB)
+	/* Master-local block compression of the expression scratch (.sc0).
+	   Only the true master writes fout to a file (mergers redirect it to an
+	   MPI send buffer); track that fd and compress this expression's blocks
+	   unless a bracket index / hide demands random access by logical offset.
+	   No-op unless PF_SCRATCH_COMPRESS=<level> is set (see tools.c). */
+	if ( PF.me == MASTER && !PF.in_merger_phase ) {
+		PF_bc_track(fout);
+		PF_bc_compress_now = ( dobracketindex == 0 && fout != AR.hidefile );
+	}
+#endif
+
 	/* K-truncated CompareTerms for the master loser tree: cross-reducer
 	   terms differ within the first K symbolic words by the routing
 	   invariant, so capping Compare1's stoppers at K is correctness-

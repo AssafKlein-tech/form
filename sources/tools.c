@@ -1212,7 +1212,287 @@ int CreateHandle(void)
 }
 
 /*
- 		#] CreateHandle : 
+ 		#] CreateHandle :
+ 		#[ MR scratch block compression :
+
+	Master-local, transparent block compression of the MR expression scratch
+	(.sc0). In MapReduce mode the master merges the reducer/merger streams and
+	writes the result to its expression scratch via PutOut/FlushOut (and the
+	K-prefix drain), then reads it back sequentially in PF_Processor to
+	distribute terms to the slaves (slaves get terms over MPI, they never touch
+	the file). Both ends funnel through the SeekFile+Read/WriteFile lockstep in
+	this file, so we intercept there: compress each buffer on the way to disk,
+	decompress on the way back. The rest of FORM keeps seeing plain *logical*
+	(uncompressed) byte offsets -- we keep a RAM index mapping each logical
+	block to its physical (compressed) location and serve windowed reads from
+	it. This deliberately avoids FORM's continuous-stream SetupOutputGZIP path
+	(the one the 2013 parform disable guards), which entangles the gzip stream
+	with the master's merge/position bookkeeping.
+
+	Only the master's scratch fd is ever tracked (PF_bc_track from PF_EndSort),
+	and only when PF_SCRATCH_COMPRESS=<level> is set. Gated to !dobracketindex
+	/ !hide (no random-access-by-logical-offset consumer). Per-block "compressed"
+	flag makes reads self-describing, so a B+ expression written raw in the same
+	file still reads back correctly.
+*/
+#if defined(WITHMPI) && defined(WITHZLIB)
+
+#include <unistd.h>   /* ftruncate */
+
+int PF_bc_compress_now = 0;   /* set by PF_EndSort: compress this expr's blocks? */
+
+typedef struct BcBlock {
+	LONG logstart;     /* logical byte offset of this block               */
+	LONG logsize;      /* uncompressed size                               */
+	LONG physstart;    /* physical byte offset in the file                */
+	LONG physsize;     /* stored size (== logsize when not compressed)    */
+	int  compressed;   /* 1 => zlib, 0 => stored raw                      */
+} BcBlock;
+
+typedef struct BcSlot {
+	FILEHANDLE *fh;    /* tracked scratch FILEHANDLE (0 == free slot).    */
+	                   /* We key on the pointer, not a snapshot of ->handle,*/
+	                   /* because the scratch file is created lazily: at    */
+	                   /* PF_EndSort time ->handle is often -1, only valid  */
+	                   /* once PutOut/FlushOut CreateFile's it. Resolve the */
+	                   /* live ->handle at write/read time.                 */
+	LONG     phys_end; /* next physical write offset (append cursor)      */
+	LONG     log_end;  /* logical end == logstart+logsize of last block   */
+	POSITION pending;  /* logical offset captured from the last SEEK_SET  */
+	BcBlock *blk;
+	LONG     nblk, capblk;
+	UBYTE   *zbuf; LONG zbufcap;   /* compressed staging buffer           */
+	UBYTE   *ubuf; LONG ubufcap;   /* one decompressed block (read cache)  */
+	LONG     cache_blk;            /* block index currently in dbuf, -1    */
+	LONG     gen_log, gen_phys;    /* per-generation byte counters (proof) */
+	LONG     gen_comp, gen_raw;    /* per-generation block path counts     */
+} BcSlot;
+
+#define BC_MAXSLOTS 4
+static BcSlot bc_slots[BC_MAXSLOTS];
+static int    bc_inited = 0;
+static int    bc_level  = 0;   /* zlib level; 0 => feature disabled       */
+
+static void bc_init(void)
+{
+	int i; char *e;
+	for ( i = 0; i < BC_MAXSLOTS; i++ ) bc_slots[i].fh = 0;
+	e = getenv("PF_SCRATCH_COMPRESS");
+	bc_level = ( e && *e ) ? atoi(e) : 0;
+	if ( bc_level < 0 ) bc_level = 0;
+	if ( bc_level > 9 ) bc_level = 9;
+	bc_inited = 1;
+}
+
+/* Match a live fd against the registered scratch FILEHANDLEs. handle is always
+   a real (>=0) descriptor here, so it can never alias an untracked file. */
+static BcSlot *bc_find(int handle)
+{
+	int i;
+	if ( !bc_inited || handle < 0 ) return 0;
+	for ( i = 0; i < BC_MAXSLOTS; i++ )
+		if ( bc_slots[i].fh && bc_slots[i].fh->handle == handle ) return &bc_slots[i];
+	return 0;
+}
+
+static FILES *bc_file(int handle)
+{
+	FILES *f;
+	RWLOCKR(AM.handlelock);
+	f = filelist[handle];
+	UNRWLOCK(AM.handlelock);
+	return f;
+}
+
+/*
+	Mark the master's MR expression scratch (a FILEHANDLE) for compression.
+	Idempotent; a no-op when the feature is off (PF_SCRATCH_COMPRESS unset).
+	Keyed on the FILEHANDLE pointer (NOT ->handle): the file is created lazily,
+	so ->handle is usually -1 here and only becomes valid at the first write.
+	Called from PF_EndSort for AR.outfile.
+*/
+void PF_bc_track(FILEHANDLE *f)
+{
+	int i;
+	if ( f == 0 ) return;
+	if ( !bc_inited ) bc_init();
+	if ( bc_level <= 0 ) return;
+	for ( i = 0; i < BC_MAXSLOTS; i++ )
+		if ( bc_slots[i].fh == f ) return;   /* already tracked */
+	for ( i = 0; i < BC_MAXSLOTS; i++ ) {
+		if ( bc_slots[i].fh == 0 ) {
+			BcSlot *s = &bc_slots[i];
+			s->fh = f;
+			s->phys_end = 0; s->log_end = 0; PUTZERO(s->pending);
+			s->blk = 0; s->nblk = 0; s->capblk = 0;
+			s->zbuf = 0; s->zbufcap = 0; s->ubuf = 0; s->ubufcap = 0;
+			s->cache_blk = -1;
+			s->gen_log = 0; s->gen_phys = 0; s->gen_comp = 0; s->gen_raw = 0;
+			MLOCK(ErrorMessageLock);
+			MesPrint("[bc] tracking scratch FILEHANDLE (level=%d); compression armed", (WORD)bc_level);
+			MUNLOCK(ErrorMessageLock);
+			{ char *sp = getenv("PF_BC_STATS");
+			  if ( sp && *sp ) { FILE *fp = fopen(sp,"a");
+			    if ( fp ) { fprintf(fp,"armed: tracking scratch fd (level=%d)\n",bc_level); fclose(fp); } } }
+			return;
+		}
+	}
+}
+
+/* Emit the just-finished generation's logical->physical ratio. This is the
+   DIRECT proof that compression actually happened (byte-identity alone does
+   not distinguish "compressed" from "stored raw"). Goes to the FORM log and,
+   if PF_BC_STATS is set, appended to that (login-visible) file. */
+static void bc_report(BcSlot *s)
+{
+	LONG pct = s->gen_log ? (LONG)((s->gen_phys * 100) / s->gen_log) : 100;
+	char *p;
+	MLOCK(ErrorMessageLock);
+	MesPrint("[bc] scratch fd=%d: blocks=%l comp=%l raw=%l  logical=%l phys=%l  -> %l%% of original",
+		(WORD)s->fh->handle, s->nblk, s->gen_comp, s->gen_raw, s->gen_log, s->gen_phys, pct);
+	MUNLOCK(ErrorMessageLock);
+	p = getenv("PF_BC_STATS");
+	if ( p && *p ) {
+		FILE *fp = fopen(p, "a");
+		if ( fp ) {
+			fprintf(fp, "fd=%d blocks=%ld comp=%ld raw=%ld logical=%ld phys=%ld ratio=%.4f\n",
+				s->fh->handle, (long)s->nblk, (long)s->gen_comp, (long)s->gen_raw,
+				(long)s->gen_log, (long)s->gen_phys,
+				s->gen_log ? (double)s->gen_phys/(double)s->gen_log : 1.0);
+			fclose(fp);
+		}
+	}
+}
+
+/* A fresh generation overwrites the file from physical 0 -- drop the index. */
+static void bc_reset(BcSlot *s)
+{
+	FILES *f;
+	if ( s->gen_log > 0 ) bc_report(s);   /* proof line for the finished module */
+	s->gen_log = s->gen_phys = 0; s->gen_comp = s->gen_raw = 0;
+	s->nblk = 0; s->phys_end = 0; s->log_end = 0; s->cache_blk = -1;
+	f = bc_file(s->fh->handle);
+	if ( f && f->descriptor >= 0 ) {
+		if ( ftruncate(f->descriptor, 0) != 0 ) { /* best effort */ }
+	}
+}
+
+static int bc_grow_blk(BcSlot *s)
+{
+	LONG nc = s->capblk ? s->capblk*2 : 1024;
+	BcBlock *nb = (BcBlock *)Malloc1(nc*sizeof(BcBlock),"bc blocks");
+	if ( !nb ) return -1;
+	if ( s->blk ) { memcpy(nb,s->blk,s->nblk*sizeof(BcBlock)); M_free(s->blk,"bc blocks"); }
+	s->blk = nb; s->capblk = nc;
+	return 0;
+}
+
+/* Store `size` logical bytes as one block at the pending logical position. */
+static LONG bc_write(BcSlot *s, UBYTE *buffer, LONG size)
+{
+	FILES *f;
+	LONG  logpos = BASEPOSITION(s->pending);
+	BcBlock *b;
+	int   compressed = 0;
+	LONG  storesize = size;
+	UBYTE *storeptr = buffer;
+
+	/* Write at logical 0 (module start) or a rewind == new generation. */
+	if ( logpos <= 0 || ( s->nblk > 0 && logpos < s->blk[s->nblk-1].logstart ) )
+		bc_reset(s);
+
+	if ( PF_bc_compress_now && bc_level > 0 && size > 0 ) {
+		uLongf clen = compressBound((uLong)size);
+		if ( s->zbufcap < (LONG)clen ) {
+			if ( s->zbuf ) M_free(s->zbuf,"bc cbuf");
+			s->zbuf = (UBYTE *)Malloc1((LONG)clen,"bc cbuf"); s->zbufcap = (LONG)clen;
+		}
+		if ( s->zbuf && compress2(s->zbuf,&clen,buffer,(uLong)size,bc_level) == Z_OK
+		     && (LONG)clen < size ) {
+			compressed = 1; storesize = (LONG)clen; storeptr = s->zbuf;
+		}
+	}
+
+	f = bc_file(s->fh->handle);
+	if ( !f ) return -1;
+	Useek(f,(off_t)s->phys_end,SEEK_SET);
+	if ( (LONG)Uwrite((char *)storeptr,1,storesize,f) != storesize ) return -1;
+
+	if ( s->nblk >= s->capblk && bc_grow_blk(s) < 0 ) return -1;
+	b = &s->blk[s->nblk++];
+	b->logstart = logpos; b->logsize = size;
+	b->physstart = s->phys_end; b->physsize = storesize; b->compressed = compressed;
+
+	s->gen_log += size; s->gen_phys += storesize;       /* proof counters */
+	if ( compressed ) s->gen_comp++; else s->gen_raw++;
+
+	s->phys_end += storesize;
+	s->log_end   = logpos + size;
+	ADDPOS(s->pending,size);   /* keep pending coherent; caller re-seeks anyway */
+	return size;               /* report LOGICAL bytes written                 */
+}
+
+/* Serve `size` logical bytes from the pending logical position. */
+static LONG bc_read(BcSlot *s, UBYTE *buffer, LONG size)
+{
+	LONG  want = size, got = 0;
+	LONG  E = BASEPOSITION(s->pending);
+	LONG  lo, hi, i;
+	FILES *f = bc_file(s->fh->handle);
+	if ( !f ) return -1;
+
+	lo = 0; hi = s->nblk - 1; i = -1;       /* largest block with logstart<=E */
+	while ( lo <= hi ) {
+		LONG mid = (lo+hi)/2;
+		if ( s->blk[mid].logstart <= E ) { i = mid; lo = mid+1; }
+		else hi = mid-1;
+	}
+	if ( i < 0 ) return 0;
+
+	while ( got < want && i < s->nblk ) {
+		BcBlock *b = &s->blk[i];
+		LONG off, avail, n;
+		if ( E + got <  b->logstart ) break;                 /* gap          */
+		if ( E + got >= b->logstart + b->logsize ) { i++; continue; }
+		off = (E + got) - b->logstart;
+		avail = b->logsize - off;
+		n = want - got; if ( n > avail ) n = avail;
+		if ( !b->compressed ) {
+			/* Raw block: physical layout mirrors logical within the block,
+			   so read just the requested window directly (keeps small random
+			   reads, e.g. GetOneTerm under B+, as cheap as before). */
+			Useek(f,(off_t)(b->physstart + off),SEEK_SET);
+			if ( (LONG)Uread((char *)(buffer+got),1,n,f) != n ) return -1;
+			got += n; i++;
+			continue;
+		}
+		if ( s->cache_blk != i ) {                           /* decompress   */
+			uLongf dl = (uLongf)b->logsize;
+			if ( s->ubufcap < b->logsize ) {
+				if ( s->ubuf ) M_free(s->ubuf,"bc dbuf");
+				s->ubuf = (UBYTE *)Malloc1(b->logsize,"bc dbuf"); s->ubufcap = b->logsize;
+			}
+			if ( s->zbufcap < b->physsize ) {
+				if ( s->zbuf ) M_free(s->zbuf,"bc cbuf");
+				s->zbuf = (UBYTE *)Malloc1(b->physsize,"bc cbuf"); s->zbufcap = b->physsize;
+			}
+			Useek(f,(off_t)b->physstart,SEEK_SET);
+			if ( (LONG)Uread((char *)s->zbuf,1,b->physsize,f) != b->physsize ) return -1;
+			if ( uncompress(s->ubuf,&dl,s->zbuf,(uLong)b->physsize) != Z_OK
+			     || (LONG)dl != b->logsize ) return -1;
+			s->cache_blk = i;
+		}
+		memcpy(buffer+got,s->ubuf+off,n);
+		got += n;
+		i++;
+	}
+	ADDPOS(s->pending,got);
+	return got;
+}
+#endif  /* WITHMPI && WITHZLIB */
+
+/*
+ 		#] MR scratch block compression :
  		#[ ReadFile :
 */
 
@@ -1221,6 +1501,9 @@ LONG ReadFile(int handle, UBYTE *buffer, LONG size)
 	LONG inbuf = 0, r;
 	FILES *f;
 	char *b;
+#if defined(WITHMPI) && defined(WITHZLIB)
+	{ BcSlot *s = bc_find(handle); if ( s ) return bc_read(s,buffer,size); }
+#endif
 	b = (char *)buffer;
 	for(;;) {	/* Gotta do difficult because of VMS! */
 		RWLOCKR(AM.handlelock);
@@ -1336,6 +1619,9 @@ LONG WriteFileToFile(int handle, UBYTE *buffer, LONG size)
 {
 	FILES *f;
 	LONG retval, totalwritten = 0, stilltowrite;
+#if defined(WITHMPI) && defined(WITHZLIB)
+	{ BcSlot *s = bc_find(handle); if ( s ) return bc_write(s,buffer,size); }
+#endif
 	RWLOCKR(AM.handlelock);
 	f = filelist[handle];
 	UNRWLOCK(AM.handlelock);
@@ -1373,6 +1659,22 @@ WRITEFILE WriteFile = &PF_WriteFileToFile;
 void SeekFile(int handle, POSITION *offset, int origin)
 {
 	FILES *f;
+#if defined(WITHMPI) && defined(WITHZLIB)
+	{ BcSlot *s = bc_find(handle);
+	  if ( s ) {
+		/* Tracked scratch fd: capture the LOGICAL target; the real (physical)
+		   seek happens inside bc_read/bc_write. Leave *offset logical. */
+		if ( origin == SEEK_SET ) { s->pending = *offset; return; }
+		if ( origin == SEEK_END ) {
+			SETBASEPOSITION(s->pending,s->log_end);
+			SETBASEPOSITION(*offset,s->log_end);
+			return;
+		}
+		/* SEEK_CUR (unused on the scratch): keep *offset at pending. */
+		*offset = s->pending; return;
+	  }
+	}
+#endif
 	RWLOCKR(AM.handlelock);
 	f = filelist[handle];
 	UNRWLOCK(AM.handlelock);

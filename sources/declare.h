@@ -835,6 +835,10 @@ extern LONG   ReadFile(int,UBYTE *,LONG);
 extern LONG   ReadPosFile(PHEAD FILEHANDLE *,UBYTE *,LONG,POSITION *);
 extern LONG   WriteFileToFile(int,UBYTE *,LONG);
 extern void   SeekFile(int,POSITION *,int);
+#if defined(WITHMPI) && defined(WITHZLIB)
+extern int    PF_bc_compress_now;          /* MR scratch block compression */
+extern void   PF_bc_track(FILEHANDLE *);
+#endif
 extern LONG   TellFile(int);
 extern void   FlushFile(int);
 extern int    GetPosFile(int,fpos_t *);
