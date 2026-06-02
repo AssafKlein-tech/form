@@ -862,12 +862,15 @@ int DoExecute(WORD par, WORD skip)
 	//		MesPrint("\n**Must be parrallel to collect distributed inputs.**\n\n");
 	//	return (-1);
 	//}
-	// if it's the last module we cannot have distributed output
-	//if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE; //fixme later
+	/* A chain that runs straight to `.end` must still gather: force the final
+	   module non-MR so the transition below lands it in MAPREDUCE_LAST (gather),
+	   rather than leaving the output partitioned and never globally merged. */
+	if (par == ENDMODULE) AC.mMRflag = NO_MAPREDUCE;
 	if ((AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) && AC.mMRflag == MAPREDUCE) {AC.sMRflag =  MAPREDUCE_FIRST;}
 	else if ( AC.sMRflag == MAPREDUCE_FIRST && AC.mMRflag == MAPREDUCE){AC.sMRflag = MAPREDUCE;}
-	//else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
-	else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;} //fixme
+	/* Chain exit: an MR chain handing off to a non-MR module becomes the gather
+	   point (MAPREDUCE_LAST = partitioned input -> global output). */
+	else if ((AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST) && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = MAPREDUCE_LAST;}
 	else if  (AC.sMRflag == MAPREDUCE_LAST && AC.mMRflag == NO_MAPREDUCE) {AC.sMRflag = NO_MAPREDUCE;}
 #endif
 	if ( AP.preError == 0 && ( Processor() || WriteAll() ) ) RetCode = -1;

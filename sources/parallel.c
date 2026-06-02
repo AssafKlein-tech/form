@@ -760,8 +760,8 @@ static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
 	while ( remaining > 0 ) {
 		LONG space = (LONG)(fi->POstop - p);
 		if ( space <= 0 ) {
-		  if ( PF.in_merger_phase ) {
-			/* Merger: the output buffer is an MPI send buffer, not a file.
+		  if ( PF.in_merger_phase && !PF.merger_to_file ) {
+			/* Merger (gather/LAST): the output buffer is an MPI send buffer, not a file.
 			   Flush the full buffer upstream to MASTER, mirroring PutOut's
 			   sbuf-flush block (sort.c). The merger's single send buffer is
 			   PF.sbufs[MASTER]; PF_WISendSbuf passes BUFFER framing through
@@ -1217,10 +1217,288 @@ cancelled:
  *          it will be set after collecting the statistics from the slaves
  *          at the end of PF_Processor(). (TU 30 Jun 2011)
  */
+
+/* --- Master-bypass via partitioned merger output -------------------------
+   In the interior of an MR chain (MAPREDUCE_FIRST and MAPREDUCE) each merger
+   rank writes its merged stream to a node-local scratch file and reports a tiny
+   done message (PF_MERGERDONE_MSGTAG, {term-count, byte-size}) to the master,
+   instead of streaming it upstream for a global merge. The master then skips
+   its loser-tree merge entirely. The chain-exit module (MAPREDUCE_LAST) gathers
+   the files back to a global file. All gated on PF.nummergers > 0, so a run
+   without the merger tier (PF_MERGERS unset) keeps the classic behaviour
+   bit-for-bit. */
+static int pf_output_partitioned(void)
+{
+	return ( PF.nummergers > 0 &&
+	         ( AC.sMRflag == MAPREDUCE_FIRST || AC.sMRflag == MAPREDUCE ) );
+}
+
+/* Lazily allocate this merger's node-local scratch pair (lands in FORMTMP via
+   AllocFileHandle's FG.fname2 base; unique names through AN.filenum). Allocated
+   once per rank and reused/swapped across modules. */
+static int pf_ensure_merger_files(void)
+{
+	if ( PF.merger_outfile == NULL ) {
+		if ( ( PF.merger_outfile = AllocFileHandle(0,(char *)0) ) == NULL ) return -1;
+	}
+	if ( PF.merger_infile == NULL ) {
+		if ( ( PF.merger_infile = AllocFileHandle(0,(char *)0) ) == NULL ) return -1;
+	}
+	return 0;
+}
+
+/* Input is partitioned (the previous module wrote merger files; the mergers
+   distribute, the master does not) for the chain interior and the exit:
+   MAPREDUCE and MAPREDUCE_LAST. */
+static int pf_input_partitioned(void)
+{
+	return ( PF.nummergers > 0 &&
+	         ( AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST ) );
+}
+
+/* Ship the just-filled bucket (slot 0 of `sbuf`) to recipient rank `next`, with
+   the master's swap-pipelining and slow-start ramp. Shared by the master's
+   PF_Processor distribute loop and the mapper-merger's node-local redistribution
+   (PF_MergerDistribute) so both get identical load-balancing.
+
+   The swap moves slot 0's filled buffer into slot[next] and hands next's freed
+   buffer to slot 0, so the next bucket fills while this one is in flight. The
+   ramp doubles `maxinterms` toward ProcessBucketSize after ~nummappers ships so
+   every worker gets an initial bucket quickly. `ninterms` stamps the next
+   bucket's header (1-based index of its first term; the receiver reads it as
+   AN.ninterms = header - 1).
+
+   `is_merger` only selects the send primitive: the master uses PF_ISendSbuf
+   (PF.sbufs[0], which also manages the ENDSORT `finished` counter); the merger
+   issues the same async per-recipient send directly on PF.distbuf (it cannot use
+   PF_ISendSbuf because that routes a mapper rank's sends to reducer slots). */
+static void pf_ship_bucket(PF_BUFFER *sbuf, int next, LONG ninterms,
+                           LONG *maxinterms, int *cmaxinterms, int is_merger)
+{
+	sbuf->fill[next] = sbuf->fill[0];
+	sbuf->full[next] = sbuf->full[0];
+	SWAP(sbuf->stop[next], sbuf->stop[0]);
+	SWAP(sbuf->buff[next], sbuf->buff[0]);
+	sbuf->fill[0] = sbuf->full[0] = sbuf->buff[0];
+	sbuf->active = next;
+
+	if ( is_merger ) {
+		int a = sbuf->active;                 /* == next */
+		LONG sz = sbuf->fill[a] - sbuf->buff[a];
+		sbuf->fill[a] = sbuf->buff[a];
+		if ( sbuf->request[next] != MPI_REQUEST_NULL )
+			MPI_Wait(&sbuf->request[next], &sbuf->retstat[next]);
+		MPI_Isend(sbuf->buff[a], (int)sz, PF_WORD, next, PF_TERM_MSGTAG,
+		          PF_COMM, &sbuf->request[a]);
+	}
+	else {
+#ifdef MPI2
+		if ( PF_Put_origin(next) == 0 ) printf("PF_Put_origin error...\n");
+#else
+		PF_ISendSbuf(next, PF_TERM_MSGTAG);
+#endif
+	}
+
+	/* Initialize the next bucket header. */
+	PACK_LONG(sbuf->fill[0], ninterms);
+
+	/* "slow startup": double maxinterms up to ProcessBucketSize after (hopefully)
+	   all workers got some terms. */
+	if ( *cmaxinterms >= PF.nummappers - 2 ) {
+		*maxinterms *= 2;
+		if ( *maxinterms >= AC.mProcessBucketSize ) {
+			*cmaxinterms = -1;
+			*maxinterms = AC.mProcessBucketSize;
+		}
+	}
+	else if ( *cmaxinterms >= 0 ) {
+		(*cmaxinterms)++;
+	}
+}
+
+static int PF_Wait4Slave(int src);   /* defined below; used by pf_distribute_terms */
+
+/* The full on-demand distribute loop, shared by the master's PF_Processor and the
+   mapper-merger's PF_MergerDistribute. Reads terms from the source and ships
+   maxinterms-sized buckets (pf_ship_bucket) to recipients that signal PF_READY,
+   with the slow-start ramp. The CALLER owns setup (NewSort, sbuf alloc, prototype)
+   and termination: the master leaves the final partial bucket for PF_WaitAllSlaves
+   (last chunk + ENDSORT); the merger sends its own ENDSORT to each recipient
+   after this returns.
+
+   `is_merger` changes only the three things that genuinely differ:
+     - term source : GetTerm(AR.infile) [master] vs GetOneTerm(mfile) [merger,
+       with the per-call AR.CompressPointer reset for delta-decode];
+     - recipient   : PF_Wait4Slave (any mapper) [master] vs PF_Receive(PF_READY)
+       (a node-local mapper) [merger];
+     - Collect / deferred-bracket accounting (GetMoreTerms + dd) : master only.
+   ramp_count >= 0 caps the initial maxinterms at ramp_count/ndest/4 (master passes
+   e->counter; merger passes -1 = no cap). Returns terms distributed, or -1. */
+static LONG pf_distribute_terms(PF_BUFFER *sbuf, int is_merger, FILEHANDLE *mfile,
+                                LONG ramp_count, int ndest)
+{
+	GETIDENTITY
+	WORD *term = AT.WorkPointer, *s; int j, next;
+	LONG maxinterms, termsinbucket = 0, dd = 0, ninterms = 0;
+	int cmaxinterms = 0;
+	POSITION rpos; WORD *save_cp = 0;
+
+	maxinterms = AC.mProcessBucketSize / 100;
+	if ( ramp_count >= 0 ) {
+		LONG cap = ( ndest > 0 ) ? ramp_count / ndest / 4 : maxinterms;
+		if ( maxinterms > cap ) maxinterms = cap;
+	}
+	if ( maxinterms < 1 ) maxinterms = 1;
+
+	if ( is_merger ) { PUTZERO(rpos); save_cp = AR.CompressPointer; }
+	else AN.ninterms = 0;
+	PACK_LONG(sbuf->fill[0], 1);
+
+	for ( ;; ) {
+		if ( is_merger ) {
+			WORD got;
+			AR.CompressPointer = AR.CompressBuffer;
+			got = GetOneTerm(BHEAD term, mfile, &rpos, 0);
+			if ( got < 0 ) { AR.CompressPointer = save_cp; return -1; }
+			if ( got == 0 ) break;
+			ninterms++;
+		}
+		else {
+			if ( !GetTerm(BHEAD term) ) break;
+			AN.ninterms++; dd = AN.deferskipped; ninterms = AN.ninterms;
+			if ( AC.CollectFun && *term <= (LONG)(AM.MaxTer/(2*sizeof(WORD))) ) {
+				if ( GetMoreTerms(term) < 0 ) { LowerSortLevel(); return -1; }
+			}
+		}
+		if ( termsinbucket >= maxinterms || sbuf->fill[0] + *term >= sbuf->stop[0] ) {
+			if ( is_merger ) {
+				int t = 0;
+				PF_Receive(PF_ANY_SOURCE, PF_READY_MSGTAG, &next, &t);
+			}
+			else {
+				PF_TIMER_BEGIN(MAS_DISTRIBUTE_WAIT);
+				next = PF_Wait4Slave(PF_ANY_SOURCE);
+				PF_TIMER_END(MAS_DISTRIBUTE_WAIT);
+			}
+			pf_ship_bucket(sbuf, next, ninterms, &maxinterms, &cmaxinterms, is_merger);
+			termsinbucket = 0;
+		}
+		j = *(s = term);
+		NCOPY(sbuf->fill[0], s, j);
+		termsinbucket++;
+	}
+
+	if ( is_merger ) AR.CompressPointer = save_cp;
+	else AN.ninterms += dd;
+	return ninterms;
+}
+
+/* Distribute this merger's node-local input file (merger_infile = the previous
+   module's partitioned output, content-only [terms][0]) to the node-local
+   mappers, on demand, mirroring the master's PF_Processor distribute loop but
+   scoped to one node. Uses a DEDICATED per-mapper buffer PF.distbuf so it never
+   aliases the shuffle/forward sbufs the same rank reuses in its empty-EndSort and
+   PF_MergerLoop. The mapper side is unchanged: PF_GetTerm sends PF_READY to its
+   PF.input_src (= this merger) and PF_RecvWbuf receives the bucket. */
+static int PF_MergerDistribute(void)
+{
+	GETIDENTITY
+	int M = PF.nummappers, r, nrecip = 0, k, i;
+	int *recips;
+	LONG slotwords, ninterms;
+	PF_BUFFER *db;
+
+	if ( PF.merger_infile == NULL ) return -1;
+
+	/* Collect's GetMoreTerms combines terms read from the MODULE INPUT; it can't
+	   be served from this merger's node-local file. A partitioned MR module must
+	   therefore not use Collect. (Spin/dRGT run Collect `off parallel`, which is
+	   never a partitioned module.) Fail loudly rather than silently mis-collect. */
+	if ( AC.CollectFun ) {
+		MesPrint("[%d] PF_MergerDistribute: Collect is unsupported inside a "
+		         "partitioned MR module; run Collect with `off parallel`", PF.me);
+		return -1;
+	}
+
+	recips = (int*)Malloc1((LONG)(M > 0 ? M : 1)*sizeof(int), "merger recips");
+	if ( recips == NULL ) return -1;
+	for ( r = 1; r < M; r++ )
+		if ( PF.rank_node && PF.rank_node[r] == PF.node_id && r != PF.me )
+			recips[nrecip++] = r;
+
+	/* A distributing merger needs at least one OTHER node-local mapper to feed.
+	   If it is the sole mapper on its (reducer-bearing) node, its partition has
+	   no node-local consumer -- fail loudly rather than hang on PF_Receive or
+	   silently drop the data. Production layouts keep >= 2 mappers per node. */
+	if ( nrecip == 0 ) {
+		MesPrint("[%d] PF_MergerDistribute: no node-local recipient mapper "
+		         "(need >= 2 non-master mappers on a reducer-bearing node)", PF.me);
+		M_free(recips,"merger recips");
+		return -1;
+	}
+
+	/* Per-recipient distribution buffer, one slot per task like the master's
+	   PF.sbufs[0], so pf_ship_bucket's swap-pipelining works (slot[next] carries a
+	   recipient's bucket in flight while slot 0 refills). Sized exactly like the
+	   master's distribute slots (lBuffer share, capped at the receiver's POsize-1).
+	   Owns its memory (free=0) since, unlike the master, we don't point buff[] at
+	   lBuffer. Lazily allocated, reused across modules. */
+	slotwords = (AT.SS->sTop2 - AT.SS->lBuffer) / PF.numtasks;
+	if ( slotwords > (LONG)(AR.infile->POsize/sizeof(WORD)) - 1 )
+		slotwords = (LONG)(AR.infile->POsize/sizeof(WORD)) - 1;
+	if ( slotwords < 1 ) slotwords = 1;
+	if ( PF.distbuf == NULL ) {
+		if ( ( PF.distbuf = PF_AllocBuf(PF.numtasks, slotwords*sizeof(WORD), 0) ) == NULL ) {
+			M_free(recips,"merger recips"); return -1;
+		}
+	}
+	db = PF.distbuf;
+	for ( i = 0; i < db->numbufs; i++ ) db->fill[i] = db->full[i] = db->buff[i];
+	db->active = 0;
+
+	/* Read merger_infile and ship buckets to the node-local mappers via the same
+	   on-demand loop the master uses (slow-start ramp + swap-pipelining). No ramp
+	   cap (ramp_count = -1): the merger's file share is already a fraction of the
+	   global expression. */
+	ninterms = pf_distribute_terms(db, 1, PF.merger_infile, -1, nrecip);
+	if ( ninterms < 0 ) { M_free(recips,"merger recips"); return -1; }
+
+	/* Termination: each recipient gets exactly one ENDSORT bucket (the first
+	   carries any remaining terms; the rest are empty -- the mapper turns an
+	   empty bucket into its end sentinel). Blocking send for the tail; wait any
+	   prior in-flight TERM to this recipient before reusing slot 0. */
+	for ( k = 0; k < nrecip; k++ ) {
+		int next = -1, tag;
+		PF_Receive(PF_ANY_SOURCE, PF_READY_MSGTAG, &next, &tag);
+		if ( db->request[next] != MPI_REQUEST_NULL )
+			MPI_Wait(&db->request[next], &db->retstat[next]);
+		if ( MPI_Ssend(db->buff[0], (int)(db->fill[0]-db->buff[0]), PF_WORD,
+		               next, PF_ENDSORT_MSGTAG, PF_COMM) != MPI_SUCCESS ) {
+			M_free(recips,"merger recips"); return -1;
+		}
+		db->fill[0] = db->full[0] = db->buff[0];
+		PACK_LONG(db->fill[0], ninterms);
+	}
+	/* Drain any still-in-flight pipelined TERM sends before the buffers are
+	   reused next module. */
+	for ( i = 0; i < db->numbufs; i++ )
+		if ( db->request[i] != MPI_REQUEST_NULL )
+			MPI_Wait(&db->request[i], &db->retstat[i]);
+	M_free(recips,"merger recips");
+	return 0;
+}
+
 int PF_EndSort(void)
 {
 	GETIDENTITY
-	FILEHANDLE *fout = AR.outfile;
+	/* Partitioned-output merger: write the merged stream to this merger's own
+	   node-local scratch file instead of the global AR.outfile. Because
+	   merger_outfile != AR.outfile/hidefile, every "fi==AR.outfile" MPI gate in
+	   PutOut (sort.c:2111) and FlushOut (sort.c:2243) falls through to the disk
+	   path automatically; only pf_emit_compressed_bulk needs an explicit
+	   merger_to_file check (it gates purely on in_merger_phase). */
+	FILEHANDLE *fout = ( PF.in_merger_phase && PF.merger_to_file && PF.merger_outfile )
+	                   ? PF.merger_outfile : AR.outfile;
 	SORTING *S = AT.SS;
 	WORD *outterm,*pp;
 	LONG size, noutterms;
@@ -1261,6 +1539,65 @@ int PF_EndSort(void)
 		cpart /= 10;
 		WORD rpart = cpu / 1000;
 		MesPrint("[%d] PF_EndSort: All slaves started endsort Time: %7l.%2i", PF.me, rpart, cpart);
+	}
+
+	/* Partitioned output: the mergers wrote their merged streams to node-local
+	   files and report {count,size}; collect those instead of running the
+	   loser-tree merge over merger streams (there are none). e->size stays the
+	   prototype-only size on the master scratch; e->counter is the global sum.
+	   The LAST-module gather (a later step) reads the files back. */
+	if ( PF.me == MASTER && pf_output_partitioned() ) {
+		LONG total = 0;
+		int got = 0;
+		/* Poll for each merger's PF_MERGERDONE while draining the leaf reducers'
+		   PF_STDOUT/PF_LOG stats (from WriteStats). The master no longer runs its
+		   loser-tree merge loop here, which is where that drain normally happens
+		   (mpi.c PF_WaitRbuf). Without it the reducers' PF_RawSend(MASTER,...) in
+		   WriteStats blocks, so they never finish forwarding to their merger and
+		   the whole reducer->merger->done chain deadlocks. */
+		while ( got < PF.nummergers ) {
+			int flag = 0;
+			MPI_Status st;
+			if ( MPI_Iprobe(MPI_ANY_SOURCE, PF_MERGERDONE_MSGTAG, PF_COMM, &flag, &st)
+			     == MPI_SUCCESS && flag ) {
+				int rsrc = st.MPI_SOURCE, rtag = 0;
+				LONG cnt = 0, sz = 0;
+				PF_Receive(rsrc, PF_MERGERDONE_MSGTAG, &rsrc, &rtag);
+				PF_Unpack(&cnt, 1, PF_LONG);
+				PF_Unpack(&sz,  1, PF_LONG);
+				total += cnt;
+				got++;
+				continue;
+			}
+			{
+				int drained = 0;
+				if ( MPI_Iprobe(MPI_ANY_SOURCE, PF_STDOUT_MSGTAG, PF_COMM, &flag, &st)
+				     == MPI_SUCCESS && flag ) {
+					PF_ReceiveErrorMessage(st.MPI_SOURCE, PF_STDOUT_MSGTAG); drained = 1;
+				}
+				if ( MPI_Iprobe(MPI_ANY_SOURCE, PF_LOG_MSGTAG, PF_COMM, &flag, &st)
+				     == MPI_SUCCESS && flag ) {
+					PF_ReceiveErrorMessage(st.MPI_SOURCE, PF_LOG_MSGTAG); drained = 1;
+				}
+				if ( !drained ) usleep(200);
+			}
+		}
+		/* Terminate the master scratch as a valid [prototype][0] expression so
+		   the next module's GetTerm(AR.infile) reads the prototype then EOF. The
+		   content lives in the merger files; only the prototype (written before
+		   EndSort) sits in fout here. Mirror PF_EndSort's tail (SeekScratch +
+		   FlushOut) but skip the loser-tree merge loop. */
+		{
+			POSITION position, oldposition;
+			SeekScratch(fout, &position);
+			oldposition = position;
+			if ( FlushOut(&position, fout, 0) ) return(-1);
+			DIFPOS(PF_exprsize, position, oldposition);
+		}
+		S->TermsLeft = PF_goutterms = total;
+		MesPrint("[0] PF_EndSort: partitioned output -- %l terms across %d merger files",
+		         total, (WORD)PF.nummergers);
+		return 1;   /* skip InitTree + loser-tree merge */
 	}
 /*
 		Now collect the terms of all slaves and merge them.
@@ -1575,7 +1912,7 @@ ReceiveNew:
 /*
  		#[ receive new terms from master :
 */
-		int src = MASTER, tag;
+		int src = PF.input_src, tag;
 		int follow = 0;
 		LONG size,cpu,space = 0;
 
@@ -1598,7 +1935,7 @@ ReceiveNew:
 			fflush(stderr);
 		}
 
-		PF_Send(MASTER, PF_READY_MSGTAG);
+		PF_Send(src, PF_READY_MSGTAG);
 
 		if ( PF.log ) {
 			fprintf(stderr,"[%d] returning from send\n",PF.me);
@@ -2116,7 +2453,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	GETIDENTITY
 	WORD *term = AT.WorkPointer;
 	LONG dd = 0;
-	WORD j, *s, next;
+	WORD j;
 	LONG size, cpu;
 	POSITION position;
 	int role, k, src, tag;
@@ -2137,6 +2474,10 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks - PF.numreducers): PF.numtasks;
 	PF.numreducers = PF.numtasks - PF.nummappers;
 	role = (PF.me < PF.nummappers) ? ROLE_MAPPER : ROLE_REDUCER;
+	/* Where a mapper requests its input term buckets. Default = MASTER (the
+	   master distributes). For input-partitioned modules (MAPREDUCE/LAST) the
+	   node's merger distributes instead; set below once placement is known. */
+	PF.input_src = MASTER;
 	/* Merger overlay (Phase 1 of reducer merge tree). nummergers comes from
 	   PF_MERGERS env, broadcast in PF_Init. Clamp here where mapper/reducer
 	   counts are final. Mergers are mapper ranks 1..nummergers (rank 0 = master). */
@@ -2179,6 +2520,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					PF.merger_parent = ( PF.me >= M )
 					                   ? node_merger[PF.rank_node[PF.me]]
 					                   : MASTER;
+					/* Input-partitioned modules (MAPREDUCE/LAST): a non-merger
+					   mapper fetches its input buckets from its node's merger
+					   (which distributes its file) instead of from the master.
+					   FIRST/NO_MAPREDUCE keep input_src = MASTER (set above). */
+					if ( ( AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST )
+					     && PF.me != MASTER && PF.me < M && !PF.is_merger )
+						PF.input_src = node_merger[PF.node_id];
 					if ( PF.me == MASTER ) {
 						/* child table: merger ranks ascending, [0]=MASTER */
 						if ( PF.merger_child_ranks == NULL )
@@ -2253,7 +2601,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 	}
 	if ( AC.mparallelflag != PARALLELFLAG ){
-		if(AC.sMRflag == NO_MAPREDUCE) {return(0);}
+		/* MAPREDUCE_LAST is the chain-exit gather module: it is non-parallel
+		   (mMRflag==NO_MAPREDUCE) but sMRflag still labels it LAST so the data
+		   path knows to gather the partitioned merger files first. Step 4 will
+		   trigger that gather here; for now (and once gathered) it skips serially
+		   just like NO_MAPREDUCE. Without this, an off-parallel exit module trips
+		   the "Calling Map Reduce without parallel" guard and the run dies. */
+		if(AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) {return(0);}
 		MesPrint("ERROR: Calling Map Reduce without parallel");
 		return (-1);
 	}
@@ -2266,11 +2620,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		WORD oldBracketOn = AR.BracketOn;
 		WORD *oldBrackBuf = AT.BrackBuf;
 		WORD oldbracketindexflag = AT.bracketindexflag;
-
-		LONG maxinterms;     /* the maximum number of terms in the bucket */
-		int cmaxinterms;     /* a variable controling the transition of maxinterms */
-		LONG termsinbucket;  /* the number of filled terms in the bucket */
-		LONG ProcessBucketSize = AC.mProcessBucketSize;
 
 		if ( PF.log && AC.CModule >= PF.log )
 			MesPrint("[%d] working on expression %s in module %l",PF.me,EXPRNAME(i),AC.CModule);
@@ -2316,79 +2665,17 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			#[ loop for all terms in infile:
 */
 		/*
-		 * The initial value of maxinterms is determined by the user given
-		 * ProcessBucketSize and the number of terms in the current expression.
-		 * We make the initial maxinterms smaller, so that we get the all
-		 * workers busy as soon as possible.
+		 * Distribute the input terms on demand: small initial buckets (slow-start
+		 * ramp, capped by e->counter) doubling toward ProcessBucketSize, with
+		 * swap-pipelined sends. Shared with the mapper-merger's node-local
+		 * redistribution via pf_distribute_terms (is_merger = 0 here). The final
+		 * partial bucket and the ENDSORT are sent later in PF_WaitAllSlaves
+		 * (reached via EndSort() below).
 		 */
-		maxinterms = ProcessBucketSize / 100;
-		if ( maxinterms > e->counter / (PF.nummappers - 1) / 4 )
-			maxinterms = e->counter / (PF.nummappers - 1) / 4;
-		if ( maxinterms < 1 ) maxinterms = 1;
-		cmaxinterms = 0;
-		/*
-		 * Copy them always to sb->buff[0]. When that is full, wait for
-		 * the next slave to accept terms, exchange sb->buff[0] and
-		 * sb->buff[next], send sb->buff[next] to next slave and go on
-		 * filling the now empty sb->buff[0].
-		 */
-		AN.ninterms = 0;
-		termsinbucket = 0;
-		PACK_LONG(sb->fill[0], 1);
 		PF_TIMER_BEGIN(MAS_DISTRIBUTE);
-		while ( GetTerm(BHEAD term) ) {
-			AN.ninterms++; dd = AN.deferskipped;
-			if ( AC.CollectFun && *term <= (LONG)(AM.MaxTer/(2*sizeof(WORD))) ) {
-				if ( GetMoreTerms(term) < 0 ) {
-					LowerSortLevel(); return(-1);
-				}
-			}
-			//PRINTFBUF("PF_Processor gets",term,*term);
-			if ( termsinbucket >= maxinterms || sb->fill[0] + *term >= sb->stop[0] ) {
-				PF_TIMER_BEGIN(MAS_DISTRIBUTE_WAIT);
-				next = PF_Wait4Slave(PF_ANY_SOURCE);
-				PF_TIMER_END(MAS_DISTRIBUTE_WAIT);
-
-				sb->fill[next] = sb->fill[0];
-				sb->full[next] = sb->full[0];
-				SWAP(sb->stop[next], sb->stop[0]);
-				SWAP(sb->buff[next], sb->buff[0]);
-				sb->fill[0] = sb->full[0] = sb->buff[0];
-				sb->active = next;
-
-#ifdef MPI2
-				if ( PF_Put_origin(next) == 0 ) {
-					printf("PF_Put_origin error...\n");
-				}
-#else
-				PF_ISendSbuf(next,PF_TERM_MSGTAG);
-#endif
-				/* Initialize the next bucket. */
-				termsinbucket = 0;
-				PACK_LONG(sb->fill[0], AN.ninterms);
-				/*
-				 * For the "slow startup". We double maxinterms up to ProcessBucketSize
-				 * after (hopefully) the all workers got some terms.
-				 */
-				if ( cmaxinterms >= PF.nummappers - 2 ) {
-					maxinterms *= 2;
-					if ( maxinterms >= ProcessBucketSize ) {
-						cmaxinterms = -1;
-						maxinterms = ProcessBucketSize;
-					}
-				}
-				else if ( cmaxinterms >= 0 ) {
-					cmaxinterms++;
-				}
-			}
-			j = *(s = term);
-			NCOPY(sb->fill[0], s, j);
-			termsinbucket++;
-		}
+		if ( pf_distribute_terms(sb, 0, (FILEHANDLE *)0, e->counter, PF.nummappers - 1) < 0 )
+			return(-1);
 		PF_TIMER_END(MAS_DISTRIBUTE);
-		/* NOTE: The last chunk will be sent to a slave at EndSort() => PF_EndSort()
-		 *       => PF_WaitAllSlaves(). */
-		AN.ninterms += dd;
 /*
 			#] loop for all terms in infile: 
 			#[ Clean up & EndSort:
@@ -2585,6 +2872,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		/* FIXME: AN.ninterms is still broken when AN.deferskipped is non-zero.
 		 *        It still needs some work, also in PF_GetTerm(). (TU 30 Aug 2011) */
 		LONG send_time = TimeCPU(1);
+		if ( pf_input_partitioned() && PF.is_merger ) {
+		/* Distributor merger: hand merger_infile content to the node's mappers
+		   instead of generating. The (empty) mapper EndSort that follows still
+		   emits ENDSHUFFLE to every reducer so their Waitany accounting completes
+		   (mpi.c:666). */
+			if ( PF_MergerDistribute() < 0 ) return -1;
+		}
+		else {
 		PF_TIMER_BEGIN(MAP_GENERATOR);
 		while ( PF_GetTerm(term) ) {
 			PF_linterms++; AN.ninterms++; dd = AN.deferskipped;
@@ -2619,6 +2914,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		PF_TIMER_END(MAP_GENERATOR);
 		PF_linterms += dd; AN.ninterms += dd;
+		}  /* end else: normal generator path (non-distributor) */
 		{
 			/*
 			 * EndSort() overrides AR.outfile->PObuffer etc. (See also PF_EndSort()),
@@ -2965,30 +3261,50 @@ LONG PF_MergerLoop(void)
 
 	if ( pf_setup_merger_group() < 0 ) return -1;
 
-	/* Snapshot fout BEFORE PF_allocateSbuf clobbers PObuffer/POstop/POsize
-	   to the sbuf slot. Restore at the end so subsequent modules see the
-	   original scratch-file state. Mappers' regular code path expects
-	   PObuffer to point at the scratch file's buffer. */
+	/* --- Output redirection: where this merger's merged stream goes. -----------
+	   Two modes, decided once and torn down symmetrically below:
+
+	     partitioned (FIRST/MAPREDUCE): write to this merger's node-local file.
+	       We set merger_to_file and truncate merger_outfile; PF_EndSort then picks
+	       fout = PF.merger_outfile, and because that handle is NOT AR.outfile every
+	       "fi==AR.outfile" disk-vs-MPI gate in PutOut/FlushOut routes to disk. So
+	       AR.outfile is never touched and needs no save/restore.
+
+	     gather (LAST / no partition): stream upstream to the master via
+	       PF.sbufs[MASTER]. PF_allocateSbuf redirects AR.outfile->PObuffer to the
+	       sbuf slot, so we snapshot AR.outfile here and restore it after EndSort. */
+	int partitioned = pf_output_partitioned();
 	FILEHANDLE *fout = AR.outfile;
-	WORD *save_PObuffer = fout->PObuffer;
-	WORD *save_POstop   = fout->POstop;
-	LONG  save_POsize   = fout->POsize;
-	WORD *save_POfill   = fout->POfill;
-	WORD *save_POfull   = fout->POfull;
+	WORD *save_PObuffer = 0, *save_POstop = 0, *save_POfill = 0, *save_POfull = 0;
+	LONG  save_POsize = 0;
+
+	if ( partitioned ) {
+		if ( pf_ensure_merger_files() < 0 ) return -1;
+		FILEHANDLE *mf = PF.merger_outfile;       /* fresh output file: truncate + rewind */
+		if ( mf->handle >= 0 ) { CloseFile(mf->handle); mf->handle = -1; }
+		mf->POfill = mf->POfull = mf->PObuffer;
+		PUTZERO(mf->POposition);
+		PUTZERO(mf->filesize);
+		PF.merger_to_file = 1;
+	}
 
 	NewSort(BHEAD0);
 	PF.parallel = 1;
-	/* in_merger_phase gates:
-	   - sort.c FlushOut routing (sends to merger_parent == MASTER, not to reducers),
-	   - PF_LowMRsort (disables hash routing during merge phase),
-	   - PF_WISendSbuf (sends BUFFER/ENDBUFFER tags upstream, not SHUFFLE),
-	   - PF_EndSort's slave-init branch (lets us fall into the shared merge body). */
+	/* in_merger_phase gates: sort.c FlushOut routing (upstream to merger_parent,
+	   not reducers), PF_LowMRsort (no hash routing in the merge phase),
+	   PF_WISendSbuf (BUFFER/ENDBUFFER tags upstream not SHUFFLE), and PF_EndSort's
+	   slave-init branch (fall into the shared merge body). */
 	PF.in_merger_phase = 1;
 
-	if ( PF_allocateSbuf() == 0 ) {
-		MesPrint("[%d] PF_MergerLoop: PF_allocateSbuf failed", PF.me);
-		PF.in_merger_phase = 0;
-		return -1;
+	if ( !partitioned ) {
+		save_PObuffer = fout->PObuffer; save_POstop = fout->POstop;
+		save_POsize   = fout->POsize;   save_POfill = fout->POfill;
+		save_POfull   = fout->POfull;
+		if ( PF_allocateSbuf() == 0 ) {
+			MesPrint("[%d] PF_MergerLoop: PF_allocateSbuf failed", PF.me);
+			PF.in_merger_phase = 0;
+			return -1;
+		}
 	}
 
 	/* Run the shared merge body. Call EndSort (sort.c) rather than PF_EndSort
@@ -3007,12 +3323,33 @@ LONG PF_MergerLoop(void)
 
 	PF.in_merger_phase = 0;
 
-	/* Un-redirect fout. */
-	fout->PObuffer = save_PObuffer;
-	fout->POstop   = save_POstop;
-	fout->POsize   = save_POsize;
-	fout->POfill   = save_POfill;
-	fout->POfull   = save_POfull;
+	if ( partitioned ) {
+		PF.merger_to_file = 0;
+		/* Report done + this merger's output count and byte size to the master.
+		   PF_goutterms / PF_exprsize were set by the merger's own PF_EndSort. */
+		LONG cnt = PF_goutterms;
+		LONG sz  = BASEPOSITION(PF_exprsize);
+		PF_PreparePack();
+		PF_Pack(&cnt, 1, PF_LONG);
+		PF_Pack(&sz,  1, PF_LONG);
+		PF_Send(MASTER, PF_MERGERDONE_MSGTAG);
+		/* Swap so merger_infile holds THIS module's output, ready for the next
+		   module's PF_MergerDistribute; merger_outfile (old infile) is reused and
+		   re-truncated at the top of the next partitioned PF_MergerLoop. */
+		{
+			FILEHANDLE *tmp = PF.merger_infile;
+			PF.merger_infile  = PF.merger_outfile;
+			PF.merger_outfile = tmp;
+		}
+	}
+	else {
+		/* Un-redirect fout (PF_allocateSbuf clobbered it). */
+		fout->PObuffer = save_PObuffer;
+		fout->POstop   = save_POstop;
+		fout->POsize   = save_POsize;
+		fout->POfill   = save_POfill;
+		fout->POfull   = save_POfull;
+	}
 
 	return ret < 0 ? -1 : 0;
 }

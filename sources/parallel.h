@@ -59,6 +59,7 @@
 #define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
 #define PF_ENDSHUFFLE_MSGTAG   111  /* same as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
 #define PF_ENDSHUFFLEALL_MSGTAG   112  /* Indicates the end of all shuffling operations*/
+#define PF_MERGERDONE_MSGTAG      113  /* merger -> master: partitioned-output module done; carries {counter, size} */
 
 /*
  * A macro for checking the version of gcc.
@@ -193,6 +194,12 @@ typedef struct ParallelVars {
 	int         node_id;         /* this rank's node, 0..numnodes-1; discovered once in PF_LibInit. */
 	int        *rank_node;       /* global rank -> node_id map (length numtasks); allocated once in PF_LibInit, NULL if discovery failed. */
 	int        *merger_child_ranks; /* master-only: [0]=MASTER sentinel, [1..nummergers]=merger global ranks ascending. Built in PF_Processor; used by pf_loser_src_to_rank. */
+	FILEHANDLE *merger_outfile;  /* merger-only: node-local scratch this module writes its merged stream to when output is partitioned. Lazily allocated; swapped with merger_infile each module like AR.infile/outfile. */
+	FILEHANDLE *merger_infile;   /* merger-only: node-local scratch the merger distributes from when input is partitioned (previous module's output). */
+	int         merger_to_file;  /* set alongside in_merger_phase: 1 => PF_MergerLoop writes to merger_outfile (partitioned), 0 => forwards upstream to MASTER (LAST gather). */
+	int         input_src;       /* per-module, per-rank: where a mapper requests input term buckets. = node-merger when input is partitioned (sMRflag in {MAPREDUCE,LAST}), else MASTER. */
+	LONG       *merger_file_counter; /* master-only: per-merger term counts reported via PF_MERGERDONE_MSGTAG during partitioned modules (length nummergers). Lazily allocated. */
+	PF_BUFFER  *distbuf;         /* merger-only: dedicated per-mapper distribution buffer used by PF_MergerDistribute (node-local input handoff). Separate from the shuffle/forward sbufs the same rank reuses. Lazily allocated. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
