@@ -75,6 +75,23 @@ enum {
 	PF_PHASE_MER_RECV_WAIT,        /* merger: MPI_Wait inside PF_PutIn -- blocked mid-merge for a leaf reducer's next sorted chunk. Sub-component of MER_MERGE, not additive with it. */
 	PF_PHASE_MER_FORWARD_WAIT,     /* merger: MPI_Wait when forwarding the merged stream to master */
 	PF_PHASE_MER_FORWARD_MPI,      /* merger: MPI_Isend forwarding the merged stream to master */
+	/* Master-bypass merger-tier phases (the partitioned-redistribution feature).
+	   MER_DISTRIBUTE is the merger's analogue of MAS_DISTRIBUTE -- when a module is
+	   input-partitioned the merger (not the master) hands node-local buckets out of
+	   its merger_infile; MER_DISTRIBUTE_WAIT is its PF_Receive(READY) wait, the
+	   analogue of MAS_DISTRIBUTE_WAIT. The GATHER phases isolate the chain-exit
+	   re-globalization (MAPREDUCE_LAST / `.sort(gather)`) from the per-module merge:
+	   MAS_GATHER is the master merging the G merger streams into the global scratch
+	   (vs MAS_FINAL_SORT = a classic non-MR master merge), MER_GATHER is the merger
+	   streaming its file up in pf_merger_gather_to_master. MAS_MERGERDONE is the
+	   master's ENTIRE EndSort on a bypassed (output-partitioned) module --
+	   WaitAllSlaves + PF_MERGERDONE collect + prototype flush, with NO merge -- so
+	   MAS_FINAL_SORT is 0 there, which is the whole point of the bypass. */
+	PF_PHASE_MER_DISTRIBUTE,       /* merger: pf_distribute_terms loop in PF_MergerDistribute (node-local input handoff) */
+	PF_PHASE_MER_DISTRIBUTE_WAIT,  /* merger: PF_Receive(PF_READY) wait for a node-local mapper inside PF_MergerDistribute */
+	PF_PHASE_MAS_GATHER,           /* master: EndSort merge of the G merger streams at the chain-exit gather (MAPREDUCE_LAST) */
+	PF_PHASE_MER_GATHER,           /* merger: pf_merger_gather_to_master -- read merger_infile + stream to master at the gather */
+	PF_PHASE_MAS_MERGERDONE,       /* master: whole EndSort on a bypassed (output-partitioned) module -- WaitAllSlaves + MERGERDONE collect + prototype flush, NO merge */
 	PF_PHASE_COUNT
 };
 
@@ -123,6 +140,8 @@ enum {
 	PF_EX_MAP_TESTSUB_PREV_RULE_HIT, /* mapper: TestSub picked the same rule as the previous term -- candidate 2c LRU-1 value */
 	PF_EX_MAP_TESTSUB_NO_MATCH,  /* mapper: TestSub returned 0 (no match) -- candidate 2c pure-overhead path */
 	PF_EX_RED_BYTES_RECEIVED,    /* reducer: bytes consumed in PF_StoreBuffer -- per-link bandwidth */
+	PF_EX_MER_DISTRIBUTE_TERMS,  /* merger: terms handed to node-local mappers from merger_infile (PF_MergerDistribute ninterms) */
+	PF_EX_MER_PARTITION_BYTES,   /* merger: byte size of this module's partitioned output written to merger_outfile (the .sc-style scratch the next module distributes) */
 	PF_EX_COUNT
 };
 
@@ -169,6 +188,13 @@ extern LONG pf_extras[PF_EX_COUNT];
    relative to this. Set by parallel.c right after pf_profile_reset_module()
    and the start-of-module OS snapshot. */
 extern double pf_module_t0;
+
+/* Per-module chain state (AC.sMRflag) of the module being profiled, stamped by
+   PF_Processor so the master CSV/viz can label each module
+   NO_MAPREDUCE(0)/MAPREDUCE(1)/MAPREDUCE_LAST(2)/MAPREDUCE_FIRST(4) -- i.e.
+   distinguish a bypassed (FIRST/MAPREDUCE) module from a gather (LAST) or a
+   classic non-MR (0) one, which a raw MAS_FINAL_SORT total cannot. */
+extern int pf_module_smrflag;
 
 /* Master-only: per-rank receive buffer, allocated lazily on first dump. */
 extern PF_ProfileSlot *pf_profile_stats;

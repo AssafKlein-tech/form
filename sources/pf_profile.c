@@ -32,6 +32,7 @@ LONG pf_extras[PF_EX_COUNT];
 
 /* Module-start time reference; written by parallel.c at module entry. */
 double pf_module_t0 = 0.0;
+int pf_module_smrflag = 0;
 
 /* Master-only receive buffer for per-rank profile slots. */
 PF_ProfileSlot *pf_profile_stats = NULL;
@@ -382,7 +383,16 @@ static void write_csv_header(FILE *fp)
 		"t_map_testsub_postmatch_first_us,t_map_testsub_postmatch_last_us,"
 		"t_map_polyfunmul_first_us,t_map_polyfunmul_last_us,"
 		"t_map_takeidfunction_first_us,t_map_takeidfunction_last_us,"
-		"t_map_putbracket_first_us,t_map_putbracket_last_us\n");
+		"t_map_putbracket_first_us,t_map_putbracket_last_us,"
+		/* master-bypass merger-tier phases + counters + per-module chain state */
+		"smrflag,"
+		"t_mer_distribute_us,t_mer_distribute_wait_us,t_mas_gather_us,t_mer_gather_us,t_mas_mergerdone_us,"
+		"mer_distribute_terms,mer_partition_bytes,"
+		"t_mer_distribute_first_us,t_mer_distribute_last_us,"
+		"t_mer_distribute_wait_first_us,t_mer_distribute_wait_last_us,"
+		"t_mas_gather_first_us,t_mas_gather_last_us,"
+		"t_mer_gather_first_us,t_mer_gather_last_us,"
+		"t_mas_mergerdone_first_us,t_mas_mergerdone_last_us\n");
 }
 
 static const char *role_name(int rank, int nummappers, int nummergers)
@@ -427,6 +437,9 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		/* Gantt timestamps for 11 phase-1 + 5 phase-2 = 16 new phases x first,last */
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
+		/* master-bypass: smrflag, 5 phase totals + 2 counters, 5 first/last pairs */
+		"%d,%lld,%lld,%lld,%lld,%lld,%lld,%lld,"
 		"%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld\n",
 		(long long)ts, module_num, expr_name ? expr_name : "",
 		rank, role_name(rank, nummappers, PF.nummergers),
@@ -536,7 +549,21 @@ static void write_csv_row(FILE *fp, time_t ts, int module_num, const char *expr_
 		(long long)pf[PF_PHASE_MAP_TESTSUB_POSTMATCH], (long long)pl[PF_PHASE_MAP_TESTSUB_POSTMATCH],
 		(long long)pf[PF_PHASE_MAP_POLYFUNMUL],        (long long)pl[PF_PHASE_MAP_POLYFUNMUL],
 		(long long)pf[PF_PHASE_MAP_TAKEIDFUNCTION],    (long long)pl[PF_PHASE_MAP_TAKEIDFUNCTION],
-		(long long)pf[PF_PHASE_MAP_PUTBRACKET],        (long long)pl[PF_PHASE_MAP_PUTBRACKET]);
+		(long long)pf[PF_PHASE_MAP_PUTBRACKET],        (long long)pl[PF_PHASE_MAP_PUTBRACKET],
+		/* master-bypass: smrflag, 5 phase totals + 2 counters, 5 first/last pairs */
+		pf_module_smrflag,
+		(long long)p[PF_PHASE_MER_DISTRIBUTE],
+		(long long)p[PF_PHASE_MER_DISTRIBUTE_WAIT],
+		(long long)p[PF_PHASE_MAS_GATHER],
+		(long long)p[PF_PHASE_MER_GATHER],
+		(long long)p[PF_PHASE_MAS_MERGERDONE],
+		(long long)ex[PF_EX_MER_DISTRIBUTE_TERMS],
+		(long long)ex[PF_EX_MER_PARTITION_BYTES],
+		(long long)pf[PF_PHASE_MER_DISTRIBUTE],      (long long)pl[PF_PHASE_MER_DISTRIBUTE],
+		(long long)pf[PF_PHASE_MER_DISTRIBUTE_WAIT], (long long)pl[PF_PHASE_MER_DISTRIBUTE_WAIT],
+		(long long)pf[PF_PHASE_MAS_GATHER],          (long long)pl[PF_PHASE_MAS_GATHER],
+		(long long)pf[PF_PHASE_MER_GATHER],          (long long)pl[PF_PHASE_MER_GATHER],
+		(long long)pf[PF_PHASE_MAS_MERGERDONE],      (long long)pl[PF_PHASE_MAS_MERGERDONE]);
 }
 
 void pf_profile_dump_master_csv(int module_num, const char *expr_name,

@@ -69,6 +69,18 @@ PHASE_COLS = [
     ("t_mer_recv_wait_us",     "MER_RECV_WAIT",     "merger"),
     ("t_mer_forward_wait_us",  "MER_FORWARD_WAIT",  "merger"),
     ("t_mer_forward_mpi_us",   "MER_FORWARD_MPI",   "merger"),
+    # Master-bypass merger-tier phases (partitioned redistribution + gather).
+    # On an input-partitioned module the merger distributes node-local buckets
+    # (MER_DISTRIBUTE, the merger's analogue of MAS_DISTRIBUTE); MER_GATHER is
+    # the merger streaming its file up at the chain exit. On the master,
+    # MAS_GATHER isolates the chain-exit re-globalization from a classic non-MR
+    # merge (MAS_FINAL_SORT), and MAS_MERGERDONE is the only master work on a
+    # bypassed (output-partitioned) module.
+    ("t_mer_distribute_us",      "MER_DISTRIBUTE",      "merger"),
+    ("t_mer_distribute_wait_us", "MER_DISTRIBUTE_WAIT", "merger"),
+    ("t_mer_gather_us",          "MER_GATHER",          "merger"),
+    ("t_mas_gather_us",          "MAS_GATHER",          "master"),
+    ("t_mas_mergerdone_us",      "MAS_MERGERDONE",      "master"),
     # Mapper-attack instrumentation: sub-phases that decompose the
     # MAP_GENERATOR / MAP_ENDSORT_TOTAL parents. All marked NON_ADDITIVE so
     # they show up in Gantt + per-rank breakdown but don't double-count
@@ -94,7 +106,7 @@ PHASE_COLS = [
 # and RED_STORE_TOTAL sits inside the reducer wallclock (it parents the
 # existing RED_BUFFER_COPY / RED_MERGE_PATCHES that are themselves additive).
 NON_ADDITIVE_PHASES = {
-    "MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT",
+    "MAS_MERGE_RECV_WAIT", "MER_RECV_WAIT", "MER_DISTRIBUTE_WAIT",
     "MAP_SMALL_FLUSH_TOTAL", "MAP_SPLITMERGE", "MAP_COMPRESS_BATCH",
     "MAP_HASH_ROUTE", "MAP_DELTA_COMPRESS", "MAP_SBUF_COPY",
     "MAP_TESTSUB", "MAP_NORMALIZE", "MAP_PREPPOLY", "MAP_STORETERM",
@@ -305,6 +317,22 @@ DECISION_MATRIX = [
         "knob": "The bottleneck is downstream at the master, not the merge tier. Check MAS_MERGE_RECV_WAIT / MAS_FINAL_SORT; adding mergers won't help while the master is the slow consumer.",
         "rationale": "Forward-wait means back-pressure from the master's k-way merge; the merge tier is delivering fine.",
     },
+    # ---- Master-bypass merger-tier rules (partitioned redistribution). ----
+    {
+        "id": "merger_distribute_starved",
+        "test": lambda d: d["merger"]["t_mer_distribute_us"] > 0.0
+                          and d["merger"]["t_mer_distribute_wait_us"] > 0.50 * d["merger"]["t_mer_distribute_us"],
+        "diagnosis": "On input-partitioned modules the merger spends most of MER_DISTRIBUTE blocked on PF_Receive(READY) (MER_DISTRIBUTE_WAIT > half of MER_DISTRIBUTE) — its node-local mappers pull buckets slower than the merger can serve them. The distribute side is mapper-bound, not merger-bound.",
+        "knob": "The node-local mapper pool is the slow consumer: it has too few mappers per merger (fewer reducer-bearing nodes => bigger per-node mapper sets help), or those mappers are CPU-bound in Generator. This is the work-stealing load-balancer's target — let a drained node's idle mappers pull from a busy donor merger.",
+        "rationale": "DISTRIBUTE_WAIT is the merger idling between dispatches, the node-local analogue of MAS_DISTRIBUTE_WAIT; the lever is the consumers (mappers), not the merger.",
+    },
+    {
+        "id": "gather_bound_exit",
+        "test": lambda d: d["master"]["t_mas_gather_us"] > 0.30 * d["master"]["wallclock_us"],
+        "diagnosis": "The chain-exit re-globalization (MAS_GATHER, a `.sort(gather)` / MAPREDUCE_LAST module) is a large share of master wallclock — the master's one mandatory global merge of the G merger streams dominates.",
+        "knob": "This merge is unavoidable where global order is required (print/.store/toPolynomial). Lever options: keep the chain partitioned longer so fewer modules gather; check MER_GATHER and the master recv to see whether the merger streams or the master CPU is the limit; widen the merger tier so each stream is smaller.",
+        "rationale": "Unlike MAS_FINAL_SORT on a bypassed module (which should be ~0), MAS_GATHER is real required work; the only levers are gather frequency and per-stream size.",
+    },
     {
         "id": "nic_saturated",
         "test": lambda d: _nic_max_gbps(d) > 0.85 * _nic_peak_gbps(),
@@ -375,6 +403,13 @@ def load_csv(run_dir: Path) -> pd.DataFrame:
             df[col] = 0
     if "nummergers" not in df.columns:
         df["nummergers"] = 0
+    # Master-bypass merger-tier counters + per-module chain state. Backfill for
+    # CSVs that pre-date the master-bypass instrumentation.
+    for col in ("mer_distribute_terms", "mer_partition_bytes"):
+        if col not in df.columns:
+            df[col] = 0
+    if "smrflag" not in df.columns:
+        df["smrflag"] = 0
     # Legacy derived "hash+pack" residual. With the new instrumentation
     # MAP_HASH_ROUTE + MAP_DELTA_COMPRESS + MAP_SBUF_COPY are observed
     # directly, so the gap is now small (residual = whatever the timers
@@ -1599,6 +1634,38 @@ def render_compare(mr_dir: Path, org_dir: Path) -> Path:
                          figs)
 
 
+# AC.sMRflag values (ftypes.h): the per-module chain state stamped into the CSV.
+SMRFLAG_LABEL = {0: "classic", 1: "MAPREDUCE", 2: "LAST(gather)", 4: "FIRST"}
+
+
+def print_bypass_summary(df: pd.DataFrame) -> None:
+    """One row per module of the master-bypass merger-tier metrics: which state
+    the module ran in, how much the mergers distributed/partitioned, and how the
+    master's merge split between a real chain-exit gather (MAS_GATHER) and a
+    classic non-MR merge (MAS_FINAL_SORT). Makes the bypass directly legible:
+    FIRST/MAPREDUCE modules should show ~0 MAS_FINAL_SORT (master off the path)."""
+    if "nummergers" not in df.columns or df["nummergers"].max() <= 0:
+        return
+    print("\n=== master-bypass merger-tier per-module summary ===")
+    print(f"{'mod':>4} {'state':>13} {'dist_terms':>12} {'mean_part_MB':>12} "
+          f"{'MER_DIST_s':>10} {'MAS_GATHER_s':>12} {'MAS_FINAL_s':>11} {'MERGERDONE_s':>12}")
+    for m, g in df.groupby("module"):
+        flag = int(g["smrflag"].iloc[0]) if "smrflag" in g.columns else 0
+        merg = g[g["role"] == "merger"]
+        mas  = g[g["role"] == "master"]
+        dist_terms = int(merg["mer_distribute_terms"].sum())
+        part_mb = (merg["mer_partition_bytes"].mean() / 1e6) if len(merg) else 0.0
+        dist_s  = (merg["t_mer_distribute_us"].mean() / 1e6) if len(merg) else 0.0
+        gather_s = mas["t_mas_gather_us"].sum() / 1e6
+        final_s  = mas["t_mas_final_sort_us"].sum() / 1e6
+        done_s   = mas["t_mas_mergerdone_us"].sum() / 1e6
+        if (flag == 0 and dist_terms == 0
+                and gather_s < 0.05 and final_s < 0.05 and done_s < 0.05):
+            continue   # nothing bypass-related happened in this module
+        print(f"{m:>4} {SMRFLAG_LABEL.get(flag, str(flag)):>13} {dist_terms:>12} "
+              f"{part_mb:>12.1f} {dist_s:>10.1f} {gather_s:>12.1f} {final_s:>11.1f} {done_s:>12.2f}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1606,6 +1673,10 @@ def main() -> int:
                         help="One run dir for single-run report, two for MR-vs-org compare")
     args = parser.parse_args()
     if len(args.dirs) == 1:
+        try:
+            print_bypass_summary(load_csv(args.dirs[0]))
+        except Exception as e:
+            print(f"(bypass summary skipped: {e})")
         out = render_single(args.dirs[0])
     elif len(args.dirs) == 2:
         out = render_compare(args.dirs[0], args.dirs[1])
