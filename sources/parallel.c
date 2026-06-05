@@ -1229,6 +1229,11 @@ cancelled:
    bit-for-bit. */
 static int pf_output_partitioned(void)
 {
+	/* Output goes to node-local merger files (partitioned) on the two chain-body
+	   states. The single gather state MAPREDUCE_LAST is excluded here -- it streams
+	   its output to the master instead (re-globalize) -- so `.sort(gather)`, `.end`,
+	   and the off-parallel fallback all land outside this set via the sMRflag
+	   transition (execute.c), with no per-flag special-case needed. */
 	return ( PF.nummergers > 0 &&
 	         ( AC.sMRflag == MAPREDUCE_FIRST || AC.sMRflag == MAPREDUCE ) );
 }
@@ -2520,6 +2525,13 @@ static int pf_master_gather(EXPRESSIONS e, WORD i)
 	GETIDENTITY
 	WORD *term = AT.WorkPointer;
 	POSITION position;
+
+	/* Fallback path: the preceding MR module partitioned its output to merger files,
+	   and now a serial module needs it globally. This works, but the streaming path
+	   is cheaper -- nudge the user to mark the preceding module with `.sort(gather)`. */
+	MesPrint("WARNING: a serial (off parallel) module is reading partitioned MR output "
+	         "via the fallback gather of expression %s. Terminate the preceding parallel "
+	         "module with `.sort(gather)` to stream it to the master directly.", EXPRNAME(i));
 	LONG ret;
 
 	/* 1. carry the prototype across to the fresh output scratch (mirrors the
@@ -2720,6 +2732,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			         PF.nummergers, PF.numnodes);
 		}
 	}
+	/* Record whether THIS processed module partitions its output to merger files.
+	   Read by the sMRflag transition (execute.c) for the NEXT module to decide
+	   partitioned-input (MAPREDUCE/LAST) vs master-distributed FIRST. Set on every
+	   rank that reaches here (PF_Processor is called per expression on all ranks),
+	   so the value is consistent cluster-wide. A module that processes no
+	   expression never reaches here, leaving prev_partitioned unchanged -- which is
+	   exactly right: an MR-flagged but empty .sort must not advance the chain. */
+	PF.prev_partitioned = pf_output_partitioned() ? 1 : 0;
 
 #ifdef MPI2
 	if ( PF_shared_buff == NULL ) {

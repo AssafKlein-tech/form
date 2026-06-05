@@ -200,6 +200,7 @@ typedef struct ParallelVars {
 	int         input_src;       /* per-module, per-rank: where a mapper requests input term buckets. = node-merger when input is partitioned (sMRflag in {MAPREDUCE,LAST}), else MASTER. */
 	int         in_gather;       /* set during the off-parallel-exit gather (pf_master_gather): master merges the G merger files into one global scratch WITHOUT the mapper-phase barrier (PF_WaitAllSlaves) -- the mappers are idle, only the mergers stream. */
 	LONG       *merger_file_counter; /* master-only: per-merger term counts reported via PF_MERGERDONE_MSGTAG during partitioned modules (length nummergers). Lazily allocated. */
+	int         prev_partitioned; /* 1 iff the most recently PROCESSED module wrote its output to partitioned merger files (pf_output_partitioned at PF_Processor time). Set in PF_Processor on every rank; read by the sMRflag transition (execute.c) to decide partitioned-input vs master-distributed FIRST. A module that processes no expression (no PF_Processor call) leaves it unchanged -- so a MR-flagged but empty .sort does NOT falsely advance the chain. */
 	PF_BUFFER  *distbuf;         /* merger-only: dedicated per-mapper distribution buffer used by PF_MergerDistribute (node-local input handoff). Separate from the shuffle/forward sbufs the same rank reuses. Lazily allocated. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */

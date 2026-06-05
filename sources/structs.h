@@ -1821,6 +1821,7 @@ struct C_const {
     int     MRflag;                /* (C) Do mapreduce parallel job */
     int     mMRflag;               /* (C) mapreduce allowed in this module */
     int     sMRflag;               /* (C) mapreduce last module state */
+    int     mMRgather;             /* (C) set by `.sort(gather)`: this MR module streams its output to the master (re-globalize) instead of partitioning to merger files; lets a serial module that follows read AR.infile. Per-module, reset after each module. */
     int     inparallelflag;        /* (C) inparallel allowed? */
     int     partodoflag;           /* (C) parallel allowed? */
     int     properorderflag;       /* (C) clean normalizing. */
