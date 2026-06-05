@@ -1238,8 +1238,20 @@ int CreateHandle(void)
 #if defined(WITHMPI) && defined(WITHZLIB)
 
 #include <unistd.h>   /* ftruncate */
+#include <time.h>     /* clock_gettime -- bc compress/decompress timers      */
 
 int PF_bc_compress_now = 0;   /* set by PF_EndSort: compress this expr's blocks? */
+
+/* PROFILING: wall time spent inside the codec (compress2/uncompress -> zstd via
+   ZWRAP when built --with-zstd). Master-only. Reported in [bc] / PF_BC_STATS. */
+static double bc_cum_comp_s   = 0.0;   /* cumulative compress wall seconds   */
+static double bc_cum_decomp_s = 0.0;   /* cumulative decompress wall seconds */
+static double bc_now(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 
 typedef struct BcBlock {
 	LONG logstart;     /* logical byte offset of this block               */
@@ -1264,6 +1276,9 @@ typedef struct BcSlot {
 	UBYTE   *zbuf; LONG zbufcap;   /* compressed staging buffer           */
 	UBYTE   *ubuf; LONG ubufcap;   /* one decompressed block (read cache)  */
 	LONG     cache_blk;            /* block index currently in dbuf, -1    */
+	LONG     fd_pos;              /* known physical fd offset, -1=unknown  */
+	                             /* (skip the seek when already there)    */
+	double   gen_comp_s;         /* per-generation compress wall seconds  */
 	LONG     gen_log, gen_phys;    /* per-generation byte counters (proof) */
 	LONG     gen_comp, gen_raw;    /* per-generation block path counts     */
 } BcSlot;
@@ -1327,6 +1342,7 @@ void PF_bc_track(FILEHANDLE *f)
 			s->blk = 0; s->nblk = 0; s->capblk = 0;
 			s->zbuf = 0; s->zbufcap = 0; s->ubuf = 0; s->ubufcap = 0;
 			s->cache_blk = -1;
+			s->fd_pos = -1; s->gen_comp_s = 0.0;
 			s->gen_log = 0; s->gen_phys = 0; s->gen_comp = 0; s->gen_raw = 0;
 			MLOCK(ErrorMessageLock);
 			MesPrint("[bc] tracking scratch FILEHANDLE (level=%d); compression armed", (WORD)bc_level);
@@ -1348,17 +1364,19 @@ static void bc_report(BcSlot *s)
 	LONG pct = s->gen_log ? (LONG)((s->gen_phys * 100) / s->gen_log) : 100;
 	char *p;
 	MLOCK(ErrorMessageLock);
-	MesPrint("[bc] scratch fd=%d: blocks=%l comp=%l raw=%l  logical=%l phys=%l  -> %l%% of original",
-		(WORD)s->fh->handle, s->nblk, s->gen_comp, s->gen_raw, s->gen_log, s->gen_phys, pct);
+	MesPrint("[bc] scratch fd=%d: blocks=%l comp=%l raw=%l  logical=%l phys=%l  -> %l%% of original  comp_ms=%l cum_comp_ms=%l cum_decomp_ms=%l",
+		(WORD)s->fh->handle, s->nblk, s->gen_comp, s->gen_raw, s->gen_log, s->gen_phys, pct,
+		(LONG)(s->gen_comp_s*1000.0), (LONG)(bc_cum_comp_s*1000.0), (LONG)(bc_cum_decomp_s*1000.0));
 	MUNLOCK(ErrorMessageLock);
 	p = getenv("PF_BC_STATS");
 	if ( p && *p ) {
 		FILE *fp = fopen(p, "a");
 		if ( fp ) {
-			fprintf(fp, "fd=%d blocks=%ld comp=%ld raw=%ld logical=%ld phys=%ld ratio=%.4f\n",
+			fprintf(fp, "fd=%d blocks=%ld comp=%ld raw=%ld logical=%ld phys=%ld ratio=%.4f comp_s=%.2f cum_comp_s=%.2f cum_decomp_s=%.2f\n",
 				s->fh->handle, (long)s->nblk, (long)s->gen_comp, (long)s->gen_raw,
 				(long)s->gen_log, (long)s->gen_phys,
-				s->gen_log ? (double)s->gen_phys/(double)s->gen_log : 1.0);
+				s->gen_log ? (double)s->gen_phys/(double)s->gen_log : 1.0,
+				s->gen_comp_s, bc_cum_comp_s, bc_cum_decomp_s);
 			fclose(fp);
 		}
 	}
@@ -1370,7 +1388,9 @@ static void bc_reset(BcSlot *s)
 	FILES *f;
 	if ( s->gen_log > 0 ) bc_report(s);   /* proof line for the finished module */
 	s->gen_log = s->gen_phys = 0; s->gen_comp = s->gen_raw = 0;
+	s->gen_comp_s = 0.0;
 	s->nblk = 0; s->phys_end = 0; s->log_end = 0; s->cache_blk = -1;
+	s->fd_pos = -1;                       /* file truncated -> position unknown */
 	f = bc_file(s->fh->handle);
 	if ( f && f->descriptor >= 0 ) {
 		if ( ftruncate(f->descriptor, 0) != 0 ) { /* best effort */ }
@@ -1407,16 +1427,24 @@ static LONG bc_write(BcSlot *s, UBYTE *buffer, LONG size)
 			if ( s->zbuf ) M_free(s->zbuf,"bc cbuf");
 			s->zbuf = (UBYTE *)Malloc1((LONG)clen,"bc cbuf"); s->zbufcap = (LONG)clen;
 		}
-		if ( s->zbuf && compress2(s->zbuf,&clen,buffer,(uLong)size,bc_level) == Z_OK
-		     && (LONG)clen < size ) {
-			compressed = 1; storesize = (LONG)clen; storeptr = s->zbuf;
+		if ( s->zbuf ) {
+			double t0 = bc_now();
+			int ok = ( compress2(s->zbuf,&clen,buffer,(uLong)size,bc_level) == Z_OK );
+			double dt = bc_now() - t0;
+			s->gen_comp_s += dt; bc_cum_comp_s += dt;
+			if ( ok && (LONG)clen < size ) {
+				compressed = 1; storesize = (LONG)clen; storeptr = s->zbuf;
+			}
 		}
 	}
 
 	f = bc_file(s->fh->handle);
 	if ( !f ) return -1;
-	Useek(f,(off_t)s->phys_end,SEEK_SET);
-	if ( (LONG)Uwrite((char *)storeptr,1,storesize,f) != storesize ) return -1;
+	/* Writes are sequential appends: skip the seek when the fd is already at
+	   phys_end (only the first write of a generation actually seeks). */
+	if ( s->fd_pos != s->phys_end ) { Useek(f,(off_t)s->phys_end,SEEK_SET); }
+	if ( (LONG)Uwrite((char *)storeptr,1,storesize,f) != storesize ) { s->fd_pos = -1; return -1; }
+	s->fd_pos = s->phys_end + storesize;
 
 	if ( s->nblk >= s->capblk && bc_grow_blk(s) < 0 ) return -1;
 	b = &s->blk[s->nblk++];
@@ -1461,8 +1489,10 @@ static LONG bc_read(BcSlot *s, UBYTE *buffer, LONG size)
 			/* Raw block: physical layout mirrors logical within the block,
 			   so read just the requested window directly (keeps small random
 			   reads, e.g. GetOneTerm under B+, as cheap as before). */
-			Useek(f,(off_t)(b->physstart + off),SEEK_SET);
-			if ( (LONG)Uread((char *)(buffer+got),1,n,f) != n ) return -1;
+			off_t fp = (off_t)(b->physstart + off);
+			if ( s->fd_pos != (LONG)fp ) { Useek(f,fp,SEEK_SET); }
+			if ( (LONG)Uread((char *)(buffer+got),1,n,f) != n ) { s->fd_pos = -1; return -1; }
+			s->fd_pos = (LONG)fp + n;
 			got += n; i++;
 			continue;
 		}
@@ -1476,10 +1506,16 @@ static LONG bc_read(BcSlot *s, UBYTE *buffer, LONG size)
 				if ( s->zbuf ) M_free(s->zbuf,"bc cbuf");
 				s->zbuf = (UBYTE *)Malloc1(b->physsize,"bc cbuf"); s->zbufcap = b->physsize;
 			}
-			Useek(f,(off_t)b->physstart,SEEK_SET);
-			if ( (LONG)Uread((char *)s->zbuf,1,b->physsize,f) != b->physsize ) return -1;
-			if ( uncompress(s->ubuf,&dl,s->zbuf,(uLong)b->physsize) != Z_OK
-			     || (LONG)dl != b->logsize ) return -1;
+			if ( s->fd_pos != b->physstart ) { Useek(f,(off_t)b->physstart,SEEK_SET); }
+			if ( (LONG)Uread((char *)s->zbuf,1,b->physsize,f) != b->physsize ) { s->fd_pos = -1; return -1; }
+			s->fd_pos = b->physstart + b->physsize;
+			{
+				double t0 = bc_now();
+				int bad = ( uncompress(s->ubuf,&dl,s->zbuf,(uLong)b->physsize) != Z_OK
+				            || (LONG)dl != b->logsize );
+				bc_cum_decomp_s += bc_now() - t0;
+				if ( bad ) return -1;
+			}
 			s->cache_blk = i;
 		}
 		memcpy(buffer+got,s->ubuf+off,n);
