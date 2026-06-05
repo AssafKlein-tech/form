@@ -198,6 +198,7 @@ typedef struct ParallelVars {
 	FILEHANDLE *merger_infile;   /* merger-only: node-local scratch the merger distributes from when input is partitioned (previous module's output). */
 	int         merger_to_file;  /* set alongside in_merger_phase: 1 => PF_MergerLoop writes to merger_outfile (partitioned), 0 => forwards upstream to MASTER (LAST gather). */
 	int         input_src;       /* per-module, per-rank: where a mapper requests input term buckets. = node-merger when input is partitioned (sMRflag in {MAPREDUCE,LAST}), else MASTER. */
+	int         in_gather;       /* set during the off-parallel-exit gather (pf_master_gather): master merges the G merger files into one global scratch WITHOUT the mapper-phase barrier (PF_WaitAllSlaves) -- the mappers are idle, only the mergers stream. */
 	LONG       *merger_file_counter; /* master-only: per-merger term counts reported via PF_MERGERDONE_MSGTAG during partitioned modules (length nummergers). Lazily allocated. */
 	PF_BUFFER  *distbuf;         /* merger-only: dedicated per-mapper distribution buffer used by PF_MergerDistribute (node-local input handoff). Separate from the shuffle/forward sbufs the same rank reuses. Lazily allocated. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */

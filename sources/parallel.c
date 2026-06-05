@@ -1530,8 +1530,11 @@ int PF_EndSort(void)
 	/* WaitAllSlaves is the generation/sort barrier and only meaningful on
 	   MASTER. A mapper-merger arrives here already past its own
 	   mapper-phase done-handshake; the master has been the one waiting on
-	   it. */
-	if ( PF.me == MASTER )
+	   it. Skipped during the off-parallel-exit gather (in_gather): there the
+	   mappers/reducers are idle (returned at the off-parallel guard) and only
+	   the mergers stream their files, so there is no mapper barrier to wait on
+	   -- waiting would hang on done-sends that never come. */
+	if ( PF.me == MASTER && !PF.in_gather )
 	{
 		PF_WaitAllSlaves();
 		LONG cpu = TimeCPU(1);
@@ -2432,7 +2435,144 @@ static int PF_WaitAllSlaves(void)
 }
 
 /*
- 		#] PF_WaitAllSlaves : 
+ 		#] PF_WaitAllSlaves :
+ 		#[ off-parallel-exit gather :
+*/
+
+/* Off-parallel-exit gather (merger side). Stream this merger's node-local file
+   (PF.merger_infile = the partitioned chain's accumulated output) upstream to the
+   master, which loser-tree merges the G streams. Mirrors PF_MergerLoop's gather
+   forward (in_merger_phase + PutOut/FlushOut to MASTER) but sources terms from the
+   file via GetOneTerm instead of leaf reducers. Every merger sends exactly one
+   stream (BUFFER...ENDBUFFER), even if its file is empty, so the master's G-way
+   loser tree receives all of its inputs. */
+static int pf_merger_gather_to_master(void)
+{
+	GETIDENTITY
+	FILEHANDLE *fout = AR.outfile;
+	WORD *sv_PObuffer = fout->PObuffer, *sv_POstop = fout->POstop;
+	LONG  sv_POsize   = fout->POsize;
+	WORD *sv_POfill   = fout->POfill, *sv_POfull = fout->POfull;
+	WORD *term = AT.WorkPointer, *save_cp;
+	POSITION pos, rpos;
+	int rc = 0;
+
+	NewSort(BHEAD0);
+	PF.parallel = 1;
+	PF.in_merger_phase = 1;
+	PF.merger_to_file  = 0;            /* forward upstream to MASTER, not to a file */
+	if ( PF_allocateSbuf() == 0 ) { PF.in_merger_phase = 0; return -1; }
+
+	SeekScratch(fout, &pos);
+	PUTZERO(rpos);
+	save_cp = AR.CompressPointer;
+
+	/* GetOneTerm (read) and PutOut (write) BOTH use AR.CompressPointer (against the
+	   AR.ComprTop bound) for their delta state, and here they are interleaved per
+	   term -- GetOneTerm's just-decoded term would become the "previous written
+	   term" PutOut compresses against, so every term compresses against itself.
+	   Give the read its OWN scratch buffer (CompressPointer+ComprTop swapped each
+	   iteration) so PutOut's output-delta cursor (put_cp into the real
+	   AR.CompressBuffer) is preserved across iterations. */
+	WORD *real_top     = AR.ComprTop;
+	WORD *read_scratch = (WORD*)Malloc1((AM.CompressSize+10)*sizeof(WORD), "gather read cbuf");
+	if ( read_scratch == NULL ) { PF.in_merger_phase = 0; return -1; }
+	WORD *read_top = read_scratch + AM.CompressSize;
+	AR.CompressPointer = AR.CompressBuffer; *AR.CompressPointer = 0;   /* PutOut: no previous term yet */
+	WORD *put_cp = AR.CompressPointer;
+	if ( PF.merger_infile != NULL ) {
+		for ( ;; ) {
+			WORD got;
+			AR.CompressPointer = read_scratch; AR.ComprTop = read_top;   /* read scope */
+			got = GetOneTerm(BHEAD term, PF.merger_infile, &rpos, 0);
+			AR.ComprTop = real_top;                                       /* write scope */
+			if ( got < 0 ) { rc = -1; break; }
+			if ( got == 0 ) break;
+			AR.CompressPointer = put_cp;
+			if ( PutOut(BHEAD term, &pos, fout, 1) < 0 ) { rc = -1; break; }
+			put_cp = AR.CompressPointer;
+		}
+	}
+	AR.ComprTop = real_top;
+	AR.CompressPointer = put_cp;
+	if ( rc == 0 && FlushOut(&pos, fout, 0) ) rc = -1;   /* ENDBUFFER to MASTER */
+	M_free(read_scratch, "gather read cbuf");
+	AR.CompressPointer = save_cp;
+	PF.in_merger_phase = 0;
+
+	fout->PObuffer = sv_PObuffer; fout->POstop = sv_POstop; fout->POsize = sv_POsize;
+	fout->POfill = sv_POfill; fout->POfull = sv_POfull;
+	LowerSortLevel();   /* match NewSort -- restore AR.sLevel for the next module */
+	return rc;
+}
+
+/* Off-parallel-exit gather (master side). At a serial `off parallel` module that
+   follows a partitioned MR chain (sMRflag == MAPREDUCE_LAST, nummergers>0) the
+   global expression is scattered across the G node-local merger files. Before the
+   master runs the module serially it re-globalizes: loser-tree merge the G merger
+   streams (sent by pf_merger_gather_to_master) into one scratch -- exactly a normal
+   MR module's final sort, but sourced from the merger files and WITHOUT the
+   mapper-phase barrier (in_gather skips PF_WaitAllSlaves). Leaves AR.infile =
+   [prototype][global sorted content][0], positioned at the prototype so proces.c's
+   serial GetTerm(AR.infile) reads it. */
+static int pf_master_gather(EXPRESSIONS e, WORD i)
+{
+	GETIDENTITY
+	WORD *term = AT.WorkPointer;
+	POSITION position;
+	LONG ret;
+
+	/* 1. carry the prototype across to the fresh output scratch (mirrors the
+	   master branch's prototype write at the top of PF_Processor). */
+	SetScratch(AR.infile, &(e->onfile));
+	if ( GetTerm(BHEAD term) <= 0 ) {
+		MesPrint("[0] pf_master_gather: expression %d has no prototype", i);
+		return -1;
+	}
+	term[3] = i;
+	SeekScratch(AR.outfile, &position);
+	e->onfile = position;
+	if ( PutOut(BHEAD term, &position, AR.outfile, 0) < 0 ) return -1;
+	AR.DeferFlag = 0;
+
+	/* 2. loser-tree merge the G merger streams into AR.outfile. in_gather skips
+	   PF_WaitAllSlaves; LAST is not output-partitioned so PF_EndSort's fout stays
+	   AR.outfile and it runs the normal master merge body over the merger rbufs. */
+	NewSort(BHEAD0);
+	PF.parallel  = 1;
+	PF.in_gather = 1;
+	ret = EndSort(BHEAD AM.S0->sBuffer, 0);
+	PF.in_gather = 0;
+	PF.parallel  = 0;
+	if ( ret < 0 ) return -1;
+
+	e->counter = PF_goutterms;
+	e->size    = PF_exprsize;
+	AR.GetFile = 0;
+
+	/* 3. swap so AR.infile holds the gathered global expression. The module
+	   boundary's RevertScratch swaps again after the serial module writes its
+	   output to AR.outfile (= the now-stale partitioned scratch), so the next
+	   module reads the serial output as usual. */
+	{ FILEHANDLE *t = AR.infile; AR.infile = AR.outfile; AR.outfile = t; }
+	/* The post-swap AR.outfile is the now-stale partitioned scratch ([prototype][0]
+	   from the previous module). Reset it to empty so the serial module writes its
+	   output to a fresh file -- exactly what the module-boundary RevertScratch does
+	   for a normal module. Without this, stale content perturbs the serial pass. */
+	if ( AR.outfile->handle >= 0 ) {
+		CloseFile(AR.outfile->handle);
+		AR.outfile->handle = -1;
+		remove(AR.outfile->name);
+	}
+	PUTZERO(AR.outfile->POposition);
+	PUTZERO(AR.outfile->filesize);
+	AR.outfile->POfill = AR.outfile->POfull = AR.outfile->PObuffer;
+	SetScratch(AR.infile, &(e->onfile));
+	return 0;
+}
+
+/*
+ 		#] off-parallel-exit gather :
  		#[ PF_Processor :
 */
 enum Role { ROLE_MAPPER = 1, ROLE_REDUCER = 2 };
@@ -2601,12 +2741,21 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 	}
 	if ( AC.mparallelflag != PARALLELFLAG ){
-		/* MAPREDUCE_LAST is the chain-exit gather module: it is non-parallel
+		/* MAPREDUCE_LAST is the chain-exit gather module: non-parallel
 		   (mMRflag==NO_MAPREDUCE) but sMRflag still labels it LAST so the data
-		   path knows to gather the partitioned merger files first. Step 4 will
-		   trigger that gather here; for now (and once gathered) it skips serially
-		   just like NO_MAPREDUCE. Without this, an off-parallel exit module trips
-		   the "Calling Map Reduce without parallel" guard and the run dies. */
+		   path knows the global expression is scattered across the G node-local
+		   merger files and must be re-globalized before this serial module reads
+		   AR.infile. Collective over master + mergers (others fall straight to
+		   return(0)). When nummergers==0 there was no partitioning, so nothing to
+		   gather -- it skips serially just like NO_MAPREDUCE. */
+		if ( PF.nummergers > 0 && AC.sMRflag == MAPREDUCE_LAST ) {
+			if ( PF.is_merger ) {
+				if ( pf_merger_gather_to_master() < 0 ) return(-1);
+			}
+			else if ( PF.me == MASTER ) {
+				if ( pf_master_gather(e,i) < 0 ) return(-1);
+			}
+		}
 		if(AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) {return(0);}
 		MesPrint("ERROR: Calling Map Reduce without parallel");
 		return (-1);

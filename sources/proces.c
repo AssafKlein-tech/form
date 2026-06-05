@@ -383,6 +383,7 @@ commonread:;
 				else
 #endif
 				{
+					curfile = AR.infile;   /* MR off-parallel gather may have swapped AR.infile/outfile inside PF_Processor */
 					NewSort(BHEAD0);
 					AR.MaxDum = AM.IndDum;
 					AN.ninterms = 0;
