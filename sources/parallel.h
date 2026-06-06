@@ -60,6 +60,14 @@
 #define PF_ENDSHUFFLE_MSGTAG   111  /* same as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
 #define PF_ENDSHUFFLEALL_MSGTAG   112  /* Indicates the end of all shuffling operations*/
 #define PF_MERGERDONE_MSGTAG      113  /* merger -> master: partitioned-output module done; carries {counter, size} */
+/* Work-stealing load balancer (PF_STEAL). The master steers idle mappers; it
+   never sends work-control to a merger, so no master<->merger blocking cycle
+   exists (every message below is one-way into a poll loop or a reply to a
+   waiter). Mapper termination reuses the standard PF_ENDSORT path. */
+#define PF_ASSIGN_MSGTAG          114  /* master -> idle mapper: attach to the merger rank carried in the payload (a steer; the work itself still comes from that merger) */
+#define PF_MERGER_EXHAUSTED_MSGTAG 115 /* merger -> mapper: my input file is drained; go back to the master to be steered elsewhere */
+#define PF_MERGER_PROGRESS_MSGTAG 116  /* merger -> master: terms_left estimate (>=0), or -1 = FINISHED (drop me from the live set) */
+#define PF_STEAL_STOP_MSGTAG      117  /* master -> merger: all plain mappers are done; leave the responder phase and go to endsort */
 
 /*
  * A macro for checking the version of gcc.
@@ -199,9 +207,10 @@ typedef struct ParallelVars {
 	int         merger_to_file;  /* set alongside in_merger_phase: 1 => PF_MergerLoop writes to merger_outfile (partitioned), 0 => forwards upstream to MASTER (LAST gather). */
 	int         input_src;       /* per-module, per-rank: where a mapper requests input term buckets. = node-merger when input is partitioned (sMRflag in {MAPREDUCE,LAST}), else MASTER. */
 	int         in_gather;       /* set during the off-parallel-exit gather (pf_master_gather): master merges the G merger files into one global scratch WITHOUT the mapper-phase barrier (PF_WaitAllSlaves) -- the mappers are idle, only the mergers stream. */
-	LONG       *merger_file_counter; /* master-only: per-merger term counts reported via PF_MERGERDONE_MSGTAG during partitioned modules (length nummergers). Lazily allocated. */
+	LONG       *merger_total_terms; /* master-only: per-merger count of TERMS each merger wrote to its node-local partitioned file (reported via PF_MERGERDONE_MSGTAG). Equals that merger's input-term count for the next module, and seeds the PF_STEAL load balancer's terms_left[]/live[]. Length nummergers, lazily allocated. */
 	int         prev_partitioned; /* 1 iff the most recently PROCESSED module wrote its output to partitioned merger files (pf_output_partitioned at PF_Processor time). Set in PF_Processor on every rank; read by the sMRflag transition (execute.c) to decide partitioned-input vs master-distributed FIRST. A module that processes no expression (no PF_Processor call) leaves it unchanged -- so a MR-flagged but empty .sort does NOT falsely advance the chain. */
 	PF_BUFFER  *distbuf;         /* merger-only: dedicated per-mapper distribution buffer used by PF_MergerDistribute (node-local input handoff). Separate from the shuffle/forward sbufs the same rank reuses. Lazily allocated. */
+	int         steal;           /* work-stealing load balancer (Step 2) on/off, from PF_STEAL env (default 0 = node-local only). Broadcast in PF_Init. When a node's merger drains it redirects its idle mappers to the master broker to steal node-remote buckets from a still-busy merger. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */

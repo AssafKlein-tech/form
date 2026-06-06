@@ -1344,7 +1344,7 @@ static LONG pf_distribute_terms(PF_BUFFER *sbuf, int is_merger, FILEHANDLE *mfil
 {
 	GETIDENTITY
 	WORD *term = AT.WorkPointer, *s; int j, next;
-	LONG maxinterms, termsinbucket = 0, dd = 0, ninterms = 0;
+	LONG maxinterms, termsinbucket = 0, dd = 0, ninterms = 0, nbuckets = 0;
 	int cmaxinterms = 0;
 	POSITION rpos; WORD *save_cp = 0;
 
@@ -1378,7 +1378,13 @@ static LONG pf_distribute_terms(PF_BUFFER *sbuf, int is_merger, FILEHANDLE *mfil
 		if ( termsinbucket >= maxinterms || sbuf->fill[0] + *term >= sbuf->stop[0] ) {
 			if ( is_merger ) {
 				int t = 0;
+				PF_TIMER_BEGIN(MER_DISTRIBUTE_WAIT);
+				/* Serve whoever sends PF_READY -- our node-local mappers and,
+				   under PF_STEAL, stolen mappers the master steered here. A stolen
+				   mapper sends the ordinary PF_READY, so there is nothing special
+				   to do for it: same receive in both cases. */
 				PF_Receive(PF_ANY_SOURCE, PF_READY_MSGTAG, &next, &t);
+				PF_TIMER_END(MER_DISTRIBUTE_WAIT);
 			}
 			else {
 				PF_TIMER_BEGIN(MAS_DISTRIBUTE_WAIT);
@@ -1387,6 +1393,16 @@ static LONG pf_distribute_terms(PF_BUFFER *sbuf, int is_merger, FILEHANDLE *mfil
 			}
 			pf_ship_bucket(sbuf, next, ninterms, &maxinterms, &cmaxinterms, is_merger);
 			termsinbucket = 0;
+			/* Work-stealing: every 64 buckets, tell the master how many terms
+			   we have shipped so it can derive terms_left = initial - shipped and
+			   steer stealers to the neediest merger. Ssend into the near-idle
+			   master poll loop; the wait is one poll iteration, amortized over 64
+			   buckets. (Only the merger reports; the master distributor doesn't.) */
+			if ( is_merger && PF.steal && ( ++nbuckets % 64 ) == 0 ) {
+				PF_PreparePack();
+				PF_Pack(&ninterms, 1, PF_LONG);
+				PF_Send(MASTER, PF_MERGER_PROGRESS_MSGTAG);
+			}
 		}
 		j = *(s = term);
 		NCOPY(sbuf->fill[0], s, j);
@@ -1465,24 +1481,82 @@ static int PF_MergerDistribute(void)
 	   on-demand loop the master uses (slow-start ramp + swap-pipelining). No ramp
 	   cap (ramp_count = -1): the merger's file share is already a fraction of the
 	   global expression. */
+	PF_TIMER_BEGIN(MER_DISTRIBUTE);
 	ninterms = pf_distribute_terms(db, 1, PF.merger_infile, -1, nrecip);
+	PF_TIMER_END(MER_DISTRIBUTE);
 	if ( ninterms < 0 ) { M_free(recips,"merger recips"); return -1; }
+	PF_TIMER_ADD_COUNT(PF_EX_MER_DISTRIBUTE_TERMS, ninterms);
 
-	/* Termination: each recipient gets exactly one ENDSORT bucket (the first
-	   carries any remaining terms; the rest are empty -- the mapper turns an
-	   empty bucket into its end sentinel). Blocking send for the tail; wait any
-	   prior in-flight TERM to this recipient before reusing slot 0. */
-	for ( k = 0; k < nrecip; k++ ) {
-		int next = -1, tag;
-		PF_Receive(PF_ANY_SOURCE, PF_READY_MSGTAG, &next, &tag);
-		if ( db->request[next] != MPI_REQUEST_NULL )
-			MPI_Wait(&db->request[next], &db->retstat[next]);
-		if ( MPI_Ssend(db->buff[0], (int)(db->fill[0]-db->buff[0]), PF_WORD,
-		               next, PF_ENDSORT_MSGTAG, PF_COMM) != MPI_SUCCESS ) {
-			M_free(recips,"merger recips"); return -1;
+	/* Termination -- this merger's file is now exhausted. */
+	if ( !PF.steal ) {
+		/* Node-local only (default): each recipient gets one ENDSORT bucket and
+		   ends (the first carries the residual partial bucket in slot 0; the rest
+		   are empty -- the mapper turns an empty bucket into its end sentinel).
+		   Blocking send for the tail; wait any prior in-flight TERM first. */
+		for ( k = 0; k < nrecip; k++ ) {
+			int next = -1, tag;
+			PF_Receive(PF_ANY_SOURCE, PF_READY_MSGTAG, &next, &tag);
+			if ( db->request[next] != MPI_REQUEST_NULL )
+				MPI_Wait(&db->request[next], &db->retstat[next]);
+			if ( MPI_Ssend(db->buff[0], (int)(db->fill[0]-db->buff[0]), PF_WORD,
+			               next, PF_ENDSORT_MSGTAG, PF_COMM) != MPI_SUCCESS ) {
+				M_free(recips,"merger recips"); return -1;
+			}
+			db->fill[0] = db->full[0] = db->buff[0];
+			PACK_LONG(db->fill[0], ninterms);
 		}
-		db->fill[0] = db->full[0] = db->buff[0];
-		PACK_LONG(db->fill[0], ninterms);
+	}
+	else {
+		/* Work-stealing responder phase. Our file is drained. Tell the master
+		   (PF_MERGER_PROGRESS = -1 == FINISHED) to drop us from the live set, then
+		   answer every late PF_READY until the master says all mappers are done:
+		     - the first asker, if we hold a residual partial bucket, gets it as a
+		       real PF_TERM bucket (it processes those terms, then asks again);
+		     - every other asker gets PF_MERGER_EXHAUSTED, sending it back to the
+		       master to be steered to a still-live merger.
+		   Loop until PF_STEAL_STOP arrives (all plain mappers done -> no more READY).
+		   We never block on a send to the master, and the master only ever sends us
+		   STOP, so there is no bidirectional control cycle -- plain Ssend is safe. */
+		int stop = 0;
+		int residual_shipped = ( (db->fill[0] - db->buff[0]) <= 2 ); /* <=2 WORDs == header only == empty */
+		LONG finished = -1;
+		PF_PreparePack();
+		PF_Pack(&finished, 1, PF_LONG);
+		PF_Send(MASTER, PF_MERGER_PROGRESS_MSGTAG);
+		while ( !stop ) {
+			int flag = 0; MPI_Status st;
+			if ( MPI_Iprobe(MPI_ANY_SOURCE, PF_READY_MSGTAG, PF_COMM, &flag, &st)
+			     == MPI_SUCCESS && flag ) {
+				int next = -1, t = 0;
+				PF_Receive(st.MPI_SOURCE, PF_READY_MSGTAG, &next, &t);
+				if ( !residual_shipped ) {
+					if ( db->request[next] != MPI_REQUEST_NULL )
+						MPI_Wait(&db->request[next], &db->retstat[next]);
+					if ( MPI_Ssend(db->buff[0], (int)(db->fill[0]-db->buff[0]), PF_WORD,
+					               next, PF_TERM_MSGTAG, PF_COMM) != MPI_SUCCESS ) {
+						M_free(recips,"merger recips"); return -1;
+					}
+					db->fill[0] = db->full[0] = db->buff[0];
+					PACK_LONG(db->fill[0], ninterms);
+					residual_shipped = 1;
+				}
+				else {
+					if ( MPI_Ssend(db->buff[0], 0, PF_WORD, next,
+					               PF_MERGER_EXHAUSTED_MSGTAG, PF_COMM) != MPI_SUCCESS ) {
+						M_free(recips,"merger recips"); return -1;
+					}
+				}
+				continue;
+			}
+			if ( MPI_Iprobe(MASTER, PF_STEAL_STOP_MSGTAG, PF_COMM, &flag, &st)
+			     == MPI_SUCCESS && flag ) {
+				int s = MASTER, t = 0;
+				PF_Receive(MASTER, PF_STEAL_STOP_MSGTAG, &s, &t);
+				stop = 1;
+				continue;
+			}
+			usleep(50);
+		}
 	}
 	/* Drain any still-in-flight pipelined TERM sends before the buffers are
 	   reused next module. */
@@ -1555,8 +1629,20 @@ int PF_EndSort(void)
 	   prototype-only size on the master scratch; e->counter is the global sum.
 	   The LAST-module gather (a later step) reads the files back. */
 	if ( PF.me == MASTER && pf_output_partitioned() ) {
-		LONG total = 0;
+		LONG total = 0, total_bytes = 0;
 		int got = 0;
+		/* Per-merger output term counts -> each merger's INPUT count next module.
+		   Seeds the load balancer's terms_left[]/live[] in PF_WaitAllSlaves
+		   (PF_STEAL). Lazily allocated, length nummergers, indexed by merger
+		   ordinal g-1 (merger_child_ranks[g]). */
+		if ( PF.merger_total_terms == NULL && PF.nummergers > 0 )
+			PF.merger_total_terms =
+			    (LONG*)Malloc1((LONG)PF.nummergers*sizeof(LONG), "merger_total_terms");
+		if ( PF.merger_total_terms )
+			for ( int g = 0; g < PF.nummergers; g++ ) PF.merger_total_terms[g] = 0;
+		/* (This whole partitioned branch is timed as MAS_MERGERDONE by the master's
+		   EndSort wrapper in PF_Processor -- WaitAllSlaves + this collect + the
+		   prototype FlushOut -- since pf_output_partitioned() is true here.) */
 		/* Poll for each merger's PF_MERGERDONE while draining the leaf reducers'
 		   PF_STDOUT/PF_LOG stats (from WriteStats). The master no longer runs its
 		   loser-tree merge loop here, which is where that drain normally happens
@@ -1574,6 +1660,14 @@ int PF_EndSort(void)
 				PF_Unpack(&cnt, 1, PF_LONG);
 				PF_Unpack(&sz,  1, PF_LONG);
 				total += cnt;
+				total_bytes += sz;
+				/* Record this merger's term count under its ordinal (seeds the
+				   PF_STEAL load balancer's terms_left[]/live[]). */
+				if ( PF.merger_total_terms && PF.merger_child_ranks )
+					for ( int g = 1; g <= PF.nummergers; g++ )
+						if ( PF.merger_child_ranks[g] == rsrc ) {
+							PF.merger_total_terms[g-1] = cnt; break;
+						}
 				got++;
 				continue;
 			}
@@ -1603,8 +1697,11 @@ int PF_EndSort(void)
 			DIFPOS(PF_exprsize, position, oldposition);
 		}
 		S->TermsLeft = PF_goutterms = total;
-		MesPrint("[0] PF_EndSort: partitioned output -- %l terms across %d merger files",
-		         total, (WORD)PF.nummergers);
+		MesPrint("[0] PF_EndSort: partitioned output -- %l terms, %l bytes across %d merger files",
+		         total, total_bytes, (WORD)PF.nummergers);
+		if ( PF.nummergers > 0 )
+			MesPrint("[0] PF_EndSort: partitioned output -- mean %l bytes/merger",
+			         total_bytes / (LONG)PF.nummergers);
 		return 1;   /* skip InitTree + loser-tree merge */
 	}
 /*
@@ -1971,6 +2068,27 @@ ReceiveNew:
 		tag=PF_RecvWbuf(fi->PObuffer,&size,&src);
 		PF_TIMER_END(MAP_GETTERM_WAIT);
 
+		/* Work-stealing steer replies (PF_STEAL). The mapper asks its current
+		   target PF.input_src -- a merger (for a bucket) or the master (to be
+		   steered). Neither steer reply carries terms, so retarget and loop back
+		   to re-ask, without processing a bucket:
+		     PF_ASSIGN(E)        -- the master steers us to merger E;
+		     PF_MERGER_EXHAUSTED -- our merger drained, go ask the master next.
+		   PF_TERM / PF_ENDSORT fall through to the normal path below; an ENDSORT
+		   from the master is the standard terminate, identical to the non-steal
+		   case (PF_WaitAllSlaves). */
+		if ( PF.steal ) {
+			if ( tag == PF_ASSIGN_MSGTAG ) {
+				LONG new_merger; WORD *p = fi->PObuffer; UNPACK_LONG(p, new_merger);
+				PF.input_src = (int)new_merger;
+				goto ReceiveNew;
+			}
+			if ( tag == PF_MERGER_EXHAUSTED_MSGTAG ) {
+				PF.input_src = MASTER;
+				goto ReceiveNew;
+			}
+		}
+
 		fi->POfill = fi->PObuffer;
 		/* Get AN.ninterms which sits in the first 2 WORDs. */
 		{
@@ -1986,7 +2104,7 @@ ReceiveNew:
 		fi->POfull = fi->PObuffer + size;
 		if ( tag == PF_ENDSORT_MSGTAG ) *fi->POfull++ = 0;
 /*
- 		#] receive new terms from master : 
+ 		#] receive new terms from master :
 */
 	  }
 	  if ( PF_CurrentBracket ) *PF_CurrentBracket = 0;
@@ -2282,9 +2400,20 @@ static int PF_Wait4SlaveIP(int *src)
 	return(next);
 }
 /*
- 		#] PF_Wait4SlaveIP : 
+ 		#] PF_Wait4SlaveIP :
  		#[ PF_WaitAllSlaves :
 */
+
+/* Map a merger's global rank to its 0-based ordinal (index into the master's
+   per-merger work-stealing arrays live[]/terms_left[]/helpers[]), or -1 if the
+   rank is not a merger. */
+static int pf_merger_ordinal(int rank)
+{
+	int g;
+	for ( g = 1; g <= PF.nummergers; g++ )
+		if ( PF.merger_child_ranks && PF.merger_child_ranks[g] == rank ) return g - 1;
+	return -1;
+}
 
 /**
  * Waits until all slaves are ready to send terms back to the master.
@@ -2298,6 +2427,43 @@ static int PF_WaitAllSlaves(void)
 {
 	int i, readySlaves, tag, next = PF_ANY_SOURCE;
 	UBYTE *has_sent = 0;
+
+	/* Work-stealing steer state (PF_STEAL on an input-partitioned module). The
+	   master steers idle mappers to the merger that needs help most. Per merger
+	   ordinal g (0-based): live[g] = still has work; terms_left[g] = the master's
+	   estimate, seeded from this module's per-merger input counts and refined by
+	   PF_MERGER_PROGRESS; helpers[g] = mappers currently feeding it, seeded with its
+	   node-local mapper count and ++ on each steer. plain_done counts plain
+	   (non-merger) mappers that have finished; at num_plain we broadcast
+	   PF_STEAL_STOP so drained mergers leave their responder phase. */
+	int steal_active = ( PF.steal && pf_input_partitioned() && PF.nummergers > 0 );
+	UBYTE *live = 0; LONG *terms_left = 0; int *helpers = 0;
+	int plain_done = 0, num_plain = 0, stop_sent = 0;
+	if ( steal_active ) {
+		int g, r;
+		live       = (UBYTE*)Malloc1(sizeof(UBYTE)*PF.nummergers,"PF_steal live");
+		terms_left = (LONG*) Malloc1(sizeof(LONG) *PF.nummergers,"PF_steal terms_left");
+		helpers    = (int*)  Malloc1(sizeof(int)  *PF.nummergers,"PF_steal helpers");
+		//initialize live[] and terms_left[] from the master's per-merger input counts, and helpers[] from node-local mapper counts:
+		for ( g = 0; g < PF.nummergers; g++ ) {
+			LONG merger_terms = ( PF.merger_total_terms ) ? PF.merger_total_terms[g] : 0;
+			terms_left[g] = merger_terms;
+			live[g] = ( merger_terms > 0 ) ? 1 : 0;
+			helpers[g] = 0;
+		}
+		/* Seed helpers[g] = merger g's node-local mapper count (its initial feeders,
+		   attached without going through the master). */
+		if ( PF.rank_node && PF.merger_child_ranks ) {
+			for ( g = 0; g < PF.nummergers; g++ ) {
+				int mr = PF.merger_child_ranks[g+1], nd = PF.rank_node[mr];
+				for ( r = 1; r < PF.nummappers; r++ )
+					if ( r != mr && PF.rank_node[r] == nd ) helpers[g]++;
+				if ( helpers[g] < 1 ) helpers[g] = 1;   /* avoid div-by-zero */
+			}
+		}
+		else for ( g = 0; g < PF.nummergers; g++ ) helpers[g] = 1;
+		num_plain = PF.nummappers - 1 - PF.nummergers;
+	}
 
 	//allocate an arraay for all the slaves (mappers and reducers) - numtaks + 1- for each slave and for
 	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
@@ -2328,6 +2494,18 @@ static int PF_WaitAllSlaves(void)
 				}
 				else {  /*error?*/
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
+				}
+				/* Work-stealing: a finishing plain (non-merger) mapper is one fewer
+				   stealer. When the last finishes, no more PF_READY will come, so
+				   release the mergers from their responder phase with PF_STEAL_STOP. */
+				if ( steal_active && next >= 1 && next < PF.nummappers
+				     && pf_merger_ordinal(next) < 0 ) {
+					if ( ++plain_done >= num_plain && !stop_sent ) {
+						int g; PF_PreparePack();
+						for ( g = 1; g <= PF.nummergers; g++ )
+							PF_Send(PF.merger_child_ranks[g], PF_STEAL_STOP_MSGTAG);
+						stop_sent = 1;
+					}
 				}
 				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers)
 					PF_Wait4Slave(next);
@@ -2392,12 +2570,63 @@ static int PF_WaitAllSlaves(void)
 					fprintf(stderr,"ERROR next=%d tag=%d\n",next,tag);
 				}/*if ( has_sent[next] == 0 )*/
 				break;
+			/* Work-stealing: a merger reports progress -- terms shipped so far (>=0),
+			   from which we refine terms_left = initial - shipped, or -1 to say it has
+			   FINISHED (drop it from the live set so we stop steering to it). One-way,
+			   no reply; not a done-send, so readySlaves is unchanged. */
+			case PF_MERGER_PROGRESS_MSGTAG:
+				{
+					int psrc = 0, ptag = 0, g; LONG shipped = 0;
+					PF_Receive(next, PF_MERGER_PROGRESS_MSGTAG, &psrc, &ptag);
+					PF_Unpack(&shipped, 1, PF_LONG);
+					g = pf_merger_ordinal(next);
+					if ( steal_active && g >= 0 ) {
+						if ( shipped < 0 ) live[g] = 0;
+						else {
+							LONG c = ( PF.merger_total_terms ) ? PF.merger_total_terms[g] : 0;
+							terms_left[g] = ( c > shipped ) ? c - shipped : 0;
+						}
+					}
+				}
+				break;
 			// all mappers sent ready for the next term chunk. We need to tell them to stop.
-			case PF_READY_MSGTAG: 
+			case PF_READY_MSGTAG:
 /*
 					idle slave
 					May be only PF_READY_MSGTAG:
 */
+				/* Work-stealing: on an input-partitioned module a PF_READY at the
+				   master comes from an idle stealer (its merger drained, or its node
+				   never had one). Steer it to the live merger that needs help most
+				   (max terms_left/helpers) by replying PF_ASSIGN(rank); if none is
+				   live, terminate it with the standard minimal PF_ENDSORT end-marker
+				   (PF.sbufs[0] is not built in bypass mode, hence the direct send). */
+				if ( steal_active ) {
+					int g, best = -1;
+					next = PF_Wait4Slave(next);
+					if ( next == -1 ) return(next);
+					for ( g = 0; g < PF.nummergers; g++ ) {
+						if ( !live[g] ) continue;
+						if ( best < 0 ||
+						     terms_left[g]*(LONG)helpers[best] > terms_left[best]*(LONG)helpers[g] )
+							best = g;
+					}
+					if ( best >= 0 ) {
+						WORD abuf[4]; WORD *ap = abuf;
+						LONG erank = PF.merger_child_ranks[best+1];
+						helpers[best]++;
+						PACK_LONG(ap, erank);
+						if ( MPI_Ssend(abuf, (int)(ap-abuf), PF_WORD, next,
+						               PF_ASSIGN_MSGTAG, PF_COMM) != MPI_SUCCESS ) return(-1);
+					}
+					else {
+						WORD ebuf[8]; WORD *ep = ebuf;
+						PACK_LONG(ep, (LONG)0);
+						if ( MPI_Ssend(ebuf, (int)(ep-ebuf), PF_WORD, next,
+						               PF_ENDSORT_MSGTAG, PF_COMM) != MPI_SUCCESS ) return(-1);
+					}
+					break;
+				}
 				next = PF_Wait4Slave(next);
 				if ( next == -1 ) return(next); /*Cannot be!*/
 				if ( has_sent[0] == 0 ) {  /*Send the last chunk to the slave*/
@@ -2433,6 +2662,9 @@ static int PF_WaitAllSlaves(void)
 	}
 
 	if ( has_sent ) M_free(has_sent,"PF_WaitAllSlaves");
+	if ( live ) M_free(live,"PF_steal live");
+	if ( terms_left ) M_free(terms_left,"PF_steal terms_left");
+	if ( helpers ) M_free(helpers,"PF_steal helpers");
 /*
 		0 on success (exit from the main loop by loop condition), or -1 if fails
 */
@@ -2485,6 +2717,7 @@ static int pf_merger_gather_to_master(void)
 	WORD *read_top = read_scratch + AM.CompressSize;
 	AR.CompressPointer = AR.CompressBuffer; *AR.CompressPointer = 0;   /* PutOut: no previous term yet */
 	WORD *put_cp = AR.CompressPointer;
+	PF_TIMER_BEGIN(MER_GATHER);
 	if ( PF.merger_infile != NULL ) {
 		for ( ;; ) {
 			WORD got;
@@ -2501,6 +2734,7 @@ static int pf_merger_gather_to_master(void)
 	AR.ComprTop = real_top;
 	AR.CompressPointer = put_cp;
 	if ( rc == 0 && FlushOut(&pos, fout, 0) ) rc = -1;   /* ENDBUFFER to MASTER */
+	PF_TIMER_END(MER_GATHER);
 	M_free(read_scratch, "gather read cbuf");
 	AR.CompressPointer = save_cp;
 	PF.in_merger_phase = 0;
@@ -2553,7 +2787,9 @@ static int pf_master_gather(EXPRESSIONS e, WORD i)
 	NewSort(BHEAD0);
 	PF.parallel  = 1;
 	PF.in_gather = 1;
+	PF_TIMER_BEGIN(MAS_GATHER);
 	ret = EndSort(BHEAD AM.S0->sBuffer, 0);
+	PF_TIMER_END(MAS_GATHER);
 	PF.in_gather = 0;
 	PF.parallel  = 0;
 	if ( ret < 0 ) return -1;
@@ -2618,6 +2854,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	PF_OSCounters _pf_os_start;
 	pf_profile_snapshot_os(&_pf_os_start);
 	pf_module_t0 = MPI_Wtime();
+	pf_module_smrflag = (int)AC.sMRflag;   /* label this module FIRST/MAPREDUCE/LAST/none in the CSV */
 	if ( PF.me == MASTER ) pf_profile_alloc_master(PF.numtasks);
 #endif
 
@@ -2650,26 +2887,26 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF.is_merger     = 0;
 		PF.merger_parent = MASTER;
 		if ( PF.nummergers > 0 && PF.rank_node != NULL && PF.numnodes >= 1 ) {
-			int nn = PF.numnodes, M = PF.nummappers, P = PF.numtasks;
+			int nn = PF.numnodes, nummappers = PF.nummappers, numtasks = PF.numtasks;
 			int *node_merger = (int*)malloc((size_t)nn*sizeof(int));
 			int *node_hasred = (int*)malloc((size_t)nn*sizeof(int));
-			int ok = ( node_merger != NULL && node_hasred != NULL );
-			if ( ok ) {
-				int n, r, G = 0;
+			int inmerger = ( node_merger != NULL && node_hasred != NULL );
+			if ( inmerger ) {
+				int n, r, nummergers = 0;
 				for ( n = 0; n < nn; n++ ) { node_merger[n] = -1; node_hasred[n] = 0; }
 				/* lowest non-master mapper on each node hosts that node's merger */
-				for ( r = M - 1; r >= 1; r-- ) node_merger[PF.rank_node[r]] = r;
+				for ( r = nummappers - 1; r >= 1; r-- ) node_merger[PF.rank_node[r]] = r;
 				/* which nodes own at least one reducer */
-				for ( r = M; r < P; r++ )      node_hasred[PF.rank_node[r]] = 1;
-				/* a reducer-bearing node with no spare mapper cannot host a merger */
+				for ( r = nummappers; r < numtasks; r++ )      node_hasred[PF.rank_node[r]] = 1;
+				/* check if we can assign a mapper on the node- a reducer-bearing node with no spare mapper cannot host a merger */
 				for ( n = 0; n < nn; n++ )
-					if ( node_hasred[n] && node_merger[n] < 0 ) ok = 0;
-				if ( ok ) {
-					for ( n = 0; n < nn; n++ ) if ( node_hasred[n] ) G++;
-					PF.nummergers    = G;
+					if ( node_hasred[n] && node_merger[n] < 0 ) inmerger = 0;
+				if ( inmerger ) {
+					for ( n = 0; n < nn; n++ ) if ( node_hasred[n] ) nummergers++;
+					PF.nummergers    = nummergers;
 					PF.is_merger     = ( node_hasred[PF.node_id]
 					                     && PF.me == node_merger[PF.node_id] );
-					PF.merger_parent = ( PF.me >= M )
+					PF.merger_parent = ( PF.me >= nummappers )
 					                   ? node_merger[PF.rank_node[PF.me]]
 					                   : MASTER;
 					/* Input-partitioned modules (MAPREDUCE/LAST): a non-merger
@@ -2677,13 +2914,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					   (which distributes its file) instead of from the master.
 					   FIRST/NO_MAPREDUCE keep input_src = MASTER (set above). */
 					if ( ( AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST )
-					     && PF.me != MASTER && PF.me < M && !PF.is_merger )
+					     && PF.me != MASTER && PF.me < nummappers && !PF.is_merger
+					     && node_hasred[PF.node_id] )
 						PF.input_src = node_merger[PF.node_id];
 					if ( PF.me == MASTER ) {
 						/* child table: merger ranks ascending, [0]=MASTER */
 						if ( PF.merger_child_ranks == NULL )
 							PF.merger_child_ranks =
-							    (int*)malloc((size_t)(P+1)*sizeof(int));
+							    (int*)malloc((size_t)(numtasks+1)*sizeof(int));
 						if ( PF.merger_child_ranks != NULL ) {
 							int g = 1, prev = -1, lo;
 							PF.merger_child_ranks[0] = MASTER;
@@ -2701,7 +2939,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 					}
 				}
 			}
-			if ( !ok ) {
+			if ( !inmerger ) {
 				/* node-local placement not possible -- disable the merger tier */
 				if ( PF.me == MASTER ) {
 					static int warned = 0;
@@ -2864,9 +3102,19 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 #ifdef PF_PROFILE
 		MesPrint("[0] PF_Processor: Master finished sending terms");
 #endif
-		PF_TIMER_BEGIN(MAS_FINAL_SORT);
+		/* Attribute the master's EndSort by what it actually does this module:
+		   - output-partitioned (FIRST/MAPREDUCE): EndSort returns fast via the
+		     partitioned branch (WaitAllSlaves + PF_MERGERDONE collect + prototype
+		     flush, NO merge) -> MAS_MERGERDONE. MAS_FINAL_SORT stays 0, which is the
+		     whole point of the bypass.
+		   - chain-exit gather (MAPREDUCE_LAST, `.sort(gather)`): merges the G merger
+		     streams to the global scratch -> MAS_GATHER.
+		   - classic non-MR module: the real loser-tree merge -> MAS_FINAL_SORT. */
+		PF_TIMER_BEGIN_RT(mas_es);
 		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
-		PF_TIMER_END(MAS_FINAL_SORT);
+		PF_TIMER_END_RT(mas_es, pf_output_partitioned() ? PF_PHASE_MAS_MERGERDONE
+		                        : ( AC.sMRflag == MAPREDUCE_LAST
+		                            ? PF_PHASE_MAS_GATHER : PF_PHASE_MAS_FINAL_SORT ));
 		PF.parallel = 0;
 		if ( AR.outtohide ) {
 			AR.outfile = oldoutfile;
@@ -3498,6 +3746,7 @@ LONG PF_MergerLoop(void)
 		   PF_goutterms / PF_exprsize were set by the merger's own PF_EndSort. */
 		LONG cnt = PF_goutterms;
 		LONG sz  = BASEPOSITION(PF_exprsize);
+		PF_TIMER_ADD_COUNT(PF_EX_MER_PARTITION_BYTES, sz);
 		PF_PreparePack();
 		PF_Pack(&cnt, 1, PF_LONG);
 		PF_Pack(&sz,  1, PF_LONG);
@@ -3667,6 +3916,7 @@ int PF_Init(int *argc, char ***argv)
 	PF.rhsInParallel=1;
 	PF.exprbufsize=4096;/*in WORDs*/
 	AM.MR.HashPrefixWords = 0;
+	PF.steal = 0;
 
 #ifdef PF_WITHGETENV
 	if ( PF.me == MASTER ) {
@@ -3723,6 +3973,12 @@ int PF_Init(int *argc, char ***argv)
 			PF.nummergers = (int)atoi(c);
 			if ( PF.nummergers < 0 ) PF.nummergers = 0;
 		}
+		if ( ( c = (char*)getenv("PF_STEAL") ) != 0 ) {
+			/* Work-stealing load balancer (Step 2). Only meaningful with the
+			   merger tier on (PF_MERGERS); a drained node's mappers steal
+			   node-remote buckets via the master broker. Default off. */
+			PF.steal = ( (int)atoi(c) > 0 ) ? 1 : 0;
+		}
 	}
 #endif
 /*
@@ -3735,6 +3991,7 @@ int PF_Init(int *argc, char ***argv)
 		PF_Pack(&PF.numsbufs,1,PF_WORD);
 		PF_Pack(&AM.MR.HashPrefixWords,1,PF_INT);
 		PF_Pack(&PF.nummergers,1,PF_INT);
+		PF_Pack(&PF.steal,1,PF_INT);
 	}
 	PF_Broadcast();
 	if ( PF.me != MASTER ) {
@@ -3743,6 +4000,7 @@ int PF_Init(int *argc, char ***argv)
 		PF_Unpack(&PF.numsbufs,1,PF_WORD);
 		PF_Unpack(&AM.MR.HashPrefixWords,1,PF_INT);
 		PF_Unpack(&PF.nummergers,1,PF_INT);
+		PF_Unpack(&PF.steal,1,PF_INT);
 		if ( PF.log ) {
 			fprintf(stderr, "[%d] log=%d rbufs=%d sbufs=%d mergers=%d\n",
 			        PF.me, PF.log, PF.numrbufs, PF.numsbufs, PF.nummergers);
