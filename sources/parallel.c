@@ -1756,14 +1756,24 @@ int PF_EndSort(void)
 	                  && ( fout == AR.outfile || fout == AR.hidefile ) ) ? 1 : 0;
 
 #if defined(WITHMPI) && defined(WITHZLIB)
-	/* Master-local block compression of the expression scratch (.sc0).
-	   Only the true master writes fout to a file (mergers redirect it to an
-	   MPI send buffer); track that fd and compress this expression's blocks
-	   unless a bracket index / hide demands random access by logical offset.
-	   No-op unless PF_SCRATCH_COMPRESS=<level> is set (see tools.c). */
+	/* Block compression of the MR expression scratch on disk (no-op unless
+	   PF_SCRATCH_COMPRESS=<level> is set; see the bc_* layer in tools.c). Two
+	   on-disk writers, both routed through WriteFileToFile (the bc write hook) on
+	   their rank, so FlushOut AND the K-prefix drain are compressed:
+	     - the true master writes the global .sc0 (fout == AR.outfile);
+	     - a merger writes its node-local partitioned file (fout == merger_outfile)
+	       when merger_to_file is set; it is read back next module as merger_infile
+	       and decompressed automatically (ReadFile/SeekFile are bc-intercepted and
+	       the slot stays tracked across the per-module infile<->outfile swap).
+	   The LAST-module gather merger redirects fout to an MPI send buffer (no file),
+	   so it is excluded. Bracket-indexed output keeps random access -> uncompressed. */
 	if ( PF.me == MASTER && !PF.in_merger_phase ) {
 		PF_bc_track(fout);
 		PF_bc_compress_now = ( dobracketindex == 0 && fout != AR.hidefile );
+	}
+	else if ( PF.in_merger_phase && PF.merger_to_file && PF.merger_outfile ) {
+		PF_bc_track(fout);                      /* fout == merger_outfile here */
+		PF_bc_compress_now = ( dobracketindex == 0 );
 	}
 #endif
 
