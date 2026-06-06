@@ -42,6 +42,14 @@ import os
 import sys
 from pathlib import Path
 
+# Cap BLAS/OpenMP thread pools BEFORE importing pandas/numpy. On a login node with
+# a low RLIMIT_NPROC, OpenBLAS otherwise tries to spawn one thread per core at
+# import and aborts with a flood of "blas_thread_init: pthread_create failed".
+# The viz does no heavy linalg, so single-threaded is fine.
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS",
+           "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
