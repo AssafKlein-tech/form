@@ -287,17 +287,10 @@ static  WORD **PF_term;			/* these point to the active terms */
 static  WORD **PF_newcpos;		/* new coeffs of merged terms */
 static  WORD *PF_newclen;		/* length of new coefficients */
 
-/* Stable scratch copy of the just-emitted term T_i, used as lastterm for
-   PF_GetLoser's NEXT refill of the drained leaf. The drain advances
-   rbuf->fill past the bulk of T_{i+1}..T_{i+k} compressed bytes without
-   decompressing them; the next iteration's PF_GetLoser calls PF_PutIn on
-   the same leaf, which reads PF_term[src] for lastterm. PF_PutIn's
-   backward decompression write extends up to share words from
-   boundary_start; when the drained run is short (< share words), the
-   write reaches back into rbuf positions that previously held T_i, so
-   T_i must live in a buffer outside rbuf. Correctness of using T_i in
-   place of T_{i+k}: boundary_share <= K and all drained terms share the
-   first K+1 words, so lastterm[1..share] is identical. Grown on demand. */
+/* Stable K+1-word snapshot of the drained leaf's boundary anchor T_i, captured
+   at drain ENTRY (before the scan's cross-chunk IRecv can overwrite T_i's rbuf
+   slot). After the drain, PF_term[src] is repointed here so the next PF_PutIn
+   decompresses the boundary term against valid bytes. See the drain block. */
 static  WORD *PF_drain_lastterm = NULL;
 static  int   PF_drain_lastterm_cap = 0;
 
@@ -735,22 +728,19 @@ newterms:
  *     PutOut will compress against T_i; since boundary_share <= K and
  *     T_i[1..K] == T_{i+k}[1..K] (drain invariant), the compression match
  *     length is the same as it would be against T_{i+k}. No refresh needed.
- *   - PutBracketInIndex needs each output term's position. All drained
- *     terms share the same bracket prefix (it lives within the first K+1
- *     words), so we pass T_i as the term pointer; PutBracketInIndex
- *     internally collapses consecutive-equal-bracket calls (it just
- *     increments termsinbracket).
  *
- * @param T_i_decompressed  The just-emitted term, used for PutBracketInIndex.
+ * The drain is disabled when a bracket index is being built (the caller
+ * guards on !dobracketindex), so this routine never has to maintain one --
+ * it is a pure compressed-bytes copy.
+ *
  * @param src               Start of compressed bulk in rbuf.
  * @param nwords            Total WORDs in the bulk.
  * @param n_terms           Number of compressed terms in the bulk.
  * @return 0 on success, -1 on I/O error.
  */
-static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
+static int pf_emit_compressed_bulk(WORD *src,
                                    int nwords, int n_terms,
-                                   FILEHANDLE *fi, POSITION *position,
-                                   int dobracketindex)
+                                   FILEHANDLE *fi, POSITION *position)
 {
 	WORD *p = fi->POfill;
 	WORD *s = src;
@@ -824,23 +814,6 @@ static int pf_emit_compressed_bulk(PHEAD WORD *T_i_decompressed, WORD *src,
 		}
 	}
 	fi->POfull = fi->POfill = p;
-
-	/* Per-term bracket index. Walks compressed headers within the bulk to
-	   compute each term's offset; passes T_i as the term pointer since all
-	   drained terms share the same bracket prefix (within the first K+1
-	   words). PutBracketInIndex collapses same-bracket calls internally. */
-	if ( dobracketindex ) {
-		POSITION term_pos = *position;
-		WORD *q = src;
-		WORD *qend = src + nwords;
-		while ( q < qend ) {
-			int compressed_len;
-			PutBracketInIndex(BHEAD T_i_decompressed, &term_pos);
-			compressed_len = 2 + (int)q[1];
-			ADDPOS(term_pos, (LONG)compressed_len * sizeof(WORD));
-			q += compressed_len;
-		}
-	}
 
 	ADDPOS(*position, (LONG)nwords * sizeof(WORD));
 	(void)n_terms;
@@ -1834,6 +1807,24 @@ int PF_EndSort(void)
 		if ( drain_active && !AR.NoCompress && !dobracketindex ) {
 			int src = PF_loser;
 			PF_BUFFER *rbuf = PF.rbufs[src];
+			/* Snapshot T_i NOW, before the scan's cross-chunk IRecv can overwrite
+			   its rbuf slot. T_i was just emitted by PutOut so *PF_term[src] is a
+			   valid positive length here. Copy only the first K+1 words -- all the
+			   boundary term's PF_PutIn decompression ever reads (lastterm[1..share],
+			   share <= K). Doing this at drain ENTRY (not end) is the fix: at end
+			   the value may already be clobbered to a -share header. */
+			LONG  lastterm_snap_len = (LONG)*PF_term[src];
+			if ( lastterm_snap_len > 0 ) {
+				LONG ncopy = lastterm_snap_len;
+				LONG cap   = (LONG)(AM.MaxTer / sizeof(WORD));
+				if ( ncopy > (LONG)AM.MR.HashPrefixWords + 1 ) ncopy = (LONG)AM.MR.HashPrefixWords + 1;
+				if ( ncopy > cap ) ncopy = cap;
+				if ( PF_drain_lastterm == NULL ) {
+					PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
+					PF_drain_lastterm_cap = (int)cap;
+				}
+				memcpy(PF_drain_lastterm, PF_term[src], (size_t)(ncopy * (LONG)sizeof(WORD)));
+			}
 			int a = rbuf->active;
 			WORD *run_start = rbuf->fill[a];
 			WORD *stop = rbuf->full[a];
@@ -1841,7 +1832,6 @@ int PF_EndSort(void)
 			int n_drained = 0;
 			int K = AM.MR.HashPrefixWords;
 			int boundary_found = 0;
-			int lastterm_cached = 0;
 			int workerIdx = pf_loser_src_to_rank(src);
 			/* Scan forward through compressed term headers [-share, tail_len]
 			   until a REAL boundary (share <= K, EOF marker, or uncompressed
@@ -1850,9 +1840,8 @@ int PF_EndSort(void)
 			   dance: emit the run so far, copy the partial term into the
 			   next rbuf slot's reserved zone, wait on the next slot, post a
 			   fresh IRecv on the old active slot, swap active = next, then
-			   resume scanning. T_i's K-prefix is the shared decompression
-			   anchor for the entire run, so the same PF_drain_lastterm
-			   snapshot stays valid across all chunks crossed. */
+			   resume scanning. PF_term[src] (= T_i) stays the shared
+			   decompression anchor for the entire run. */
 			while ( !boundary_found ) {
 				while ( q + 2 <= stop ) {
 					int share, compressed_len;
@@ -1871,19 +1860,8 @@ int PF_EndSort(void)
 				   relocate the partial term [q, stop) to the next slot. */
 				if ( n_drained > 0 ) {
 					int nwords = (int)(q - run_start);
-					if ( PF_drain_lastterm == NULL ) {
-						PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
-						PF_drain_lastterm_cap = (int)(AM.MaxTer / sizeof(WORD));
-					}
-					if ( !lastterm_cached ) {
-						int tlen = (int)*PF_term[src];
-						memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
-						lastterm_cached = 1;
-					}
-					if ( pf_emit_compressed_bulk(BHEAD PF_drain_lastterm,
-					                             run_start, nwords, n_drained,
-					                             fout, &position,
-					                             dobracketindex) < 0 ) {
+					if ( pf_emit_compressed_bulk(run_start, nwords, n_drained,
+					                             fout, &position) < 0 ) {
 						AR.gzipCompress = oldgzipCompress;
 						return(-1);
 					}
@@ -1933,37 +1911,23 @@ int PF_EndSort(void)
 			/* Final emit for the run accumulated in the current active chunk. */
 			if ( n_drained > 0 ) {
 				int nwords = (int)(q - run_start);
-				if ( PF_drain_lastterm == NULL ) {
-					PF_drain_lastterm = (WORD*)Malloc1(AM.MaxTer, "PF_drain_lastterm");
-					PF_drain_lastterm_cap = (int)(AM.MaxTer / sizeof(WORD));
-				}
-				if ( !lastterm_cached ) {
-					int tlen = (int)*PF_term[src];
-					memcpy(PF_drain_lastterm, PF_term[src], (LONG)tlen*sizeof(WORD));
-					lastterm_cached = 1;
-				}
-				if ( pf_emit_compressed_bulk(BHEAD PF_drain_lastterm,
-				                             run_start, nwords, n_drained,
-				                             fout, &position,
-				                             dobracketindex) < 0 ) {
+				if ( pf_emit_compressed_bulk(run_start, nwords, n_drained,
+				                             fout, &position) < 0 ) {
 					AR.gzipCompress = oldgzipCompress;
 					return(-1);
 				}
 				rbuf->fill[a] = q;
 				noutterms += n_drained;
 			}
-			/* PF_term[src] -> scratch T_i: PF_GetLoser's next iteration
-			   will call PF_PutIn(src), which reads this as lastterm to
-			   decompress the boundary term, then overwrites PF_term[src]
-			   with the new term in rbuf. Skip when nothing was emitted
-			   (PF_drain_lastterm may be uninitialized garbage in that
-			   case). AR.CompressPointer stays = T_i (set by PutOut on T_i);
-			   the next emitted term T_{i+k+1} shares <= K with T_{i+k},
-			   and T_i[1..K] == T_{i+k}[1..K], so it also shares <= K with
-			   T_i -- PutOut's compression-search produces the same share. */
-			if ( lastterm_cached ) {
-				PF_term[src] = PF_drain_lastterm;
-			}
+			/* Repoint PF_term[src] at the stable T_i snapshot captured at drain
+			   entry. PF_PutIn for the boundary term reads only lastterm[1..share]
+			   (share <= K), and T_i[1..K] == T_{i+k}[1..K] by the routing
+			   invariant, so the snapshot is a correct decompression anchor.
+			   CRITICAL: T_i lived in rbuf, whose cyclic slots the drain's
+			   cross-chunk IRecv may have overwritten -- pointing the next
+			   PF_PutIn at the original rbuf location decodes the boundary term
+			   against garbage (corrupt subterms -> SIGSEGV in the next PutOut). */
+			if ( lastterm_snap_len > 0 ) PF_term[src] = PF_drain_lastterm;
 		}
 	}
 	pf_compare_kcap_want = 0;   /* no more loser-tree compares this module */
