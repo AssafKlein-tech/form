@@ -74,6 +74,19 @@ current-scale win:
    lever helps wherever the profile shows real mapper send-wait stall; outside
    those modules it's neutral. See [[project_bufdecouple_result]].
 
+8. **Confirmed at ~10× scale, and the partition form now measured (2026-06).**
+   dRGT_h3_9 (~40× Spin's term volume) profiled at 6n×64 is **generation-bound
+   exactly as §3 predicts** — module 9: mapper `Generator` **27.4 h**, reducers idle
+   **24.76 h**, sort only **2.5 h**, master idle in `mergerdone` the **full 30 h**.
+   The **partition / master-bypass form** (§13 — mergers write node-local and feed
+   the next module's mappers directly) takes the master off the per-module path and
+   carried the **first complete dRGT run** (job `4331798`, 8n×64, 52 h, output sha
+   `2e80d362`) where the master-funnelled path timed out at 72 h on 6n. zstd held the
+   distributed scratch at **173 TB→3.9 TB (44×)**. The dominant lever is still
+   **mapper count** (the +29 % mappers from 6→8 nodes drove the wallclock); partition
+   is the *enabler* that kept the master and its `/gtmp` from becoming the new wall.
+   See §12.4 and §13.
+
 **Bottom line.** The merge tree is worth building, but as **insurance for the large-`R`
 regime** (memory/Irecv-count safety + parallelising the non-drained sift), not as a
 near-term speed-up. The dominant lever for "scale up and stay compute-bound" is
@@ -160,6 +173,14 @@ The **merge tail** (master `final_sort`, the part the merge tree targets) is ~90
 module 9 and ~770 s on module 11 — call it **~25 % of the run, ~29 % of module 9's
 critical path**. That is the entire budget the merge tree competes for, and the drain
 has already taken a 7× bite out of it (Section 7).
+
+*Confirmed at ~10× scale (dRGT 6n×64, 2026-06; §12.4).* The same structure holds far
+above Spin: module 9's **30 h** wall is mapper `Generator` **27.4 h** with the reducers
+**82 % idle** (`recv_wait` 24.76 h, sort only 2.5 h) and the master **100 % idle**
+(`mergerdone` — the partition form, §13, keeps it off the per-module path). "Heavy
+module = slowest mapper's `Generator` + a merge tail in its shadow" is not a small-`g`
+artifact; it is the workload's intrinsic shape, and it sharpens at scale (the merge
+tail is a *smaller* fraction of a bigger generation cost).
 
 ---
 
@@ -427,6 +448,16 @@ The run stays compute-bound across a wide range of `g` provided `M` and `R` scal
 path is the master merge tail `Θ(g·D₀)` — which the merge tree parallelises (sift) but
 cannot drive below `Θ(D)`.
 
+*Partition update (2026-06; §13).* With the master-bypass form the master's per-module
+`final_sort` row above **no longer accumulates**: the `Θ(D)` master pass happens once
+at the chain-end gather, not per module, so the `master_total` is `Θ(D_final)` instead
+of `Σ_m Θ(g·D₀)` and never "overtakes the gen tail" at large `g`. The dRGT run
+(93 modules, master measured idle mid-chain) confirms it. So the `g ≈ 4–6×`
+master-merge crossover in the table applies **only to the relay / non-partition
+forms**; under partition the binding term stays mapper `Generator` as `g` grows — and
+the second growing term, the master's *single-node* output scratch, is replaced by `G`
+node-local compressed files (the dRGT `/gtmp` fix, §13.4).
+
 ---
 
 ## 10. Recommended cluster configuration
@@ -498,6 +529,18 @@ specific** and is exactly what motivates the asymmetric tune.
    workload whose profile shows non-trivial mapper `send_wait`; neutral
    elsewhere.
 
+**dRGT confirmation (2026-06; §12.4).** At ~10× Spin's scale the ordering holds and
+sharpens: dRGT's heavy modules are generation-bound with reducers **82 % idle** at
+both `-r9` and `-r12`, so the reducer-fraction recommendation pushes *lower* — a very
+large generation-bound workload tolerates **`R/P ≤ 12 %`**, spending the freed ranks on
+mappers (the 6n→8n mapper increase, not any sort-side knob, is what completed the run).
+Two table rows are explicitly **not** the lever for such a workload: the merge tree
+(item 4 — the partition form already takes the master off the path) and
+`reducerlargesize` (the dRGT run carried 10 GB with no isolable benefit). Everything
+else in the table is workload-neutral and stands. The one new must-have for dRGT-class
+runs is the **partition form + zstd** (§13): it is what keeps the master and its
+`/gtmp` off the wall list as `M`, `R`, and the module count all grow.
+
 ---
 
 ## 11. Open questions / what to measure next
@@ -554,6 +597,50 @@ specific** and is exactly what motivates the asymmetric tune.
    phase allocation; they can't hold reducer-sized chunks). If shuffle
    throughput later turns out message-rate-bound, a *separate* dedicated
    shuffle arena (sized independently of the sort buffer) is the cleaner path.
+
+### What the 2026-06 dRGT runs answer (update 2026-06-21)
+
+The first full-scale dRGT runs — `4310854` (6n×64 -r9, 72 h, profiled) and the
+**completed** `4331798` (8n×64 -r12 `reducerlargesize 10 G`, 52 h, §12.4) — close or
+sharpen several of the questions above:
+
+- **(1) Merger profiling / multi-layer.** *Sharpened.* The **partition form** (§13)
+  changes the merger from a relay into a redistributor, which **removes the
+  ~290–548 s `forward_wait` on the serial master** that capped the 2026-05-22 relay
+  tier — there is no per-module master sink to queue on (master measured **30 h idle**
+  in `mergerdone`). A multi-layer tree (`L ≥ 3`) and per-level drain hit-rate are
+  still unmeasured, but the relay tier's binding constraint is structurally gone.
+- **(2) The shrink mechanism `σ`.** *New extreme data point; mechanism still open.*
+  dRGT collapses **173 TB** of logical shuffle to a **one-term** final answer
+  (`-1/311040·esfull(1)`), so its heavy modules are dominated by like-term
+  summing/cancellation (`σ ≪ 1`). Whether the per-module collapse is coefficient
+  summing or delta-adjacency is still not isolated by the profile — **still open**.
+- **(3) `B_shm` uncalibrated.** *Relevance raised.* The partition form's
+  merger→mapper redistribution is **intra-node shm on the inter-module critical
+  path** now (not just the relay leg), so `B_shm` matters more — still uncalibrated,
+  and network is still ~70× from binding, but an intra-node `osu_bw` probe is now
+  worth the few minutes.
+- **(4) The crossover scale.** *Reframed.* dRGT ran `R = 34` (-r9) and `R = 61`
+  (-r12) — still below the `R ≳ 100–150` bracket, so the relay-tier crossover is
+  still unmeasured. But under the partition form the merger is **structurally
+  required** for master-bypass, not an optional tier with a crossover, so the
+  question now applies only to non-partition runs and is **lower priority**.
+- **(5) Cache empirics.** *Still open* — `perf`/VTune access remains blocked
+  cluster-wide (no driver, paranoid=2; VTune-setup memory). The `W ≈ 8–12` cap and
+  the mapper local-sort LLC-miss rate are still unconfirmed by hardware counters.
+- **(6) `reducerlargesize` sweep.** *Partly touched, not settled.* The completing run
+  used `reducerlargesize = 10 GB` — past the {3,4,5} GB sweep — but its effect is
+  **unisolated** (8 nodes, -r12 and 10 GB changed together) and the generation-bound
+  profile predicts ≈ 0 reducer-side benefit (reducers idle 82 % on the heavy module).
+  So 10 GB is neither confirmed nor refuted; the clean same-layout sweep and the
+  high-water-mark instrumentation (6b) are **still open**, and the dRGT evidence says
+  the reducer buffer is *not* the dRGT lever regardless.
+
+Net for the §10 priority ordering: the dRGT data **reinforces item 1** (mapper
+parallelism is the lever, now confirmed at ~10× scale) and **demotes the merge-tree
+and reducer-buffer items further** for generation-bound workloads — while elevating
+the partition form from "optional tier" to **the structural enabler of scale-out**
+(§13.5).
 
 ---
 
@@ -651,6 +738,35 @@ is small). For dRGT and any workload with large id substitutions, the
 clause requires action — generated via the splitter, then validated
 byte-identical against a small-scale baseline (or the Spin oracle).
 
+### dRGT at full scale — profiled, then completed (update 2026-06)
+
+The split + partition + zstd stack reached the **first complete dRGT_h3_9 result**.
+Two production runs settle the regime:
+
+- **`4310854`** (6n×64, -r9, K=192, partition form, drain-fixed binary `c2e6129`),
+  72 h cap: ran clean the full 72 h (drain fix held — no crash) and **timed out** in
+  module 12 (`dummyindices`) after 10 modules. Per-module master wall: m8 = 17.8 h,
+  **m9 = 30.0 h**, m10 = 11.5 h — the heavy three are 82 % of the run. The §3 / §0-pt-8
+  generation-bound profile is from this run. zstd 172.5 TB → 3.71 TB (46.5×).
+- **`4331798`** (8n×64, -r12, K=192, `reducerlargesize 10 G`): **`Exit_status=0`,
+  52 h 29 m**, `h_h_h.out` sha `2e80d362…`, final
+  `amplhhhparts9 = -1/311040·esfull(1)` — the **whole ~93-module pipeline**. zstd
+  173.2 TB → 3.94 TB (44×). This is now the dRGT baseline (no non-MR oracle yet;
+  first complete run = baseline).
+
+**Corrected diagnosis — supersedes the "sort-bound / need more reducers" inference.**
+The 24 h killed run (`4285232`) inferred a *sort* wall from stalled `Terms in process`
+stats; the direct profile shows the opposite. The heavy modules are
+**generation-bound** (module 9: mapper `Generator` 27.4 h; reducers idle 24.76 h, sort
+only 2.5 h; master idle in `mergerdone`). The lever is therefore **more mappers, a
+*lower* `-r`** — not more reducers, not a bigger `reducerlargesize`. The 6n→8n jump
+(+29 % mappers) is what turned the 72 h timeout into a 52 h completion; `-r12` and the
+10 GB reducer buffer did not target the bottleneck and are not cleanly isolated. **The
+partition form (§13) is the structural enabler**: it kept the master idle (off the
+per-module path) and distributed the 173 TB scratch across the merger nodes, so
+neither the master nor its single-node `/gtmp` became the new wall as the run scaled
+to 8 nodes and the full module chain. See [[project_drgt_workload]].
+
 ### Connection to §10 / §11
 
 §10's settings table is unchanged for dRGT — the merger tier, K-prefix,
@@ -660,8 +776,10 @@ shifts: for workloads where the bare MR variant has a serial-id wall,
 "split the bare id" precedes "add mappers" because adding mappers does
 nothing until the work is parallelizable.
 
-§11's open questions all remain open. The splitter introduces a small
-new measurement target: the **per-vertex scalar-coef merger fraction**
+Most of §11's open questions are now **partly answered** by the full-scale dRGT runs
+— see the "2026-06 dRGT runs answer" update at the end of §11. The splitter also
+introduces a measurement target still open: the **per-vertex scalar-coef merger
+fraction**
 (do dRGT's 399 summands per vertex group into fewer canonical tensor
 patterns?). The cheapest probe is a `B gi, deltaF, Mom, dotp, prop;
 .sort;` inserted before `.sort:Diagram Loaded;` in a split variant —
@@ -669,3 +787,111 @@ if the post-bracket term count drops materially vs without bracket, the
 vertex has merger fraction worth exploiting; if not, the raw upper
 bound (~83 B) is the real count. Not yet measured; bracket+MR broadcast
 of `AR.BracketOn` in ParFORM is unconfirmed in the code.
+
+---
+
+## 13. Cost analysis across the FORM sort lineage
+
+*Appended 2026-06-16, after the first complete dRGT run (job `4331798`, §12).
+Sections 4 and 7 model the merger as a tier that **relays to the master**; the
+**partitioned** form (master-bypass, committed `cfe4dc5` — mergers write
+node-local files and redistribute the next module's input directly to node-local
+mappers) is a different cost structure that takes the master off the per-module
+critical path entirely. This section places all five variants on one axis and
+gives the per-module → per-chain master-cost progression. It supersedes the
+"merger relays `D` to master" picture of §4/§7 for mid-chain modules.*
+
+The five variants are an evolution in which each removes the dominant cost of the
+previous one:
+
+| Variant | What it adds | The cost it removes |
+|---|---|---|
+| **TFORM** | shared-memory thread parallelism | serial single-thread generation |
+| **ParFORM** | multi-node MPI | the single-node ceiling |
+| **MR-ParFORM** | hash-route + reducer dedup | master gets the full undeduped stream; slaves write their whole sort to disk; master fan-in `P−1` |
+| **MR + prefix drain** | K-prefix bulk-copy in the master merge | the master's `Θ(D·log R)` sift → `Θ(D)` memcpy |
+| **MR + partition** | mergers write node-local + feed the next module directly | the master's per-module `Θ(D)` sink **and** its single-node global scratch |
+
+### 13.1 Notation (extends §4)
+
+`P` total ranks, `Q` nodes, `M` mappers, `R` reducers, `G` mergers (= reducer-
+bearing nodes, §7). Per module: `T` shuffle bytes, `D = σ·T` output bytes
+(`σ ∈ [0.1, 1]`, §2), `W_gen` generation CPU. A run is a **chain of `m` modules**,
+so the inter-module expression is handed off `m−1` times. For ParFORM only:
+`T'` = the slaves' locally-combined total, `D ≤ T' ≤ T` (each slave dedups within
+its own share; cross-slave like terms combine only at the master merge).
+
+### 13.2 The comparison
+
+| Variant | Scope | Mapper/slave disk write | Dedup at | Master fan-in | Master compute / module | Inter-module hand-off | Binding wall |
+|---|---|---|---|---|---|---|---|
+| **TFORM** | 1 node, threads | spill only (if > buffers) | master thread merge | `W` threads (shm) | `Θ(T·log W)` | in-process RAM | **single node** (cores + RAM) |
+| **ParFORM** | `Q` nodes, MPI | **full local sort → `≈T` to disk** | master merge (cross-slave) | **`P−1`** (all slaves) | `Θ(T'·log(P−1))` | master global scratch (re-read) | master merge of `T'` + `P−1` fan-in + slave disk |
+| **MR-ParFORM** | `Q` nodes | **mappers 0** (stream); reducers transient patches `T/R` | **reducers** (before master) | **`R`** | `Θ(D·log R)` | master global scratch | master `Θ(D·log R)` + `R`-way Irecv mgmt |
+| **MR + drain** | `Q` nodes | same as MR | reducers | `R` (`G` with relay-merger tier) | **`Θ(D)`** (memcpy; drain kills `log R`) | master global scratch | accumulated `Θ(m·D)` + **master-node `/gtmp`** + mapper gen |
+| **MR + partition** | `Q` nodes | mappers 0; **mergers node-local `D/G`, compressed, persisted** | reducers | **0 mid-chain; `G` at gather** | **`Θ(1)` mid-chain; `Θ(D)` once at gather** | **node-local** (merger→mapper, intra-node shm) | **mapper generation** (master + master-disk off the equation) |
+
+### 13.3 Per-module → per-chain: the master's total cost
+
+The first four variants funnel every inter-module hand-off **through the master**;
+the partition form funnels it **once**:
+
+```
+TFORM         master_total = Σ_m Θ(T·log W)        (in-process, single node)
+ParFORM       master_total = Σ_m Θ(T'·log(P−1))    full fan-in, undeduped
+MR            master_total = Σ_m Θ(D·log R)        dedup'd, fan-in R
+MR + drain    master_total = Σ_m Θ(D)   = Θ(m·D̄)   memcpy, log R gone
+MR + partition master_total = Θ(D_final)            ONE gather — independent of m
+```
+
+The drain makes each per-module master pass irreducible — `Θ(D)`, because every
+output byte must pass through the master to the output file. **The partition form
+breaks that frame:** mid-chain modules keep the expression hash-partitioned across
+the `G` mergers, and the mergers feed the next module's mappers directly
+(intra-node), so the master is bypassed on **both** input and output. The `Θ(D)`
+master pass happens **only at the chain end** (the `MAPREDUCE_LAST` gather), not `m`
+times. The same hash invariant that lets the reducers dedup (a K-prefix → one
+reducer/merger, §2/§4) is what makes the partitioned files collectively complete and
+re-distributable without a global re-merge between modules.
+
+### 13.4 Calibration — what each step is measured to buy
+
+- **ParFORM → MR** (the three documented wins): mappers stop writing their full
+  local sort (`≈T` of write I/O removed); dedup moves to the reducers so the master
+  receives `D` not `T'`; master fan-in shrinks `P−1 → R`. [CLAUDE.md goals;
+  sort-skill "Why it's faster than plain ParFORM": `fan-in = numreducers < numtasks−1`.]
+- **MR → MR + drain** (§7, drainfix6, `R=24`): master `final_sort` `9,256 → 1,251 s`
+  (**7.4×**); whole run `14,690 → 6,641 s` (**2.1×**). The master reaches `Θ(D)`.
+- **MR + drain → MR + partition** (dRGT, §12; profile of `4310854` + completion of
+  `4331798`):
+  - Master **off the per-module critical path** — measured: ~30 h of module 9 spent
+    in `mergerdone` *idle-poll*, `≈0` in sort/distribute. Confirms the `Θ(1)`
+    mid-chain master cost empirically.
+  - Scratch **distributed across the `G` merger nodes** and compressed —
+    `173 TB logical → 3.9 TB physical (44×)`, written node-local rather than to one
+    master `.sc0`. This removes the **master-node `/gtmp` ENOSPC wall** a single-node
+    global scratch would hit at this scale.
+  - Net: the **first complete dRGT result** (52 h, `Exit_status=0`), where the same
+    workload via a master-funnelled path (`4310854`, MR + drain) timed out at 72 h on
+    10 of ~93 modules.
+
+### 13.5 The honest caveat — what partition does *not* buy
+
+For a **generation-bound** workload (Spin and dRGT both — §3, §12), the heavy
+modules' wallclock is set by the slowest mapper's `Generator`, not by the master. So
+the partition form's mid-chain wallclock saving on those modules is ≈ 0 — the master
+was already idle in the merge tail's shadow (the §7 measured ≤ 3 % merger-tier result
+is the same observation from the relay side). **The partition form's value is
+structural, not a per-module speed-up:**
+
+1. It removes the master as a **scaling** bottleneck — `master_total` stops growing
+   with `m` and `R`, so the run stays mapper-bound as it scales out.
+2. It **distributes the scratch**, removing the single-node disk-capacity wall.
+3. It keeps the inter-module hand-off **node-local** (intra-node shm), off the NIC.
+
+So the lineage's first-order wallclock lever remains **mapper `Generator`
+parallelism** (§10). Partition is what lets you *add those mappers* — more nodes,
+more modules, larger `R` — without the master or its disk becoming the new wall.
+That is exactly what carried dRGT across the finish line at 8 nodes where 6 timed out
+(§12): the +29 % mapper count was the wallclock driver, and the master-bypass was the
+**enabler** that kept the master and `/gtmp` from capping the larger run.
