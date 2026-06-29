@@ -69,3 +69,11 @@ doc/manual/version.tex
 
 doc/devref/devref/
 doc/manual/manual/
+
+# Editor backups and local scratch
+*~
+tmp/
+
+# Local agent/dev tooling (not part of the release)
+.claude/
+CLAUDE.md
