@@ -37,7 +37,10 @@
 */
 
 #include <limits.h>
+#include <sched.h>
+#include <unistd.h>
 #include "form3.h"
+#include "pf_profile.h"
 
 #ifdef MPICH_PROFILING
 # include "mpe.h"
@@ -65,7 +68,9 @@
 */
 
 static int PF_packsize = 0;
+static int first = 0;
 static MPI_Status PF_status;
+static int PF_totalReq = 0;
 LONG PF_maxDollarChunkSize = 0;      /*:[04oct2005 mt]*/
 
 static int PF_ShortPackInit(void);
@@ -114,6 +119,64 @@ LONG PF_RealTime(int i)
 */
 
 /**
+ * Discover the physical-node (shared-memory domain) layout, once, right after
+ * MPI_Init. Splits MPI_COMM_WORLD by shared memory, gives every rank a
+ * node_id and the global rank->node map PF.rank_node. Collective; deterministic
+ * and identical on every rank. Powers the node-local merger placement.
+ * On any failure it leaves the single-node fallback (numnodes=1, rank_node=NULL)
+ * in place -- the merger tier is then disabled for the run (PF_Processor).
+ */
+static void pf_discover_node_topology(void)
+{
+	MPI_Comm node_comm;
+	int local_rank = 0, leader, *leaders, *distinct, nd, i;
+
+	PF.numnodes  = 1;
+	PF.node_id   = 0;
+	PF.rank_node = NULL;
+
+	if ( MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0,
+	                         MPI_INFO_NULL, &node_comm) != MPI_SUCCESS )
+		return;                       /* keep the single-node fallback */
+	MPI_Comm_rank(node_comm, &local_rank);
+	leader = PF.me;                   /* node-comm rank 0 owns the node identity */
+	MPI_Bcast(&leader, 1, MPI_INT, 0, node_comm);
+	MPI_Comm_free(&node_comm);
+
+	leaders  = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	distinct = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	PF.rank_node = (int*)malloc((size_t)PF.numtasks * sizeof(int));
+	if ( leaders == NULL || distinct == NULL || PF.rank_node == NULL ) {
+		if ( leaders )  free(leaders);
+		if ( distinct ) free(distinct);
+		if ( PF.rank_node ) { free(PF.rank_node); PF.rank_node = NULL; }
+		return;
+	}
+	MPI_Allgather(&leader, 1, MPI_INT, leaders, 1, MPI_INT, MPI_COMM_WORLD);
+
+	/* distinct leader ranks kept ascending -> node ids; identical on every rank */
+	nd = 0;
+	for ( i = 0; i < PF.numtasks; i++ ) {
+		int v = leaders[i], j, seen = 0;
+		for ( j = 0; j < nd; j++ ) if ( distinct[j] == v ) { seen = 1; break; }
+		if ( !seen ) {
+			int k = nd++;
+			while ( k > 0 && distinct[k-1] > v ) { distinct[k] = distinct[k-1]; k--; }
+			distinct[k] = v;
+		}
+	}
+	PF.numnodes = nd;
+	for ( i = 0; i < PF.numtasks; i++ ) {
+		int j;
+		for ( j = 0; j < nd; j++ )
+			if ( distinct[j] == leaders[i] ) { PF.rank_node[i] = j; break; }
+	}
+	PF.node_id = PF.rank_node[PF.me];
+	free(leaders);
+	free(distinct);
+}
+
+/**
  * Performs all library dependent initializations.
  *
  * @param  argcp  pointer to the number of arguments.
@@ -129,6 +192,9 @@ int PF_LibInit(int *argcp, char ***argvp)
 	if ( ret != MPI_SUCCESS ) return(ret);
 	ret = MPI_Comm_size(PF_COMM,&PF.numtasks);
 	if ( ret != MPI_SUCCESS ) return(ret);
+	PF.nummappers = PF.numtasks;
+
+	pf_discover_node_topology();
 
 	/* Initialization of packed communications. */
 	PF_packsize = PF_PACKSIZE/sizeof(int)*sizeof(int);
@@ -245,6 +311,42 @@ int PF_Probe(int *src)
 
 /*
   	#] PF_Probe : 
+	#[ PF_WISendSbuf :
+*/
+
+/**
+ * @brief Sends the contents of the send buffer to the appropriate destination based on the MapReduce flag.
+ *
+ * This function determines the destination for sending the buffer contents based on whether
+ * MapReduce is enabled or not. If MapReduce is disabled, it sends to the MASTER. Otherwise,
+ * it sends to the reducer determined by PF_GetReducer().
+ *
+ * @param tag The message tag to be used for the send operation.
+ * @param dest  Destination process (Reducer/Master)
+ * @return Returns the result of the PF_ISendSbuf function call, which is typically
+ *         0 on success, or a non-zero error code on failure.
+ */
+int PF_WISendSbuf(int tag, int dest)
+{
+    /* Non-mapper (reducer or mapper-merger) -> upstream sink, single sbuf,
+       BUFFER/ENDBUFFER framing. Honors `dest` so a leaf reducer can route
+       to a mapper-merger rank (PF.merger_parent) instead of MASTER.
+       The mapper-merger is a mapper RANK but in MERGE phase its data goes
+       upstream to master, so we treat it like a reducer here -- send the
+       tag through unchanged so master's PF_PutIn sees ENDBUFFER and adds
+       the 0-terminator that marks end of stream. */
+    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase)
+       {return PF_ISendSbuf(dest, tag);}
+	//reset the compress buffer for the next buffer
+	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
+	AR.CompressBuffers[dest][0] = 0;
+	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
+	else if ( tag == PF_ENDBUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
+	return (-1);
+}
+
+/*
+	#] PF_WISendSbuf :
   	#[ PF_ISendSbuf :
 */
 
@@ -260,19 +362,77 @@ int PF_Probe(int *src)
  */
 int PF_ISendSbuf(int to, int tag)
 {
-	PF_BUFFER *s = PF.sbuf;
+	PF_BUFFER *s = (PF.me < PF.nummappers && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE) ? PF.sbufs[to] : PF.sbufs[0];
 	int a = s->active;
-	int size = s->fill[a] - s->buff[a];
+	LONG msg_size = s->fill[a] - s->buff[a];
+	int size;
 	int r = 0;
 
 	static int finished;
 
+#ifdef PF_PROFILE
+	int _pf_send_phase = -1, _pf_wait_phase = -1, _pf_bytes_idx = -1;
+	if ( PF.me != MASTER ) {
+		if ( PF.in_merger_phase ) {
+			/* mapper-merger forwarding the merged stream upstream to master.
+			   A merger is a mapper RANK, so this check must precede the
+			   reducer test below (which keys on PF.me >= PF.nummappers). */
+			_pf_send_phase = PF_PHASE_MER_FORWARD_MPI;
+			_pf_wait_phase = PF_PHASE_MER_FORWARD_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_MER_TO_MASTER;
+		} else if ( AC.sMRflag != NO_MAPREDUCE && PF.me >= PF.nummappers ) {
+			/* MR reducer forwarding its sorted stream upstream -- to the
+			   master, or to its mapper-merger when the merge tier is active
+			   (`to` is merger_parent then, not MASTER). A reducer's only
+			   PF_ISendSbuf calls are this forward, so no `to` test needed. */
+			_pf_send_phase = PF_PHASE_RED_FORWARD_MPI;
+			_pf_wait_phase = PF_PHASE_RED_FORWARD_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_TO_MASTER;
+		} else {
+			/* MR mapper -> reducer, OR non-MR slave -> master.
+			   Both are sender-side primitives ahead of a sort merge, so we
+			   group them under MAP_SEND_* for a clean MR-vs-org comparison
+			   in the visualization. */
+			_pf_send_phase = PF_PHASE_MAP_SEND_MPI;
+			_pf_wait_phase = PF_PHASE_MAP_SEND_WAIT;
+			_pf_bytes_idx  = PF_EX_BYTES_SENT;
+		}
+	}
+	/* MAP_BYTES_SHUFFLED isolates the MR mapper->reducer fan-in from the
+	   BYTES_SENT bucket (which also includes non-MR slave->master traffic).
+	   Lets the viz compute per-link shuffle bandwidth without subtracting
+	   non-shuffle bytes. Only count when we're an MR mapper and the tag
+	   carries shuffle data. */
+	int _pf_count_shuffle = (PF.me < PF.nummappers && PF.me != MASTER
+	                          && !PF.in_merger_phase
+	                          && AC.sMRflag != NO_MAPREDUCE
+	                          && (tag == PF_SHUFFLE_MSGTAG || tag == PF_BUFFER_MSGTAG
+	                              || tag == PF_ENDSHUFFLE_MSGTAG || tag == PF_ENDBUFFER_MSGTAG));
+#endif
+
+	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) {
+		fprintf(stderr,"[%d] PF_ISendSbuf: invalid msg_size %lld (to=%d tag=%d)\n",
+		        PF.me,(long long)msg_size,to,tag);
+		fflush(stderr);
+		return(-1);
+	}
+	size = (int)msg_size;
+
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
-		r = MPI_Ssend(s->buff[a],size,PF_WORD,MASTER,tag,PF_COMM);
+		/* The "first" handshake is the WaitAllSlaves signal that this slave is
+		   about to stream data. Only the master waits on it; a mapper-merger
+		   has Irecvs already posted via PF_MergerInit and needs no handshake.
+		   Suppress when the sink is anything other than MASTER. */
+		if (first == 0 && to == MASTER){
+			PF_Send(MASTER, PF_BUFFER_MSGTAG);
+			first =  1;
+		}
+		first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
+		r = MPI_Ssend(s->buff[a],size,PF_WORD,to,tag,PF_COMM);
 		if ( r != MPI_SUCCESS ) {
-			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d \n",
-			        PF.me,(int)AC.CModule,r);
+			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d (to=%d tag=%d)\n",
+			        PF.me,(int)AC.CModule,r,to,tag);
 			fflush(stderr);
 			return(r);
 		}
@@ -281,15 +441,25 @@ int PF_ISendSbuf(int to, int tag)
 
 	switch ( tag ) { /* things to do before sending */
 		case PF_TERM_MSGTAG:
-			if ( PF.sbuf->request[to] != MPI_REQUEST_NULL)
-				r = MPI_Wait(&PF.sbuf->request[to],&PF.sbuf->retstat[to]);
+			if ( s->request[to] != MPI_REQUEST_NULL) {
+				PF_TIMER_BEGIN_RT(presend);
+				r = MPI_Wait(&s->request[to],&s->retstat[to]);
+				PF_TIMER_END_RT(presend, _pf_wait_phase);
+			}
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		default:
 			break;
 	}
-
-	r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
+	{
+		PF_TIMER_BEGIN_RT(isend);
+		r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
+		PF_TIMER_END_RT(isend, _pf_send_phase);
+#ifdef PF_PROFILE
+		if ( _pf_bytes_idx >= 0 ) pf_extras[_pf_bytes_idx] += (LONG)size * (LONG)sizeof(WORD);
+		if ( _pf_count_shuffle ) pf_extras[PF_EX_MAP_BYTES_SHUFFLED] += (LONG)size * (LONG)sizeof(WORD);
+#endif
+	}
 
 	if ( r != MPI_SUCCESS ) return(r);
 
@@ -298,26 +468,45 @@ int PF_ISendSbuf(int to, int tag)
 			finished = 0;
 			break;
 		case PF_ENDSORT_MSGTAG:
-			if ( ++finished == PF.numtasks - 1 )
+			if ( ++finished == PF.nummappers - 1 ) {
+				PF_TIMER_BEGIN_RT(endsort_wait);
 				r = MPI_Waitall(s->numbufs,s->request,s->status);
-			if ( r != MPI_SUCCESS ) return(r);
-			break;
-		case PF_BUFFER_MSGTAG:
-			if ( ++s->active >= s->numbufs ) s->active = 0;
-			while ( s->request[s->active] != MPI_REQUEST_NULL ) {
-				r = MPI_Waitsome(s->numbufs,s->request,&size,s->index,s->retstat);
-				if ( r != MPI_SUCCESS ) return(r);
+				PF_TIMER_END_RT(endsort_wait, _pf_wait_phase);
 			}
-			break;
-		case PF_ENDBUFFER_MSGTAG:
-			if ( ++s->active >= s->numbufs ) s->active = 0;
-			r = MPI_Waitall(s->numbufs,s->request,s->status);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
+		case PF_SHUFFLE_MSGTAG:
+		case PF_BUFFER_MSGTAG:
+		if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
+		/* Only the new active slot must be free for the next pack; other slots
+		   can complete lazily. MPI_Wait targets the one we need; replaces the
+		   prior MPI_Waitsome loop which spun re-entering until the right slot
+		   happened to be selected. */
+		if ( s->request[s->active] != MPI_REQUEST_NULL ) {
+			PF_TIMER_BEGIN_RT(buf_wait);
+			TimeElapsed(TIMESTART);
+			r = MPI_Wait(&s->request[s->active], &s->retstat[0]);
+			TimeElapsed(TIMESTOP);
+			PF_TIMER_END_RT(buf_wait, _pf_wait_phase);
+			if ( r != MPI_SUCCESS ) return(r);
+		}
+		break;
+		case PF_ENDSHUFFLE_MSGTAG:
+		case PF_ENDBUFFER_MSGTAG: {
+			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
+			PF_TIMER_BEGIN_RT(endbuf_wait);
+			TimeElapsed(TIMESTART);
+			r = MPI_Waitall(s->numbufs,s->request,s->status);
+			TimeElapsed(TIMESTOP);
+			PF_TIMER_END_RT(endbuf_wait, _pf_wait_phase);
+			if ( r != MPI_SUCCESS ) return(r);
+			break;
+		}
 		default:
 			return(-99);
 			break;
 	}
+	//MesPrint("PF_ISendSbuf: finished send");
 	return(0);
 }
 
@@ -412,10 +601,47 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 		*size = (LONG)rsize;
 	}
 	else {
+		/* Poll loop on master in MR-merger mode so we can drain leaf
+		   reducers' PF_STDOUT_MSGTAG/PF_LOG_MSGTAG (from WriteStats) while
+		   waiting for merger streams. Without this, leaves' PF_RawSend in
+		   PF_MUnlock deadlocks. */
+		int drain_active = (PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0);
 		while ( r->request[bn] != MPI_REQUEST_NULL ) {
-			ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
-			if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
-			while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+			if ( drain_active ) {
+				int flag;
+				ret = MPI_Testsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
+				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+				if ( rsize == MPI_UNDEFINED ) rsize = 0;
+				while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+				if ( r->request[bn] == MPI_REQUEST_NULL ) break;
+				/* Drain stats messages while we wait. Probe with specific
+				   tags so we don't get stuck on non-stats messages (e.g.,
+				   mapper PF_ENDSORT_MSGTAG that master will consume later in
+				   the Collect loop). */
+				{
+					MPI_Status dstat;
+					int dflag;
+					int drained = 0;
+					ret = MPI_Iprobe(MPI_ANY_SOURCE, PF_STDOUT_MSGTAG, PF_COMM, &dflag, &dstat);
+					if ( ret == MPI_SUCCESS && dflag ) {
+						PF_ReceiveErrorMessage(dstat.MPI_SOURCE, PF_STDOUT_MSGTAG);
+						drained = 1;
+					}
+					ret = MPI_Iprobe(MPI_ANY_SOURCE, PF_LOG_MSGTAG, PF_COMM, &dflag, &dstat);
+					if ( ret == MPI_SUCCESS && dflag ) {
+						PF_ReceiveErrorMessage(dstat.MPI_SOURCE, PF_LOG_MSGTAG);
+						drained = 1;
+					}
+					/* Sleep briefly when there was no progress so the merger
+					   gets CPU. sched_yield alone leaves master at 100% CPU
+					   and starves the merger on the same node. */
+					if ( !drained ) usleep(200);
+				}
+			} else {
+				ret = MPI_Waitsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
+				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+				while ( --rsize >= 0 ) r->status[r->index[rsize]] = r->retstat[rsize];
+			}
 		}
 		ret = MPI_Get_count(&(r->status[bn]),r->type[bn],&rsize);
 		if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
@@ -426,6 +652,45 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 
 /*
   	#] PF_WaitRbuf : 
+  	#[ PF_WaitAnyRbuf :
+*/
+/**
+ * Waits any buffer to finish a pending nonblocking in PF.dispatch. 
+ * It returns the received tag and in <tt>*size</tt> the number of field
+ * received.
+ * @param[in]  rbuf  array of receive buffers.
+ * @param[out] src   the source process number. The output value is the process number of actual source.
+ * @param[out] size  the actual size of received data.
+ * @return           the received message tag. A negative value indicates an error.
+ */
+int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
+{
+	int ret,idx, rsize;
+	//MesPrint("[%d] PF_WaitAnyRbuf: access dispatch", PF.me);
+	PF_Dispatch* d = &PF.dispatch;
+	MPI_Status st;
+	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
+	//MesPrint("[%d] PF_WaitAnyRbuf: After waitany", PF.me);
+	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
+	if(idx == MPI_UNDEFINED)  return PF_ENDSHUFFLEALL_MSGTAG;  // all requests are NULL
+	//MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
+	/* map flat index -> (source, buffer index) */
+	int bn = idx % PF.numrbufs;
+	*src = idx/PF.numrbufs; //which mapper
+	PF_BUFFER *buf = rbuf[*src];
+	if ( buf->active != bn ) {
+		return(-1); //should not happen
+	}
+	buf->status[bn] = st;
+	buf->request[bn] = MPI_REQUEST_NULL;
+	ret = MPI_Get_count(&st, buf->type[bn], &rsize);
+	if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
+	*size = (LONG)rsize;
+	return(st.MPI_TAG);
+}
+
+/*
+  	#] PF_WaitAnyRbuf : 
   	#[ PF_Bcast :
 */
 
@@ -1189,7 +1454,45 @@ static int PF_longAddChunk(int n, int mustRealloc)
 }
 
 /*
- 		#] PF_longAddChunk : 
+ 		#] PF_longAddChunk :
+ 		#[ PF_longEnsure :
+
+	Grow PF_longPackBuf to ensure at least `need` bytes capacity. Doubles capacity
+	on growth, never shrinks. Re-syncs cell pointers that index into the buffer
+	(those with bufpos >= 0). Used by the long-multi pack/broadcast paths to
+	support arbitrary message sizes without the chained-cell flaw described in
+	the explanations block above.
+*/
+static int PF_longEnsure(int need)
+{
+	UBYTE *newbuf;
+	int newcap;
+	if ( need <= PF_longPackTop ) return 0;
+	newcap = PF_longPackTop ? PF_longPackTop : PF_packsize;
+	while ( newcap < need ) {
+		if ( newcap >= INT_MAX/2 ) { newcap = INT_MAX; break; }
+		newcap *= 2;
+	}
+	/* Round up to a multiple of sizeof(int) for MPI_Pack alignment safety. */
+	newcap = (newcap + (int)sizeof(int) - 1) & ~((int)sizeof(int) - 1);
+	if ( ( newbuf = (UBYTE *)Malloc1(sizeof(UBYTE)*newcap,
+				"PF_longPackBuf grow") ) == NULL ) return -1;
+	if ( PF_longPackTop > 0 ) memcpy(newbuf, PF_longPackBuf, PF_longPackTop);
+	M_free(PF_longPackBuf, "PF_longPackBuf");
+	PF_longPackBuf = newbuf;
+	PF_longPackTop = newcap;
+	{
+		PF_LONGMULTI *c = PF_longMultiRoot;
+		while ( c ) {
+			if ( c->bufpos >= 0 ) c->buffer = PF_longPackBuf + c->bufpos;
+			c = c->next;
+		}
+	}
+	return 0;
+}
+
+/*
+ 		#] PF_longEnsure :
  		#[ PF_longMultiHowSplit :
 
 	"count" of "type" elements in an input buffer occupy "bytes" bytes.
@@ -1419,21 +1722,19 @@ static inline int PF_longSingleReset(int is_sender)
  */
 static inline int PF_longMultiReset(int is_sender)
 {
-	int ret = 0, theone = 1;
+	/* New wire format: a leading INT bcast carries the actual packed-byte
+	   count, followed by exactly that many MPI_PACKED bytes. The old
+	   `theone=1` first-int marker (used to signal single-vs-chunked) is
+	   no longer needed because the buffer is grown on demand and only one
+	   chunk is ever sent. */
+	(void)is_sender;
 	PF_longMultiRoot->packpos = 0;
-	if ( is_sender ) {
-		ret = MPI_Pack(&theone,1,MPI_INT,
-			PF_longPackBuf,PF_longPackTop,&(PF_longMultiRoot->packpos),PF_COMM);
-        PF_longPackN = 1;
-	}
-	else {
-		PF_longPackN = 0;
-	}
-	PF_longMultiRoot->nPacks = 0;   /* The auxiliary field is not counted */
+	PF_longPackN = 1;
+	PF_longMultiRoot->nPacks = 0;
 	PF_longMultiRoot->lastLen = 0;
 	PF_longMultiTop = PF_longMultiRoot;
 	PF_longMultiRoot->buffer = PF_longPackBuf;
-	return ret;
+	return 0;
 }
 
 /*
@@ -1662,6 +1963,7 @@ int PF_PrepareLongMultiPack(void)
 int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Datatype type)
 {
 	int ret, items;
+	(void)eSize;
 
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
@@ -1669,39 +1971,16 @@ int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Data
 	ret = MPI_Pack_size((int)count,type,PF_COMM,&items);
 	if ( ret != MPI_SUCCESS ) return(ret);
 
-	if ( PF_longMultiTop->packpos + items <= PF_packsize ) {
-		ret = MPI_Pack((void *)buffer,(int)count,type,PF_longMultiTop->buffer,
-		               PF_packsize,&(PF_longMultiTop->packpos),PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		PF_longMultiTop->nPacks++;
-		return(0);
+	/* Always pack into the root cell; grow PF_longPackBuf on demand. */
+	if ( PF_longMultiRoot->packpos + items > PF_longPackTop ) {
+		if ( PF_longEnsure(PF_longMultiRoot->packpos + items) ) return -1;
+		PF_longMultiRoot->buffer = PF_longPackBuf;
 	}
-/*
-		The data do not fit to the rest of the buffer.
-		There are two possibilities here: go to the next cell
-		immediately, or first try to pack some portion. The function
-		PF_longMultiHowSplit() returns the number of items could be
-		packed in the end of the current cell:
-*/
-	if ( ( items = PF_longMultiHowSplit((int)count,type,items) ) < 0 ) return(items);
-
-	if ( items > 0 ) {   /* store the head */
-		ret = MPI_Pack((void *)buffer,items,type,PF_longMultiTop->buffer,
-		               PF_packsize,&(PF_longMultiTop->packpos),PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		PF_longMultiTop->nPacks++;
-		PF_longMultiTop->lastLen = items;
-	}
-/*
-		Now the rest should be packed to the new cell.
-		Slide to the new cell:
-*/
-	if ( PF_longMultiPack2NextCell() ) return(-1);
-	PF_longPackN++;
-/*
-		Pack the rest to the next cell:
-*/
-	return(PF_LongMultiPackImpl((char *)buffer+items*eSize,count-items,eSize,type));
+	ret = MPI_Pack((void *)buffer,(int)count,type,PF_longMultiRoot->buffer,
+	               PF_longPackTop,&(PF_longMultiRoot->packpos),PF_COMM);
+	if ( ret != MPI_SUCCESS ) return(ret);
+	PF_longMultiRoot->nPacks++;
+	return 0;
 }
 
 /*
@@ -1721,64 +2000,18 @@ int PF_LongMultiPackImpl(const void*buffer, size_t count, size_t eSize, MPI_Data
 int PF_LongMultiUnpackImpl(void *buffer, size_t count, size_t eSize, MPI_Datatype type)
 {
 	int ret;
+	(void)eSize;
 
 	/* XXX: Limited by int size. */
 	if ( count > INT_MAX ) return -99;
 
-	if ( PF_longPackN < 2 ) { /* Just unpack the buffer from the single cell */
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					count,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		return(0);
-	}
-/*
-		More than one cell is in use.
-*/
-	if ( ( PF_longMultiTop->nPacks > 1 )     /* the cell is not expired */
-		||          /* The last cell contains exactly required portion: */
-		( ( PF_longMultiTop->nPacks == 1 ) && ( PF_longMultiTop->lastLen == 0 ) )
-	) {    /* Just unpack the buffer from the current cell */
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					count,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		(PF_longMultiTop->nPacks)--;
-		return(0);
-	}
-	if ( ( PF_longMultiTop->nPacks == 1 ) && ( PF_longMultiTop->lastLen != 0 ) ) {
-/*
-			Unpack the head:
-*/
-		ret = MPI_Unpack(
-					PF_longMultiTop->buffer,
-					PF_packsize,
-					&(PF_longMultiTop->packpos),
-					buffer,
-					PF_longMultiTop->lastLen,type,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-/*
-			Decrement the counter by read items:
-*/
-		count -= PF_longMultiTop->lastLen;
-		if ( count <= 0 ) return(-1);  /*Something is wrong! */
-/*
-			Shift the output buffer position:
-*/
-		buffer = (char *)buffer + PF_longMultiTop->lastLen * eSize;
-		(PF_longMultiTop->nPacks)--;
-	}
-/*
-		Here PF_longMultiTop->nPacks == 0
-*/
-	if ( ( PF_longMultiTop = PF_longMultiTop->next ) == NULL ) return(-1);
-	return(PF_LongMultiUnpackImpl(buffer,count,eSize,type));
+	/* All data is in the single root cell; cell-spanning unpack code from the
+	   former chained-chunks design is no longer reachable. */
+	ret = MPI_Unpack(PF_longMultiRoot->buffer, PF_longPackTop,
+	                 &(PF_longMultiRoot->packpos),
+	                 buffer, (int)count, type, PF_COMM);
+	if ( ret != MPI_SUCCESS ) return(ret);
+	return 0;
 }
 
 /*
@@ -1806,97 +2039,62 @@ int PF_LongMultiUnpackImpl(void *buffer, size_t count, size_t eSize, MPI_Datatyp
  */
 int PF_LongMultiBroadcast(void)
 {
-	int ret, i;
+	int ret, total_bytes;
+
+	/* Wire format: a single MPI_Bcast of an INT carrying the total packed
+	   byte count, followed by a single MPI_Bcast of exactly that many
+	   MPI_PACKED bytes. The buffer grows on demand on both sides via
+	   PF_longEnsure(); there is no longer any chunked-cell prefix. */
 
 	if ( PF.me == MASTER ) {
-/*
-			PF_longPackN is the number of packed chunks. If it is more
-			than 1, we have to pack a new one and send it first
-*/
-		if ( PF_longPackN > 1 ) {
-			if ( PF_longMultiPreparePrefix() ) return(-1);
-			ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-			                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-/*
-				PF_longPackN was not incremented by PF_longMultiPreparePrefix()!
-*/
+		total_bytes = PF_longMultiRoot->packpos;
+		ret = MPI_Bcast(&total_bytes, 1, MPI_INT, MASTER, PF_COMM);
+		if ( ret != MPI_SUCCESS ) return ret;
+		if ( total_bytes > 0 ) {
+			ret = MPI_Bcast(PF_longMultiRoot->buffer, total_bytes,
+			                MPI_PACKED, MASTER, PF_COMM);
+			if ( ret != MPI_SUCCESS ) return ret;
 		}
-/*
-			Now we start from the beginning:
-*/
-		PF_longMultiTop = PF_longMultiRoot;
-/*
-			Just broadcast all the chunks:
-*/
-		for ( i = 0; i < PF_longPackN; i++ ) {
-			ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-			                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-			PF_longMultiTop = PF_longMultiTop->next;
-		}
-		return(0);
+		return 0;
 	}
-/*
-		else - the slave
-*/
-	PF_longMultiReset(0);
-/*
-		Get the first chunk; it can be either the only data chunk, or
-		an auxiliary chunk, if the data do not fit the single chunk:
-*/
-	ret = MPI_Bcast((void*)PF_longMultiRoot->buffer,
-	                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-	if ( ret != MPI_SUCCESS ) return(ret);
 
-	ret = MPI_Unpack((void*)PF_longMultiRoot->buffer,
-	                 PF_packsize,
-	                 &(PF_longMultiRoot->packpos),
-	                 &PF_longPackN,1,MPI_INT,PF_COMM);
-	if ( ret != MPI_SUCCESS ) return(ret);
-/*
-		Now in PF_longPackN we have the number of cells used
-		for broadcasting. If it is >1, then we have to allocate
-		enough cells, initialize them and receive all the chunks.
-*/
-	if ( PF_longPackN < 2 ) /* That's all, the single chunk is received. */
-		return(0);
-/*
-		Here we have to get PF_longPackN chunks. But, first,
-		initialize cells by info from the received auxiliary chunk.
-*/
-	if ( PF_longMultiProcessPrefix() ) return(-1);
-/*
-		Now we have free PF_longPackN cells, starting
-		from PF_longMultiRoot->next,  with properly initialized
-		nPacks and lastLen fields. Get chunks:
-*/
-	for ( PF_longMultiTop = PF_longMultiRoot->next, i = 0; i < PF_longPackN; i++ ) {
-		ret = MPI_Bcast((void*)PF_longMultiTop->buffer,
-		                PF_packsize,MPI_PACKED,MASTER,PF_COMM);
-		if ( ret != MPI_SUCCESS ) return(ret);
-		if ( i == 0 ) {   /* The first chunk, it contains extra "1". */
-			int tmp;
-/*
-				Extract this 1 into tmp and forget about it.
-*/
-			ret = MPI_Unpack((void*)PF_longMultiTop->buffer,
-			                 PF_packsize,
-			                 &(PF_longMultiTop->packpos),
-			                 &tmp,1,MPI_INT,PF_COMM);
-			if ( ret != MPI_SUCCESS ) return(ret);
-		}
-		PF_longMultiTop = PF_longMultiTop->next;
+	/* Slave path. */
+	PF_longMultiReset(0);
+	ret = MPI_Bcast(&total_bytes, 1, MPI_INT, MASTER, PF_COMM);
+	if ( ret != MPI_SUCCESS ) return ret;
+	if ( total_bytes < 0 ) return -1;
+	if ( total_bytes > PF_longPackTop ) {
+		if ( PF_longEnsure(total_bytes) ) return -1;
+		PF_longMultiRoot->buffer = PF_longPackBuf;
 	}
-/*
-		multiUnPack starts with PF_longMultiTop, skip auxiliary chunk in
-		PF_longMultiRoot:
-*/
-	PF_longMultiTop = PF_longMultiRoot->next;
-	return(0);
+	if ( total_bytes > 0 ) {
+		ret = MPI_Bcast(PF_longMultiRoot->buffer, total_bytes,
+		                MPI_PACKED, MASTER, PF_COMM);
+		if ( ret != MPI_SUCCESS ) return ret;
+	}
+	PF_longMultiRoot->packpos = 0;  /* unpacker reads from the start */
+	PF_longMultiTop = PF_longMultiRoot;
+	return 0;
 }
 
 /*
  		#] PF_LongMultiBroadcast : 
+		#[ PF_SetupFlatRequestsView :
+*/
+void PF_SetupFlatRequestsView()
+{
+	PF_Dispatch* d = &PF.dispatch;
+	PF_totalReq = PF.nummappers * PF.numrbufs;
+	if (!d->reqs)
+		d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
+    if (!d->reqs ) {
+		MesPrint("PF_SetupFlatRequestsView: malloc error");
+		exit(-1);
+	}
+	for (int i=0; i<PF_totalReq; i++) d->reqs[i] = MPI_REQUEST_NULL;
+    return ;
+}
+/*
+		#] PF_SetupFlatRequestsView :
   	#] Long pack stuff : 
 */

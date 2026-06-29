@@ -102,6 +102,12 @@
 #define NOPARALLEL_NPROC        0x0200
 #define PARALLELFLAG            0x0000
 
+
+#define NO_MAPREDUCE            0x0000
+#define MAPREDUCE               0x0001
+#define MAPREDUCE_LAST          0x0002
+#define MAPREDUCE_FIRST         0x0004
+
 #define PRENOACTION 0
 #define PRERAISEAFTER 1
 #define PRELOWERAFTER 2
@@ -1123,4 +1129,9 @@ typedef int (*TFUN1)(UBYTE *,int);
 #define CYCLR           8388608
 #define FLOOP           16777216
 #define NOTFLOOP        33554432
+
+#define TIMERESET				0
+#define TIMESTART				1
+#define TIMESTOP				2
+#define TIMEGET					3
 

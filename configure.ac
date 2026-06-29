@@ -876,6 +876,17 @@ AC_ARG_ENABLE([coverage],
 		[enable_coverage=yes], [enable_coverage=no])],
 	[enable_coverage=no])
 
+# Check for MRmpi profiling option
+AC_ARG_ENABLE([mr-profile],
+	[AS_HELP_STRING([--enable-mr-profile],
+		[enable per-phase MRmpi profiling counters and CSV dump (defines PF_PROFILE) @<:@default=no@:>@])],
+	[AS_IF([test "x$enableval" != xno], [enable_mr_profile=yes], [enable_mr_profile=no])],
+	[enable_mr_profile=no])
+AS_IF([test "x$enable_mr_profile" = xyes],
+	[PROFILE_MR_CPPFLAGS="-DPF_PROFILE"],
+	[PROFILE_MR_CPPFLAGS=""])
+AC_SUBST([PROFILE_MR_CPPFLAGS])
+
 # Check for sanitizers
 AC_ARG_ENABLE([sanitize],
 	[AS_HELP_STRING([--enable-sanitize@<:@=CHECKS@:>@],

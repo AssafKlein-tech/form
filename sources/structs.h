@@ -1380,6 +1380,20 @@ typedef struct {
 */
 
 /**
+ *	K-prefix routing + drain merge tuning for MR mode. HashPrefixWords > 0
+ *	enables both (a) mappers hashing terms by their first K symbolic WORDs
+ *	(so terms sharing a K-prefix land on the same reducer) AND (b) the
+ *	master's matching prefix-drain on the k-way merge of those streams
+ *	(consecutive same-K-prefix terms from one stream emit without
+ *	inter-reducer compare). Lives inside M_const as AM.MR; populated on
+ *	the master in PF_Init from PF_HASH_PREFIX_WORDS and broadcast to all
+ *	ranks. K=0 disables both (= standard ParFORM MR behavior).
+ */
+struct PrefixHashSort {
+    int HashPrefixWords;       /* (M) PF_HASH_PREFIX_WORDS; 0 = hash whole symbolic part, no drain */
+};
+
+/**
  *	The M_const struct is part of the global data and resides in the #ALLGLOBALS
  *	struct #A under the name #M.
  *	We see it used with the macro #AM as in AM.S0.
@@ -1504,6 +1518,9 @@ struct M_const {
     int     gWTimeStatsFlag;
     int     ggWTimeStatsFlag;
     int     jumpratio;
+    int     Prepercentage;            /* (M) Maximum number of polynomial moduli */
+    int     ReducerPer;            /* (M) Reducers Percentage out of workers */
+    struct PrefixHashSort MR;      /* (M) K-prefix routing + drain merge (env-derived, broadcast in PF_Init) */
     WORD    MaxTal;                /* (M) Maximum number of words in a number */
     WORD    IndDum;                /* (M) Basis value for dummy indices */
     WORD    DumInd;                /* (M) */
@@ -1801,6 +1818,10 @@ struct C_const {
     int     bracketindexflag;      /* (C) Are brackets going to be indexed? */
     int     parallelflag;          /* (C) parallel allowed? */
     int     mparallelflag;         /* (C) parallel allowed in this module? */
+    int     MRflag;                /* (C) Do mapreduce parallel job */
+    int     mMRflag;               /* (C) mapreduce allowed in this module */
+    int     sMRflag;               /* (C) mapreduce last module state */
+    int     mMRgather;             /* (C) set by `.sort(gather)`: this MR module streams its output to the master (re-globalize) instead of partitioning to merger files; lets a serial module that follows read AR.infile. Per-module, reset after each module. */
     int     inparallelflag;        /* (C) inparallel allowed? */
     int     partodoflag;           /* (C) parallel allowed? */
     int     properorderflag;       /* (C) clean normalizing. */
@@ -1964,13 +1985,23 @@ struct R_const {
     FILEHANDLE *hidefile;          /* (R) Points to Fscr[2] */
 
     WORD    *CompressBuffer;       /* (M) */
+#ifdef WITHMPI
+    WORD    **CompressBuffers;
+#endif
     WORD    *ComprTop;             /* (M) */
     WORD    *CompressPointer;      /* (R) */
+#ifdef WITHMPI
+    WORD    **CompressPointers;
+#endif
     COMPAREDUMMY CompareRoutine;
     ULONG   *wranfia;
     SBYTE   *moebiustable;
 
     LONG    OldTime;               /* (R) Zero time. Needed in timer. */
+#ifdef WITHMPI
+    LONG    Waittime;              /* (R) Zero time. Needed in differential elapsed time. */
+    LONG    TotalWaittime;         /* (R) Zero time. Needed in elapsed timer. */
+#endif
     LONG    InInBuf;               /* (R) Characters in input buffer. Scratch files. */
     LONG    InHiBuf;               /* (R) Characters in hide buffer. Scratch file. */
     LONG    pWorkSize;             /* (R) Size of pWorkSpace */

@@ -724,6 +724,7 @@ extern void   PutInVflags(WORD);
 extern int    TestMatch(PHEAD WORD *,WORD *);
 extern WORD   TestSub(PHEAD WORD *,WORD);
 extern LONG   TimeCPU(WORD);
+extern LONG   TimeElapsed(WORD);
 extern LONG   TimeChildren(WORD);
 extern LONG   TimeWallClock(WORD);
 extern LONG   Timer(int);
@@ -834,6 +835,10 @@ extern LONG   ReadFile(int,UBYTE *,LONG);
 extern LONG   ReadPosFile(PHEAD FILEHANDLE *,UBYTE *,LONG,POSITION *);
 extern LONG   WriteFileToFile(int,UBYTE *,LONG);
 extern void   SeekFile(int,POSITION *,int);
+#if defined(WITHMPI) && defined(WITHZLIB)
+extern int    PF_bc_compress_now;          /* MR scratch block compression */
+extern void   PF_bc_track(FILEHANDLE *);
+#endif
 extern LONG   TellFile(int);
 extern void   FlushFile(int);
 extern int    GetPosFile(int,fpos_t *);
@@ -1466,6 +1471,10 @@ typedef WORD (*GETTERM)(PHEAD WORD *);
 #define CompareTerms ((COMPARE)AR.CompareRoutine)
 #define FiniShuffle AN.SHvar.finishuf
 #define DoShtuffle ((DO_UFFLE)AN.SHvar.do_uffle)
+
+#ifdef WITHMPI
+extern WORD pf_compare_kcap;  /* if >0, Compare1 caps its symbolic walk at this many words */
+#endif
 
 extern UBYTE *defineChannel(UBYTE*, HANDLERS*);
 extern int    writeToChannel(int,UBYTE *,HANDLERS*);

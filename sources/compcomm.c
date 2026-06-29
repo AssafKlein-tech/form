@@ -128,6 +128,7 @@ static KEYWORDV onoffoptions[] = {
 	,{"processstats",	&(AC.ProcessStats),1,	0}
 	,{"oldparallelstats",&(AC.OldParallelStats),1,0}
 	,{"parallel",	    &(AC.parallelflag),PARALLELFLAG,NOPARALLEL_USER}
+	,{"mapreduce",      &(AC.MRflag),MAPREDUCE,NO_MAPREDUCE}
 	,{"nospacesinnumbers",&(AO.NoSpacesInNumbers),1,0}
 	,{"indentspace",    &(AO.IndentSpace),INDENTSPACE,0}
 	,{"totalsize",		&(AM.PrintTotalSize),	1,	0}
@@ -652,6 +653,7 @@ int CoOff(UBYTE *s)
 	 	*onoffoptions[i].var = onoffoptions[i].flags; 
 		AR.SortType = AC.SortType;
 		AC.mparallelflag = AC.parallelflag | AM.hparallelflag;
+		AC.mMRflag = (AC.mparallelflag==PARALLELFLAG) & AC.MRflag;
 	}
 }
 
@@ -924,6 +926,7 @@ int CoOn(UBYTE *s)
 		*onoffoptions[i].var = onoffoptions[i].type;
 		AR.SortType = AC.SortType;
 		AC.mparallelflag = AC.parallelflag | AM.hparallelflag;
+		AC.mMRflag = (AC.mparallelflag==PARALLELFLAG) & AC.MRflag;
 	}
 }
 
