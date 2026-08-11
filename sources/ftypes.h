@@ -102,7 +102,6 @@
 #define NOPARALLEL_NPROC        0x0200
 #define PARALLELFLAG            0x0000
 
-
 #define NO_MAPREDUCE            0x0000
 #define MAPREDUCE               0x0001
 #define MAPREDUCE_LAST          0x0002
@@ -1130,8 +1129,14 @@ typedef int (*TFUN1)(UBYTE *,int);
 #define FLOOP           16777216
 #define NOTFLOOP        33554432
 
+#if defined(WITHMPI) && defined(PF_PROFILE)
+/*
+	Selectors for TimeElapsed (tools.c). The elapsed-wait timer only feeds the
+	per-phase profiler, so it is compiled in only for --enable-mr-profile builds.
+*/
 #define TIMERESET				0
 #define TIMESTART				1
 #define TIMESTOP				2
 #define TIMEGET					3
+#endif
 

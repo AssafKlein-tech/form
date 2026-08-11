@@ -1229,7 +1229,7 @@ int CreateHandle(void)
 	(the one the 2013 parform disable guards), which entangles the gzip stream
 	with the master's merge/position bookkeeping.
 
-	Only the master's scratch fd is ever tracked (PF_bc_track from PF_EndSort),
+	Only the master's scratch fd is ever tracked (PF_BcTrack from PF_EndSort),
 	and only when PF_SCRATCH_COMPRESS=<level> is set. Gated to !dobracketindex
 	/ !hide (no random-access-by-logical-offset consumer). Per-block "compressed"
 	flag makes reads self-describing, so a B+ expression written raw in the same
@@ -1326,7 +1326,7 @@ static FILES *bc_file(int handle)
 	so ->handle is usually -1 here and only becomes valid at the first write.
 	Called from PF_EndSort for AR.outfile.
 */
-void PF_bc_track(FILEHANDLE *f)
+void PF_BcTrack(FILEHANDLE *f)
 {
 	int i;
 	if ( f == 0 ) return;
@@ -3833,16 +3833,19 @@ LONG TimeCPU(WORD par)
 /*
  		#] TimeCPU : 
 */
-#ifdef WITHMPI
+#if defined(WITHMPI) && defined(PF_PROFILE)
 /*
  		#[ TimeElapsed :
 */
 
 /**
- * Returns the CPU time.
+ * Accumulates the time a rank spends blocked, for the per-phase profiler.
+ * Only built for --enable-mr-profile; the accumulated total is reported
+ * through the profiler's per-module statistics.
  *
- * @param   par  RESET to reset it, START to start the timer an STOP to stop
- * @return       The CPU time in milliseconds.
+ * @param   par  TIMERESET to zero the total, TIMESTART to start an interval,
+ *               TIMESTOP to close it, TIMEGET to read the total.
+ * @return       The accumulated elapsed time in milliseconds.
  */
 LONG TimeElapsed(WORD par)
 {
@@ -3863,7 +3866,7 @@ LONG TimeElapsed(WORD par)
 }
 
 /*
- 		#] TimeElapsed : 
+ 		#] TimeElapsed :
 */
 #endif
 /*

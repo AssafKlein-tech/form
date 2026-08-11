@@ -65,6 +65,10 @@ Two things are required:
    mpirun -np 64 parform -r12 myjob.frm
    ```
 
+   Without `-r<N>` the percentage comes from the `reducerpercent` setup-file
+   parameter, whose default is **12**. Values outside `0 <= N < 50` are clamped
+   to 50 — a run cannot have more reducers than mappers.
+
 Reducers are the highest-numbered ranks. On a **multi-node** run pass
 `--map-by node` to `mpirun` so ranks — and therefore reducers — spread evenly
 across nodes instead of concentrating on the last one.
@@ -114,9 +118,70 @@ verify on any script:
 2. Run the map-reduce version with `-r<N>` and the standard version without.
 3. `diff` the final FORM output: it must be byte-identical.
 
-## Large `id` substitutions
+## Large `id` substitutions — `scripts/split_id.py`
 
-A single `id` rule with very large right-hand sides (products of many-summand
-vertex factors) can blow up term generation before the sort ever runs. The
-helper `scripts/split_id.py` rewrites such a rule into `K` parallel chunks that
-generate independently. See the script's header for usage.
+### When to use it
+
+A single `id` rule whose right-hand side is a product of several many-summand
+vertex factors can blow up term generation long before the sort ever runs. A
+3-vertex rule with 399 summands per vertex expands to `399^3` products per input
+term; at ~1300 input terms that is ~83 billion generated terms.
+
+Worse, such rules are usually written inside an `off parallel;` block, so the
+whole expansion runs **serially on the master** — no mapper ever sees it, and
+map-reduce mode cannot help. The symptom is a job that sits on one module for
+hours with `Terms active` climbing steadily and no `.sort` in sight.
+
+Use the splitter when **all** of these hold:
+
+- One `id diags<N> = ...;` rule dominates the runtime.
+- Its right-hand side is a product of parenthesised factors with many top-level
+  summands (the script's threshold is 10).
+- The rule sits under `off parallel;`.
+
+Do **not** use it for rules that are already cheap, or whose blow-up comes from
+the number of input terms rather than the size of the right-hand side — the
+splitter reduces peak term count per module, not total work.
+
+### Where to use it
+
+Run it on the `.frm` script **before** submitting the job; it is a source-to-
+source rewrite, not a runtime option. It is orthogonal to `on mapreduce;` — the
+split makes the module parallelisable, and map-reduce mode then handles the
+resulting sorts. Apply it to the map-reduce variant of the script.
+
+### How to use it
+
+```sh
+python3 scripts/split_id.py INPUT.frm OUTPUT.frm K_target
+```
+
+`K_target` is the desired number of chunks. The script finds the `id diags<N>`
+rule, identifies the `V` vertex factors, and gives each one
+`N = round(K_target ** (1/V))` chunks (capped at that vertex's summand count),
+so the realised `K` is the product of the per-vertex `N`s and only approximates
+`K_target`. It prints the factor analysis and the actual `K` it produced.
+
+The rewrite is a two-step substitution: the original rule becomes a product of
+sums of fresh opaque chunk symbols (`dgs<N>V<factor>c<chunk>`), then a `.sort`,
+then one `id` per chunk symbol expanding it to its share of the summands.
+Substituting the chunk symbols back reproduces the original product exactly, so
+the rewrite is algebraically equivalent by construction. The script also flips
+the nearest preceding `off parallel;` to `on parallel;` so the chunk
+substitutions run distributed.
+
+Because the chunk symbols only exist between the two steps, a `b`/bracket
+statement aimed at this block must bracket on the `dgs*` chunk symbols — the
+functions the second step creates do not exist yet at the first `.sort`.
+
+### Validating a split
+
+The rewrite is meant to be output-preserving, so validate it before trusting a
+new workload:
+
+1. Pick a script that already has a known-good baseline output.
+2. Split it with the same `K_target` you intend to use.
+3. Run both and confirm the final output is byte-identical (compare `sha256sum`
+   of the `.out` files).
+
+Only then apply the splitter to the workload that has no baseline yet.

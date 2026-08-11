@@ -95,10 +95,8 @@ WORD pf_compare_kcap = 0;
 /*
   	#] Includes : 
 	#[ SortUtilities :
-		#[ WriteStats :				void WriteStats(lspace,par,checkLogType)
+		#[ MR hash & shuffle helpers :
 */
- 
-char *toterms[] = { "   ", " >>", "-->" };
 
 #ifdef WITHMPI
 #define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
@@ -245,6 +243,12 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
 #endif
 #endif
 
+/*
+		#] MR hash & shuffle helpers :
+		#[ WriteStats :				void WriteStats(lspace,par,checkLogType)
+*/
+ 
+char *toterms[] = { "   ", " >>", "-->" };
 
 #define HUMANSTRLEN 12
 #define HUMANSUFFLEN 4
@@ -1312,7 +1316,6 @@ TooLarge:
 		UpdateMaxSize();
 #ifdef WITHMPI
 	if ( !lowmr_sort ){
-			//MesPrint("[%d] EndSort: putting file in output", PF.me);
 #endif
 		if ( MergePatches(0) ) {
 			MLOCK(ErrorMessageLock);
@@ -1654,110 +1657,6 @@ int Sflush(FILEHANDLE *fi)
  *	@param ncomp    Information about what type of compression should be used
  */
 
-#if defined(WITHMPI) && defined(DEBUGGING)
-/*
-	Diagnostic-only (DEBUGGING build): when PF_HASH_HISTOGRAM=1 is set, an
-	MR-mode mapper records, per module, the (dst-reducer x prefix-K) routing
-	distribution of all routed terms. K sweeps a fixed list {4,8,12,16,24,32,
-	48,64,96,128,192,256, 0=full symbolic part} so one run yields the full
-	imbalance-vs-K curve offline. Counters flush to
-	${PF_PROFILE_DIR}/hash_hist_<rank>.csv on every module-id change and via
-	atexit; a walltime-killed run still has m9 numbers. Output columns:
-	module,rank,numreducers,K,dst,count. Hash dispatch mirrors the routing
-	code verbatim so counts == what the router would have chosen.
-*/
-#define PF_HASH_HIST_NUM_K 13
-#define PF_HASH_HIST_MAX_DST 64
-static const int pf_hash_hist_K_list[PF_HASH_HIST_NUM_K] =
-	{4,8,12,16,24,32,48,64,96,128,192,256,0};
-static FILE *pf_hash_hist_fp = NULL;
-static int   pf_hash_hist_cur_module = -1;
-static LONG  pf_hash_hist_counts[PF_HASH_HIST_NUM_K][PF_HASH_HIST_MAX_DST];
-
-static void pf_hash_histogram_flush_module(void)
-{
-	if ( pf_hash_hist_fp == NULL || pf_hash_hist_cur_module < 0 ) return;
-	int k, d;
-	for ( k = 0; k < PF_HASH_HIST_NUM_K; k++ ) {
-		for ( d = 0; d < PF.numreducers && d < PF_HASH_HIST_MAX_DST; d++ ) {
-			if ( pf_hash_hist_counts[k][d] == 0 ) continue;
-			fprintf(pf_hash_hist_fp, "%d,%d,%d,%d,%d,%ld\n",
-				pf_hash_hist_cur_module, (int)PF.me, (int)PF.numreducers,
-				pf_hash_hist_K_list[k], d, (long)pf_hash_hist_counts[k][d]);
-		}
-	}
-	fflush(pf_hash_hist_fp);
-	memset(pf_hash_hist_counts, 0, sizeof pf_hash_hist_counts);
-}
-
-static void pf_hash_histogram_atexit(void)
-{
-	pf_hash_histogram_flush_module();
-	if ( pf_hash_hist_fp ) { fclose(pf_hash_hist_fp); pf_hash_hist_fp = NULL; }
-}
-
-static void pf_hash_histogram(WORD *term)
-{
-	static int enabled = -1;
-	if ( enabled < 0 ) {
-		char *e = getenv("PF_HASH_HISTOGRAM");
-		enabled = (e && *e && atoi(e) != 0) ? 1 : 0;
-	}
-	if ( !enabled ) return;
-	if ( PF.numreducers <= 0 || PF.numreducers > PF_HASH_HIST_MAX_DST ) return;
-
-	if ( pf_hash_hist_fp == NULL ) {
-		char *dir = getenv("PF_PROFILE_DIR");
-		char path[1100];
-		snprintf(path, sizeof path, "%s/hash_hist_%d.csv",
-			(dir && *dir) ? dir : ".", (int)PF.me);
-		pf_hash_hist_fp = fopen(path, "w");
-		if ( pf_hash_hist_fp == NULL ) { enabled = 0; return; }
-		fprintf(pf_hash_hist_fp, "module,rank,numreducers,K,dst,count\n");
-		atexit(pf_hash_histogram_atexit);
-	}
-
-	if ( pf_hash_hist_cur_module != (int)AC.CModule ) {
-		pf_hash_histogram_flush_module();
-		pf_hash_hist_cur_module = (int)AC.CModule;
-	}
-
-	WORD *start = term + 1;
-	WORD *symend = (term + *term) - ABS((term + *term)[-1]);
-	LONG symlen = (LONG)(symend - start);
-	int k;
-	for ( k = 0; k < PF_HASH_HIST_NUM_K; k++ ) {
-		WORD *end;
-		UWORD h = 0;
-		if ( pf_hash_hist_K_list[k] == 0 ) end = symend;
-		else if ( pf_hash_hist_K_list[k] < symlen ) end = start + pf_hash_hist_K_list[k];
-		else end = symend;
-		LONG n = end - start;
-		if ( n <= 0 ) { pf_hash_hist_counts[k][0]++; continue; }
-#ifdef BITSINWORD == 16
-		{
-			WORD *p = start;
-			while ( p < end ) {
-				UWORD w = (UWORD)(*p++);
-				h = (h << 13) | (h >> (BITSINWORD - 13));
-				h ^= w;
-			}
-		}
-#elif defined __AVX512F__
-		h = hash_list_avx512(start, (WORD)n);
-#elif defined __AVX2__
-		h = hash_list32_avx2(start, (WORD)n);
-#else
-		{
-			WORD *p = start;
-			while ( p < end ) h ^= hash_uint32((UWORD)(*p++));
-		}
-#endif
-		pf_hash_hist_counts[k][h % PF.numreducers]++;
-	}
-}
-#endif
-
 WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 {
 	GETBIDENTITY
@@ -1855,16 +1754,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	}
 
 #ifdef WITHMPI
-	/* dst has dual meaning in this function:
-	   - index into PF.sbufs[] (mapper: per-reducer slot; reducer/merger: always 0)
-	   - MPI destination rank used by PF_WISendSbuf
-	   For mappers, hash-routing below sets dst to the destination reducer rank;
-	   PF.sbufs[reducer] is the per-reducer slot AND MPI dest. Both meanings
-	   collide on that rank value.
-	   For non-mappers, PF.sbufs is allocated with only slot 0 used (see
-	   PF_allocateSbuf reducer branch). The MPI dest goes through `mpi_dest`
-	   below; dst stays 0 so PF.sbufs[dst] lookups in PutOut hit the allocated
-	   slot. PF_WISendSbuf is given mpi_dest separately. */
 	int dst = 0;
 	int mpi_dest = MASTER;
 	BOOL lowmr_sort = PF_LowMRsort();
@@ -1891,9 +1780,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		#ifdef WITHMPI
 			if (lowmr_sort ) {
 				PF_TIMER_BEGIN(MAP_HASH_ROUTE);
-#ifdef DEBUGGING
-				pf_hash_histogram(term);  /* no-op unless PF_HASH_HISTOGRAM=1 */
-#endif
 				WORD *start = term;
 				WORD *end = start + *start;
 				end -= ABS(end[-1]);

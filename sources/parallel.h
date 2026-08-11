@@ -37,7 +37,6 @@
   	#[ macros & definitions :
 */
 #define MASTER 0
-#define REDUCER 1
 
 #define PF_RESET 0
 #define PF_TIME  1
@@ -216,7 +215,6 @@ typedef struct ParallelVars {
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
-	//MPI_Comm    mapComm;			/*communicator for mappers*/
 	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */

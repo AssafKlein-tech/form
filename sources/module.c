@@ -231,7 +231,7 @@ int CoModOption(UBYTE *s)
 		else if ( StrICmp(s,(UBYTE *)"gather") == 0 ) {
 			/* MRmpi: this MR module streams its output to the master (re-globalize)
 			   instead of partitioning to node-local merger files, so a following
-			   serial (off parallel) module can read AR.infile. Takes no argument. */
+			   non MR module (or serial) can read AR.infile. Takes no argument. */
 			*t = c;
 			AC.mMRgather = 1;
 		}

@@ -37,8 +37,7 @@
 */
 
 #include <limits.h>
-#include <sched.h>
-#include <unistd.h>
+#include <unistd.h>            /* usleep() in PF_WaitRbuf */
 #include "form3.h"
 #include "pf_profile.h"
 
@@ -68,7 +67,14 @@
 */
 
 static int PF_packsize = 0;
-static int first = 0;
+/*
+	Latch for the single-buffer sink path in PF_ISendSbuf: 1 once this rank has
+	told the master it is streaming the current run, cleared again by the
+	ENDBUFFER that closes the run. Only that path needs it -- there the
+	announcement is piggy-backed on the first send, whereas the multi-buffer
+	senders announce explicitly from PF_Processor (parallel.c).
+*/
+static int stream_announced = 0;
 static MPI_Status PF_status;
 static int PF_totalReq = 0;
 LONG PF_maxDollarChunkSize = 0;      /*:[04oct2005 mt]*/
@@ -114,8 +120,8 @@ LONG PF_RealTime(int i)
 }
 
 /*
-  	#] PF_RealTime : 
-  	#[ PF_LibInit :
+  	#] PF_RealTime :
+  	#[ PF_discover_node_topology :
 */
 
 /**
@@ -126,7 +132,7 @@ LONG PF_RealTime(int i)
  * On any failure it leaves the single-node fallback (numnodes=1, rank_node=NULL)
  * in place -- the merger tier is then disabled for the run (PF_Processor).
  */
-static void pf_discover_node_topology(void)
+static void PF_discover_node_topology(void)
 {
 	MPI_Comm node_comm;
 	int local_rank = 0, leader, *leaders, *distinct, nd, i;
@@ -147,6 +153,8 @@ static void pf_discover_node_topology(void)
 	distinct = (int*)malloc((size_t)PF.numtasks * sizeof(int));
 	PF.rank_node = (int*)malloc((size_t)PF.numtasks * sizeof(int));
 	if ( leaders == NULL || distinct == NULL || PF.rank_node == NULL ) {
+		/* Allocation failed: release whatever we got and return from discovery
+		   with the single-node fallback still in place. */
 		if ( leaders )  free(leaders);
 		if ( distinct ) free(distinct);
 		if ( PF.rank_node ) { free(PF.rank_node); PF.rank_node = NULL; }
@@ -176,6 +184,11 @@ static void pf_discover_node_topology(void)
 	free(distinct);
 }
 
+/*
+  	#] PF_discover_node_topology :
+  	#[ PF_LibInit :
+*/
+
 /**
  * Performs all library dependent initializations.
  *
@@ -194,7 +207,7 @@ int PF_LibInit(int *argcp, char ***argvp)
 	if ( ret != MPI_SUCCESS ) return(ret);
 	PF.nummappers = PF.numtasks;
 
-	pf_discover_node_topology();
+	PF_discover_node_topology();
 
 	/* Initialization of packed communications. */
 	PF_packsize = PF_PACKSIZE/sizeof(int)*sizeof(int);
@@ -310,10 +323,9 @@ int PF_Probe(int *src)
 }
 
 /*
-  	#] PF_Probe : 
-	#[ PF_WISendSbuf :
+  	#] PF_Probe :
+  	#[ PF_WISendSbuf :
 */
-
 /**
  * @brief Sends the contents of the send buffer to the appropriate destination based on the MapReduce flag.
  *
@@ -328,14 +340,7 @@ int PF_Probe(int *src)
  */
 int PF_WISendSbuf(int tag, int dest)
 {
-    /* Non-mapper (reducer or mapper-merger) -> upstream sink, single sbuf,
-       BUFFER/ENDBUFFER framing. Honors `dest` so a leaf reducer can route
-       to a mapper-merger rank (PF.merger_parent) instead of MASTER.
-       The mapper-merger is a mapper RANK but in MERGE phase its data goes
-       upstream to master, so we treat it like a reducer here -- send the
-       tag through unchanged so master's PF_PutIn sees ENDBUFFER and adds
-       the 0-terminator that marks end of stream. */
-    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase)
+    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase) //to Master
        {return PF_ISendSbuf(dest, tag);}
 	//reset the compress buffer for the next buffer
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
@@ -346,7 +351,7 @@ int PF_WISendSbuf(int tag, int dest)
 }
 
 /*
-	#] PF_WISendSbuf :
+  	#] PF_WISendSbuf :
   	#[ PF_ISendSbuf :
 */
 
@@ -410,7 +415,7 @@ int PF_ISendSbuf(int to, int tag)
 	                              || tag == PF_ENDSHUFFLE_MSGTAG || tag == PF_ENDBUFFER_MSGTAG));
 #endif
 
-	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) {
+	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) { //checks whether the message length is greater than int before converting
 		fprintf(stderr,"[%d] PF_ISendSbuf: invalid msg_size %lld (to=%d tag=%d)\n",
 		        PF.me,(long long)msg_size,to,tag);
 		fflush(stderr);
@@ -420,15 +425,17 @@ int PF_ISendSbuf(int to, int tag)
 
 	s->fill[a] = s->buff[a];
 	if ( s->numbufs == 1 ) {
-		/* The "first" handshake is the WaitAllSlaves signal that this slave is
-		   about to stream data. Only the master waits on it; a mapper-merger
-		   has Irecvs already posted via PF_MergerInit and needs no handshake.
-		   Suppress when the sink is anything other than MASTER. */
-		if (first == 0 && to == MASTER){
+		/* Announce to the master, once per run, that this rank is about to
+		   stream data -- the signal PF_WaitAllSlaves waits on. Only the master
+		   waits on it; a mapper-merger has Irecvs already posted via
+		   PF_MergerInit and needs no handshake, so suppress it when the sink
+		   is anything other than MASTER. ENDBUFFER closes the run and re-arms
+		   the latch for the next one. */
+		if (stream_announced == 0 && to == MASTER){
 			PF_Send(MASTER, PF_BUFFER_MSGTAG);
-			first =  1;
+			stream_announced = 1;
 		}
-		first = (tag == PF_ENDBUFFER_MSGTAG) ? 0 : first;
+		if (tag == PF_ENDBUFFER_MSGTAG) stream_announced = 0;
 		r = MPI_Ssend(s->buff[a],size,PF_WORD,to,tag,PF_COMM);
 		if ( r != MPI_SUCCESS ) {
 			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d (to=%d tag=%d)\n",
@@ -484,9 +491,9 @@ int PF_ISendSbuf(int to, int tag)
 		   happened to be selected. */
 		if ( s->request[s->active] != MPI_REQUEST_NULL ) {
 			PF_TIMER_BEGIN_RT(buf_wait);
-			TimeElapsed(TIMESTART);
+			PF_TIME_ELAPSED(TIMESTART);
 			r = MPI_Wait(&s->request[s->active], &s->retstat[0]);
-			TimeElapsed(TIMESTOP);
+			PF_TIME_ELAPSED(TIMESTOP);
 			PF_TIMER_END_RT(buf_wait, _pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 		}
@@ -495,9 +502,9 @@ int PF_ISendSbuf(int to, int tag)
 		case PF_ENDBUFFER_MSGTAG: {
 			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
 			PF_TIMER_BEGIN_RT(endbuf_wait);
-			TimeElapsed(TIMESTART);
+			PF_TIME_ELAPSED(TIMESTART);
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
-			TimeElapsed(TIMESTOP);
+			PF_TIME_ELAPSED(TIMESTOP);
 			PF_TIMER_END_RT(endbuf_wait, _pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
@@ -506,7 +513,6 @@ int PF_ISendSbuf(int to, int tag)
 			return(-99);
 			break;
 	}
-	//MesPrint("PF_ISendSbuf: finished send");
 	return(0);
 }
 
@@ -666,14 +672,11 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 {
 	int ret,idx, rsize;
-	//MesPrint("[%d] PF_WaitAnyRbuf: access dispatch", PF.me);
 	PF_Dispatch* d = &PF.dispatch;
 	MPI_Status st;
 	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
-	//MesPrint("[%d] PF_WaitAnyRbuf: After waitany", PF.me);
 	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
 	if(idx == MPI_UNDEFINED)  return PF_ENDSHUFFLEALL_MSGTAG;  // all requests are NULL
-	//MesPrint("[%d] PF_WaitAnyRbuf: got message from index %d", PF.me, idx);
 	/* map flat index -> (source, buffer index) */
 	int bn = idx % PF.numrbufs;
 	*src = idx/PF.numrbufs; //which mapper

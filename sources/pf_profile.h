@@ -270,6 +270,10 @@ extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
 			pf_phase_last_us[(idx)] = (LONG)((_pf_now_rt_##name - pf_module_t0) * 1.0e6); \
 		} \
 	} while (0)
+/* Elapsed-wait accumulator (tools.c TimeElapsed). Profile-only, like the
+   timers above: the accumulated total is reported through the per-module
+   statistics and has no consumer in a production build. */
+#define PF_TIME_ELAPSED(par) TimeElapsed(par)
 #define PF_TIMER_ADD_BYTES(idx, n) (pf_extras[(idx)] += (LONG)(n))
 #define PF_TIMER_INC(idx) (pf_extras[(idx)]++)
 #define PF_TIMER_ADD_COUNT(idx, n) (pf_extras[(idx)] += (LONG)(n))
@@ -307,6 +311,7 @@ void pf_profile_dump_master_csv(int module_num, const char *expr_name,
 #define PF_TIMER_END(P) ((void)0)
 #define PF_TIMER_BEGIN_RT(name) ((void)0)
 #define PF_TIMER_END_RT(name, idx) ((void)0)
+#define PF_TIME_ELAPSED(par) ((LONG)0)
 #define PF_TIMER_ADD_BYTES(idx, n) ((void)0)
 #define PF_TIMER_INC(idx) ((void)0)
 #define PF_TIMER_ADD_COUNT(idx, n) ((void)0)

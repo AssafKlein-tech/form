@@ -367,7 +367,6 @@ int DoTail(int argc, UBYTE **argv)
 							}
 /*							if ( threadnum == 1 ) threadnum = 0; */
 							threadnum++;
-							MesPrint( " the number of workers = %d", threadnum-1 );
 							break;
 				case 'W': /* Print the wall-clock time on the master. */
 							AM.ggWTimeStatsFlag = 1;
@@ -2197,7 +2196,7 @@ void PrintRunningTime(void)
 		wallclocktime = TimeWallClock(1);
 		totaltime = mastertime+workertime;
 		if ( !AM.silent ) {
-		MesPrint("Master Time %l.%2i sec +  Workers Time %l.%2i sec: %l.%2i sec out of %l.%2i sec wallclock time",
+		MesPrint("  %l.%2i sec + %l.%2i sec: %l.%2i sec out of %l.%2i sec",
 			mastertime/1000,(WORD)((mastertime%1000)/10),
 			workertime/1000,(WORD)((workertime%1000)/10),
 			totaltime/1000,(WORD)((totaltime%1000)/10),

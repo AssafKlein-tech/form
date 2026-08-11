@@ -835,13 +835,13 @@ static int PF_StoreBuffer()
 	PF_BUFFER *rbuf;
 	PF_Dispatch* d = &PF.dispatch;
 	int src = 0;
-	TimeElapsed(TIMERESET);
+	PF_TIME_ELAPSED(TIMERESET);
 newsrc: ;
 	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
 	PF_TIMER_BEGIN(RED_RECV_WAIT);
-	TimeElapsed(TIMESTART);
+	PF_TIME_ELAPSED(TIMESTART);
 	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
-	TimeElapsed(TIMESTOP);
+	PF_TIME_ELAPSED(TIMESTOP);
 	PF_TIMER_END(RED_RECV_WAIT);
 	if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
 	{
@@ -1741,11 +1741,11 @@ int PF_EndSort(void)
 	   The LAST-module gather merger redirects fout to an MPI send buffer (no file),
 	   so it is excluded. Bracket-indexed output keeps random access -> uncompressed. */
 	if ( PF.me == MASTER && !PF.in_merger_phase ) {
-		PF_bc_track(fout);
+		PF_BcTrack(fout);
 		PF_bc_compress_now = ( dobracketindex == 0 && fout != AR.hidefile );
 	}
 	else if ( PF.in_merger_phase && PF.merger_to_file && PF.merger_outfile ) {
-		PF_bc_track(fout);                      /* fout == merger_outfile here */
+		PF_BcTrack(fout);                      /* fout == merger_outfile here */
 		PF_bc_compress_now = ( dobracketindex == 0 );
 	}
 #endif
@@ -2820,7 +2820,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	POSITION position;
 	int role, k, src, tag;
 	FILEHANDLE *oldoutfile = AR.outfile;
-	TimeElapsed(TIMERESET);
+	PF_TIME_ELAPSED(TIMERESET);
 
 #ifdef PF_PROFILE
 	pf_profile_per_node_init();
@@ -3335,7 +3335,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fout->POfill = fout->POfull = fout->PObuffer;
 		}
 		send_time = TimeCPU(1) - send_time;
-		LONG waittime = TimeElapsed(TIMEGET);
+		LONG waittime = PF_TIME_ELAPSED(TIMEGET);
 		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		/* Mapper-merger overlay (Phase 1 of reducer merge tree). On ranks
 		   1..PF.nummergers, after the mapper-phase EndSort + done-send, run
@@ -3437,7 +3437,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		#[ Reducer Loop & EndSort :
 		#[ Collect (stats,prepro...) :
 */
-		LONG waittime = TimeElapsed(TIMEGET);
+		LONG waittime = PF_TIME_ELAPSED(TIMEGET);
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
 		cpu = TimeCPU(1);

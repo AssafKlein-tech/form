@@ -846,7 +846,6 @@ int DoExecute(WORD par, WORD skip)
 		else if ( AC.mparallelflag & NOPARALLEL_NPROC ) {
 			HighWarning("This module is forced to run in sequential mode because there is only one processor");
 		}
-		
 	}
 /*
 	Now the actual execution
@@ -856,12 +855,6 @@ int DoExecute(WORD par, WORD skip)
 	 * Turn on AS.printflag to print runtime errors occurring on slaves.
 	 */
 	AS.printflag = 1;
-	// if parallel execution is desabled, make sure the master has all the necessary data. (no distributed data)
-	//if ( AC.mparallelflag != PARALLELFLAG  && (AC.sMRflag == MAPREDUCE || AC.sMRflag == MAPREDUCE_FIRST)){
-	//	if (PF.me== MASTER) 
-	//		MesPrint("\n**Must be parrallel to collect distributed inputs.**\n\n");
-	//	return (-1);
-	//}
 	/* -------------------------------------------------------------------------
 	   MR chain state (sMRflag) for THIS module, from two facts:
 
