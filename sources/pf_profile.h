@@ -272,8 +272,11 @@ extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
 	} while (0)
 /* Elapsed-wait accumulator (tools.c TimeElapsed). Profile-only, like the
    timers above: the accumulated total is reported through the per-module
-   statistics and has no consumer in a production build. */
-#define PF_TIME_ELAPSED(par) TimeElapsed(par)
+   statistics and has no consumer in a production build.
+   PF_TIME_ELAPSED is the statement form (reset/start/stop);
+   PF_TIME_ELAPSED_GET is the value form (read the accumulated total). */
+#define PF_TIME_ELAPSED(par) ((void)TimeElapsed(par))
+#define PF_TIME_ELAPSED_GET() TimeElapsed(TIMEGET)
 #define PF_TIMER_ADD_BYTES(idx, n) (pf_extras[(idx)] += (LONG)(n))
 #define PF_TIMER_INC(idx) (pf_extras[(idx)]++)
 #define PF_TIMER_ADD_COUNT(idx, n) (pf_extras[(idx)] += (LONG)(n))
@@ -311,7 +314,8 @@ void pf_profile_dump_master_csv(int module_num, const char *expr_name,
 #define PF_TIMER_END(P) ((void)0)
 #define PF_TIMER_BEGIN_RT(name) ((void)0)
 #define PF_TIMER_END_RT(name, idx) ((void)0)
-#define PF_TIME_ELAPSED(par) ((LONG)0)
+#define PF_TIME_ELAPSED(par) ((void)0)
+#define PF_TIME_ELAPSED_GET() ((LONG)0)
 #define PF_TIMER_ADD_BYTES(idx, n) ((void)0)
 #define PF_TIMER_INC(idx) ((void)0)
 #define PF_TIMER_ADD_COUNT(idx, n) ((void)0)

@@ -3335,7 +3335,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			fout->POfill = fout->POfull = fout->PObuffer;
 		}
 		send_time = TimeCPU(1) - send_time;
-		LONG waittime = PF_TIME_ELAPSED(TIMEGET);
+		LONG waittime = PF_TIME_ELAPSED_GET();
 		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
 		/* Mapper-merger overlay (Phase 1 of reducer merge tree). On ranks
 		   1..PF.nummergers, after the mapper-phase EndSort + done-send, run
@@ -3437,7 +3437,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		#[ Reducer Loop & EndSort :
 		#[ Collect (stats,prepro...) :
 */
-		LONG waittime = PF_TIME_ELAPSED(TIMEGET);
+		LONG waittime = PF_TIME_ELAPSED_GET();
 		DBGOUT_NINTERMS(1, ("PF.me=%d AN.ninterms=%d PF_linterms=%d ENDSORT\n", (int)PF.me, (int)AN.ninterms, (int)PF_linterms));
 		PF_PrepareLongSinglePack();
 		cpu = TimeCPU(1);
