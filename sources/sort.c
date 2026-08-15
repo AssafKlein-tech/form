@@ -114,7 +114,12 @@ static inline BOOL PF_LowMRsort() {
 	   it does NOT hash-route terms to reducers. */
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase);
 }
-#ifndef BITSINWORD == 16
+/* The R[] table and the mix32/AVX helpers below all assume a 32-bit UWORD
+   (the table entries are 32-bit constants), so they exist only in the
+   non-16-bit build. NOTE: this was '#ifndef BITSINWORD == 16', which the
+   preprocessor reads as '#ifndef BITSINWORD' -- always false since
+   BITSINWORD is always defined, so the whole block was silently dropped. */
+#if BITSINWORD != 16
 static const UWORD R[256] = {
  	0x8f3b5e2a, 0xc1840d77, 0x4abe12f9, 0xbd7e39c3, 0x73da904e, 0x2f9e1b78, 0xe4a1c653, 0x9c0d2fa1,
     0x1f37b5d4, 0xa6c3942e, 0xd9134a8f, 0x5be27fd6, 0x84a9c130, 0xfe67320d, 0x671d90ce, 0x3ac4e2b1,
@@ -1793,7 +1798,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 				if ( AM.MR.HashPrefixWords > 0
 					&& (end - start) > AM.MR.HashPrefixWords )
 					end = start + AM.MR.HashPrefixWords;
-#ifdef BITSINWORD == 16
+#if BITSINWORD == 16
 				while( start < end ) {
 					UWORD w = (UWORD)(*start++);
 					term_hash = (term_hash << 13) | (term_hash >> (BITSINWORD - 13));
