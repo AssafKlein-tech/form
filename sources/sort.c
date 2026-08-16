@@ -163,6 +163,29 @@ static inline UWORD hash_uint32(UWORD ux) {
     // fallback: mix the integer value itself
     return mix32(ux);
 }
+
+static inline UWORD pf_rotl32(UWORD x, unsigned r) {
+    return (UWORD)((x << r) | (x >> ((32 - r) & 31)));
+}
+
+/*
+    Canonical term hash. Three properties matter for mapper->reducer routing:
+      - hash_uint32 avalanches each word, so the small symbol/power values that
+        dominate a FORM term do not sit in the low 8 bits;
+      - the rotate makes the fold position-dependent, so a term and a permutation
+        of its words differ;
+      - the final mix32 is multiplicative, i.e. NON-linear over GF(2). Without it
+        the whole fold is GF(2)-linear and the residues mod a small reducer count
+        stay biased (this is what made a plain XOR fold imbalance badly at R=7,
+        and what made the raw rotate-xor fold imbalance badly at R=2 and R=8).
+    The AVX variants below compute this same value bit-for-bit, so a build with
+    -mavx2/-mavx512f routes terms exactly like a stock build.
+*/
+static inline UWORD hash_list_scalar(const WORD *arr, WORD n) {
+    UWORD h = 0; WORD i;
+    for (i = 0; i < n; i++) h = pf_rotl32(h, 13) ^ hash_uint32((UWORD)arr[i]);
+    return mix32(h);
+}
 #ifdef __AVX512F__
 #include <immintrin.h>
 //murmur3 parallel hash
@@ -183,66 +206,76 @@ static inline __m512i mix32_vec(__m512i h) {
     return h;
 }
 
+/*
+    Vectorised form of hash_list_scalar. The recurrence
+        h_k = rotl(h_{k-1},13) ^ g(w_k)
+    unrolls to  h_n = XOR_i rotl( g(w_i), 13*(n-1-i) mod 32 ),  because rotl and
+    xor are both GF(2)-linear, so each word's contribution depends only on its
+    distance from the end and the lanes can be combined in any order.
+*/
 UWORD hash_list_avx512(const WORD *arr, WORD n) {
     const WORD STRIDE = 16;
     WORD i = 0;
-
+    UWORD h = 0, buf[16];
+    int j;
     __m512i vacc = _mm512_setzero_si512();
+    const __m512i lane = _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15);
 
     for (; i + STRIDE <= n; i += STRIDE) {
         __m512i v = _mm512_loadu_si512((const void*)&arr[i]);
-        vacc = _mm512_xor_si512(vacc, mix32_vec(v));
+        __mmask16 small = _mm512_cmpeq_epi32_mask(_mm512_srli_epi32(v, 8),
+                                                  _mm512_setzero_si512());
+        __m512i tbl = _mm512_i32gather_epi32(_mm512_and_si512(v, _mm512_set1_epi32(255)),
+                                             (const int*)R, 4);
+        __m512i x = mix32_vec(v);
+        __m512i g = _mm512_mask_blend_epi32(small, x, tbl);   /* g(w) */
+        __m512i pos = _mm512_sub_epi32(_mm512_set1_epi32((int)(n - 1 - i)), lane);
+        __m512i r = _mm512_and_si512(_mm512_mullo_epi32(pos, _mm512_set1_epi32(13)),
+                                     _mm512_set1_epi32(31));
+        vacc = _mm512_xor_si512(vacc, _mm512_rolv_epi32(g, r));
     }
-
-    // horizontal XOR reduce
-    UWORD buf[16];
-	size_t rem = n - i;
-	if (rem) {
-		__mmask16 k = (1U << rem) - 1;
-
-		__m512i v = _mm512_maskz_loadu_epi32(k, arr + i);
-		__m512i m = mix32_vec(v);
-
-		// keep only the lanes that correspond to real elements
-		m = _mm512_maskz_mov_epi32(k, m);
-
-		vacc = _mm512_xor_si512(vacc, m);
-	}
     _mm512_storeu_si512((void*)buf, vacc);
-
-    UWORD acc = 0;
-    for (int j = 0; j < 16; ++j) acc ^= buf[j];
-
-    return hash_uint32(acc);
+    for (j = 0; j < 16; ++j) h ^= buf[j];
+    for (; i < n; i++)
+        h ^= pf_rotl32(hash_uint32((UWORD)arr[i]), (unsigned)((13 * (n - 1 - i)) & 31));
+    return mix32(h);
 }
+
 #elif defined(__AVX2__)
 #include <immintrin.h>
 
+/* Vectorised form of hash_list_scalar -- see the AVX-512 comment above. */
 UWORD hash_list32_avx2(const WORD *arr, WORD n) {
+    WORD i = 0;
+    UWORD h = 0, buf[8];
+    int j;
     __m256i acc = _mm256_setzero_si256();
+    const __m256i lane = _mm256_setr_epi32(0,1,2,3,4,5,6,7);
+    const __m256i c31 = _mm256_set1_epi32(31), c32 = _mm256_set1_epi32(32);
 
-    int i = 0;
     for (; i + 8 <= n; i += 8) {
-
         __m256i v = _mm256_loadu_si256((const __m256i*)&arr[i]);
-
-        v = _mm256_and_si256(v, _mm256_set1_epi32(255));        // x & 255
-        __m256i t = _mm256_i32gather_epi32((const int*)R, v, 4); // gather R[x]
-        acc = _mm256_xor_si256(acc, t);
+        __m256i small = _mm256_cmpeq_epi32(_mm256_srli_epi32(v, 8), _mm256_setzero_si256());
+        __m256i tbl = _mm256_i32gather_epi32((const int*)R,
+                        _mm256_and_si256(v, _mm256_set1_epi32(255)), 4);
+        __m256i x = v;                                   /* mix32, vectorised */
+        x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 16));
+        x = _mm256_mullo_epi32(x, _mm256_set1_epi32((int)0x85ebca6bU));
+        x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 13));
+        x = _mm256_mullo_epi32(x, _mm256_set1_epi32((int)0xc2b2ae35U));
+        x = _mm256_xor_si256(x, _mm256_srli_epi32(x, 16));
+        __m256i g = _mm256_blendv_epi8(x, tbl, small);
+        __m256i pos = _mm256_sub_epi32(_mm256_set1_epi32((int)(n - 1 - i)), lane);
+        __m256i r = _mm256_and_si256(_mm256_mullo_epi32(pos, _mm256_set1_epi32(13)), c31);
+        acc = _mm256_xor_si256(acc,
+                _mm256_or_si256(_mm256_sllv_epi32(g, r),
+                                _mm256_srlv_epi32(g, _mm256_and_si256(_mm256_sub_epi32(c32, r), c31))));
     }
-
-    // horizontal XOR of the vector
-    UWORD tmp[8];
-    _mm256_storeu_si256((__m256i*)tmp, acc);
-
-    UWORD h = tmp[0] ^ tmp[1] ^ tmp[2] ^ tmp[3] ^
-                 tmp[4] ^ tmp[5] ^ tmp[6] ^ tmp[7];
-
-    // tail elements
+    _mm256_storeu_si256((__m256i*)buf, acc);
+    for (j = 0; j < 8; ++j) h ^= buf[j];
     for (; i < n; i++)
-        h ^= hash_uint32(arr[i]);
-
-    return hash_uint32(h);
+        h ^= pf_rotl32(hash_uint32((UWORD)arr[i]), (unsigned)((13 * (n - 1 - i)) & 31));
+    return mix32(h);
 }
 #endif
 #endif
@@ -1809,10 +1842,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 #elif defined __AVX2__
 				term_hash = hash_list32_avx2(start, end - start);
 #else
-				while( start < end ) {
-					UWORD w = (UWORD)(*start++);
-        			term_hash ^= hash_uint32(w);
-				}
+				term_hash = hash_list_scalar(start, (WORD)(end - start));
 #endif
 				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
