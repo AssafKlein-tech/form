@@ -1593,7 +1593,11 @@ int PF_EndSort(void)
 		WORD cpart = (WORD)(cpu%1000);
 		cpart /= 10;
 		WORD rpart = cpu / 1000;
+#ifdef PF_PROFILE
 		MesPrint("[%d] PF_EndSort: All slaves started endsort Time: %7l.%2i", PF.me, rpart, cpart);
+#else
+		(void)rpart; (void)cpart;
+#endif
 	}
 
 	/* Partitioned output: the mergers wrote their merged streams to node-local
@@ -3009,7 +3013,8 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			return(-1);
 		}
 		term[3] = i;
-		MesPrint("We have %d mappers and %d reducers", PF.nummappers, PF.numreducers);
+		if ( AC.sMRflag != NO_MAPREDUCE )
+			MesPrint("We have %d mappers and %d reducers", PF.nummappers, PF.numreducers);
 		if ( AR.outtohide ) {
 			SeekScratch(AR.hidefile,&position);
 			e->onfile = position;
