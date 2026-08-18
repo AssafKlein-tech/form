@@ -855,6 +855,46 @@ int DoExecute(WORD par, WORD skip)
 	 * Turn on AS.printflag to print runtime errors occurring on slaves.
 	 */
 	AS.printflag = 1;
+	/* -------------------------------------------------------------------------
+	   MR chain state (sMRflag) for THIS module, from two facts:
+
+	     (a) prev_partitioned -- is the expression currently scattered across the
+	         node-local merger files?  Set in PF_Processor to reflect what the most
+	         recently PROCESSED module ACTUALLY did, so a MR-flagged `.sort` that
+	         processes no expression (never calls PF_Processor) can't falsely
+	         advance the chain -- the empty-module trap that deadlocked the first
+	         real MAPREDUCE module.
+
+	     (b) gather_here -- must the chain RE-GLOBALIZE (gather to the master) at
+	         this module?  Exactly three triggers, all folded into one flag:
+	           1. `.sort(gather)`  -- the user marks this MR module to stream its
+	                                  output to the master (AC.mMRgather).
+	           2. `.end`           -- a partitioned chain reaching the program end
+	                                  must be globally merged (par==ENDMODULE forces
+	                                  mMRflag=NO_MAPREDUCE just above).
+	           3. fallback         -- any non-MR module (serial OR classic-parallel)
+	                                  after a partitioned chain needs one global
+	                                  input; auto-gather for the user who didn't
+	                                  write `.sort(gather)` (mMRflag==NO_MAPREDUCE).
+
+	   gather_here  + partitioned -> MAPREDUCE_LAST  (partitioned in, GLOBAL out)
+	   gather_here  + global      -> NO_MAPREDUCE    (nothing partitioned; classic)
+	   MR module    + partitioned -> MAPREDUCE       (partitioned in, partitioned out)
+	   MR module    + global      -> MAPREDUCE_FIRST (master distributes, part. out)
+
+	   MAPREDUCE_LAST is thus the single gather state. Whether it runs the parallel
+	   mapper phase (`.sort(gather)`, mparallelflag==PARALLELFLAG) or only the
+	   master-side file merge (off-parallel exit) is decided downstream in
+	   PF_Processor by mparallelflag -- not here. */
+	if ( par == ENDMODULE ) AC.mMRflag = NO_MAPREDUCE;
+	{
+		int gather_here = ( AC.mMRflag == NO_MAPREDUCE ) || AC.mMRgather;
+		AC.mMRgather = 0;   /* per-module directive, consumed here */
+		if ( gather_here )
+			AC.sMRflag = PF.prev_partitioned ? MAPREDUCE_LAST : NO_MAPREDUCE;
+		else
+			AC.sMRflag = PF.prev_partitioned ? MAPREDUCE : MAPREDUCE_FIRST;
+	}
 #endif
 	if ( AP.preError == 0 && ( Processor() || WriteAll() ) ) RetCode = -1;
 #ifdef WITHMPI

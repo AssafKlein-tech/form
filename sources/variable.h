@@ -65,6 +65,13 @@ extern FIXEDSET fixedsets[];
 
 extern char *setupfilename;
 
+#ifdef WITHMPI
+extern WORD pf_compare_kcap;   /* if >0, Compare1 caps its symbolic walk at this many words */
+#ifdef WITHZLIB
+extern int   PF_bc_compress_now;  /* set by PF_EndSort: compress this expression's blocks? */
+#endif
+#endif
+
 EXTERNLOCK(ErrorMessageLock)
 EXTERNLOCK(FileReadLock)
 EXTERNLOCK(dummylock)

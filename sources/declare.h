@@ -724,6 +724,9 @@ extern void   PutInVflags(WORD);
 extern int    TestMatch(PHEAD WORD *,WORD *);
 extern WORD   TestSub(PHEAD WORD *,WORD);
 extern LONG   TimeCPU(WORD);
+#if defined(WITHMPI) && defined(PF_PROFILE)
+extern LONG   TimeElapsed(WORD);
+#endif
 extern LONG   TimeChildren(WORD);
 extern LONG   TimeWallClock(WORD);
 extern LONG   Timer(int);
@@ -834,6 +837,9 @@ extern LONG   ReadFile(int,UBYTE *,LONG);
 extern LONG   ReadPosFile(PHEAD FILEHANDLE *,UBYTE *,LONG,POSITION *);
 extern LONG   WriteFileToFile(int,UBYTE *,LONG);
 extern void   SeekFile(int,POSITION *,int);
+#if defined(WITHMPI) && defined(WITHZLIB)
+extern void   PF_BcTrack(FILEHANDLE *);    /* MR scratch block compression */
+#endif
 extern LONG   TellFile(int);
 extern void   FlushFile(int);
 extern int    GetPosFile(int,fpos_t *);

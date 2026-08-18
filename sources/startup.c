@@ -284,6 +284,7 @@ int DoTail(int argc, UBYTE **argv)
 	int errorflag = 0, onlyversion = 1;
 	UBYTE *s, *t, *copy;
 	int threadnum = 0;
+	int percentage = 0;
 	argc--; argv++;
 	AM.ClearStore = 0;
 	AM.TimeLimit = 0;
@@ -425,6 +426,22 @@ int DoTail(int argc, UBYTE **argv)
 					break;
 				case 'q': /* Quiet option. Only output. Same as -si */
 							AM.silent = 1; break;
+				case 'r':/* Read percentage of reducers */
+							t = s++;
+							percentage = 0;
+							while ( *s >= '0' && *s <= '9' )
+								percentage = 10*percentage + *s++ - '0';
+							if ( *s ) {
+#ifdef WITHMPI
+								if ( PF.me == MASTER )
+#endif
+								printf("Illegal value for option r: %s\n",t);
+								errorflag++;
+							}
+/*							if ( threadnum == 1 ) threadnum = 0; */
+							percentage++;
+							break;
+
 				case 'R': /* recover from saved snapshot */
 							AC.CheckpointFlag = -1;
 							break;
@@ -522,6 +539,15 @@ IllegalOption:
 			errorflag++;
 		}
 	}
+#ifdef WITHMPI
+	if ( threadnum > 0 && threadnum != PF.numtasks ) {
+		if ( PF.me == MASTER )
+			printf("The number of workers specified (%d) does not match the number of MPI tasks (%d)\n",
+				threadnum-1,PF.numtasks-1);
+		errorflag++;
+	}
+#endif
+	AM.Prepercentage = percentage;
 	AM.totalnumberofthreads = threadnum;
 	if ( AM.InputFileName ) {
 		if ( AM.FromStdin ) {
@@ -1006,6 +1032,7 @@ void StartVariables(void)
 	AC.cbufList.num = 0;
 	AM.hparallelflag = AM.gparallelflag =
 	AC.parallelflag = AC.mparallelflag = PARALLELFLAG;
+	AC.MRflag = AC.mMRflag = AC.sMRflag = NO_MAPREDUCE;
 #ifdef WITHMPI
 	if ( PF.numtasks < 2 ) AM.hparallelflag |= NOPARALLEL_NPROC;
 #endif

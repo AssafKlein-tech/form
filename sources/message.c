@@ -801,7 +801,11 @@ void HighWarning(char *s)
 
 int MesCall(char *s)
 {
+#ifdef WITHMPI
+	return(MesPrint((char *)"[%d] Called from %s",PF.me,s));
+#else
 	return(MesPrint((char *)"Called from %s",s));
+#endif
 }
 
 /*

@@ -35,6 +35,15 @@
 */
 
 #include "form3.h"
+#include "pf_profile.h"
+
+#ifdef PF_PROFILE
+/* Per-translation-unit state for Generator-side instrumentation counters.
+   ParFORM is single-threaded per rank, so a file-static int is safe here.
+   Resets implicitly via pf_profile_reset_module(); the counter itself lives
+   in pf_extras[]. */
+static WORD s_pf_prev_testsub_replac = -32768;
+#endif
 
 WORD printscratch[2];
 
@@ -367,6 +376,7 @@ commonread:;
 				else
 #endif
 				{
+					curfile = AR.infile;   /* MR off-parallel gather may have swapped AR.infile/outfile inside PF_Processor */
 					NewSort(BHEAD0);
 					AR.MaxDum = AM.IndDum;
 					AN.ninterms = 0;
@@ -3267,8 +3277,21 @@ int Generator(PHEAD WORD *term, WORD level)
 	oldcpointer = CC->Pointer - CC->Buffer;
 	oldatoprhs = CCC->numrhs;
 	oldacpointer = CCC->Pointer - CCC->Buffer;
+	/* Per-term Generator entry counter -- denominator for all per-term ratios
+	   computed in viz (norm-changed share, testsub-prev-rule hit rate, etc.). */
+	PF_TIMER_INC(PF_EX_MAP_TERMS_IN);
 ReStart:
-	if ( ( replac = TestSub(BHEAD term,level) ) == 0 ) {
+	{
+		PF_TIMER_BEGIN(MAP_TESTSUB);
+		replac = TestSub(BHEAD term,level);
+		PF_TIMER_END(MAP_TESTSUB);
+	}
+#ifdef PF_PROFILE
+	if ( replac == 0 ) PF_TIMER_INC(PF_EX_MAP_TESTSUB_NO_MATCH);
+	if ( replac == s_pf_prev_testsub_replac ) PF_TIMER_INC(PF_EX_MAP_TESTSUB_PREV_RULE_HIT);
+	s_pf_prev_testsub_replac = replac;
+#endif
+	if ( replac == 0 ) {
 		if ( applyflag ) { TableReset(); applyflag = 0; }
 /*
 		if ( AN.PolyNormFlag > 1 ) {
@@ -3280,8 +3303,15 @@ ReStart:
 Renormalize:
 		AN.PolyNormFlag = 0;
 		AN.idfunctionflag = 0;
-		if ( ( ret = Normalize(BHEAD term) ) != 0 ) {
+		PF_TIMER_INC(PF_EX_MAP_NORM_CLEAN_IN); /* counts Normalize entries; denominator for NORM_CHANGED ratio (candidate 2b) */
+		{
+			PF_TIMER_BEGIN(MAP_NORMALIZE);
+			ret = Normalize(BHEAD term);
+			PF_TIMER_END(MAP_NORMALIZE);
+		}
+		if ( ret != 0 ) {
 			if ( ret > 0 ) {
+				PF_TIMER_INC(PF_EX_MAP_NORM_CHANGED); /* Normalize requested ReStart -- term was modified */
 				if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
 				goto ReStart;
 			}
@@ -3292,13 +3322,21 @@ Renormalize:
 
 		if ( AN.PolyNormFlag ) {
 			if ( AN.PolyFunTodo == 0 ) {
-				if ( PolyFunMul(BHEAD term) < 0 ) goto GenCall;
+				int _pf_pfm_ret;
+				PF_TIMER_BEGIN(MAP_POLYFUNMUL);
+				_pf_pfm_ret = PolyFunMul(BHEAD term);
+				PF_TIMER_END(MAP_POLYFUNMUL);
+				if ( _pf_pfm_ret < 0 ) goto GenCall;
 				if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
 			}
 			else {
 				WORD oldPolyFunExp = AR.PolyFunExp;
+				int _pf_pfm_ret;
 				AR.PolyFunExp = 0;
-				if ( PolyFunMul(BHEAD term) < 0 ) goto GenCall;
+				PF_TIMER_BEGIN(MAP_POLYFUNMUL);
+				_pf_pfm_ret = PolyFunMul(BHEAD term);
+				PF_TIMER_END(MAP_POLYFUNMUL);
+				if ( _pf_pfm_ret < 0 ) goto GenCall;
 				AT.WorkPointer = term+*term;
 				AR.PolyFunExp = oldPolyFunExp;
 				if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
@@ -3306,7 +3344,10 @@ Renormalize:
 				if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
 				AT.WorkPointer = term+*term;
 				if ( AN.PolyNormFlag ) {
-					if ( PolyFunMul(BHEAD term) < 0 ) goto GenCall;
+					PF_TIMER_BEGIN(MAP_POLYFUNMUL);
+					_pf_pfm_ret = PolyFunMul(BHEAD term);
+					PF_TIMER_END(MAP_POLYFUNMUL);
+					if ( _pf_pfm_ret < 0 ) goto GenCall;
 					if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
 					AT.WorkPointer = term+*term;
 				}
@@ -3314,7 +3355,11 @@ Renormalize:
 			}
 		}
 		if ( idfunctionflag > 0 ) {
-			if ( TakeIDfunction(BHEAD term) ) {
+			int _pf_tk_ret;
+			PF_TIMER_BEGIN(MAP_TAKEIDFUNCTION);
+			_pf_tk_ret = TakeIDfunction(BHEAD term);
+			PF_TIMER_END(MAP_TAKEIDFUNCTION);
+			if ( _pf_tk_ret ) {
 				AT.WorkPointer = term + *term;
 				goto ReStart;
 			}
@@ -3351,19 +3396,35 @@ SkipCount:	level++;
 					if ( olddummies > AR.MaxDum ) AR.MaxDum = olddummies;
 				}
 				if ( AR.PolyFun > 0 && ( AR.sLevel <= 0 || AN.FunSorts[AR.sLevel]->PolyFlag > 0 ) ) {
-					if ( PrepPoly(BHEAD term,0) != 0 ) goto Return0;
+					int _pf_pp_ret;
+					PF_TIMER_BEGIN(MAP_PREPPOLY);
+					_pf_pp_ret = PrepPoly(BHEAD term,0);
+					PF_TIMER_END(MAP_PREPPOLY);
+					if ( _pf_pp_ret != 0 ) goto Return0;
 				}
 				else if ( AR.PolyFun > 0 ) {
-					if ( PrepPoly(BHEAD term,1) != 0 ) goto Return0;
+					int _pf_pp_ret;
+					PF_TIMER_BEGIN(MAP_PREPPOLY);
+					_pf_pp_ret = PrepPoly(BHEAD term,1);
+					PF_TIMER_END(MAP_PREPPOLY);
+					if ( _pf_pp_ret != 0 ) goto Return0;
 				}
 				if ( AR.sLevel <= 0 && AR.BracketOn ) {
+					int _pf_pb_ret;
 					if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
 					termout = AT.WorkPointer;
 					if ( AT.WorkPointer + *term + 3 > AT.WorkTop ) goto OverWork;
-					if ( PutBracket(BHEAD term) ) return(-1);
+					PF_TIMER_BEGIN(MAP_PUTBRACKET);
+					_pf_pb_ret = PutBracket(BHEAD term);
+					PF_TIMER_END(MAP_PUTBRACKET);
+					if ( _pf_pb_ret ) return(-1);
 					AN.RepPoint = RepSto;
 					*AT.WorkPointer = 0;
-					ret = StoreTerm(BHEAD termout);
+					{
+						PF_TIMER_BEGIN(MAP_STORETERM);
+						ret = StoreTerm(BHEAD termout);
+						PF_TIMER_END(MAP_STORETERM);
+					}
 					AT.WorkPointer = termout;
 					CC->numrhs = oldtoprhs;
 					CC->Pointer = CC->Buffer + oldcpointer;
@@ -3376,7 +3437,11 @@ SkipCount:	level++;
 					if ( AT.WorkPointer >= AT.WorkTop ) goto OverWork;
 					*AT.WorkPointer = 0;
 					AN.RepPoint = RepSto;
-					ret = StoreTerm(BHEAD term);
+					{
+						PF_TIMER_BEGIN(MAP_STORETERM);
+						ret = StoreTerm(BHEAD term);
+						PF_TIMER_END(MAP_STORETERM);
+					}
 					CC->numrhs = oldtoprhs;
 					CC->Pointer = CC->Buffer + oldcpointer;
 					CCC->numrhs = oldatoprhs;
@@ -3994,10 +4059,19 @@ CommonEnd:
 			#] Special action : 
 */
 			}
-		} while ( ( i = TestMatch(BHEAD term,&level) ) == 0 );
+			{
+				PF_TIMER_BEGIN(MAP_TESTMATCH);
+				i = TestMatch(BHEAD term,&level);
+				PF_TIMER_END(MAP_TESTMATCH);
+			}
+		} while ( i == 0 );
 		if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
-		if ( i > 0 ) replac = TestSub(BHEAD term,level);
-		else replac = i;
+		{
+			PF_TIMER_BEGIN(MAP_TESTSUB_POSTMATCH);
+			if ( i > 0 ) replac = TestSub(BHEAD term,level);
+			else replac = i;
+			PF_TIMER_END(MAP_TESTSUB_POSTMATCH);
+		}
 		if ( replac >= 0 || AT.TMout[1] != SYMMETRIZE ) {
 			*AN.RepPoint = 1;
 			AR.expchanged = 1;

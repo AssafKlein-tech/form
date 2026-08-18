@@ -93,6 +93,8 @@ SETUPPARAMETERS setupparameters[] =
 	,{(UBYTE *)"path",                       PATHVALUE, 0, (LONG)curdirp}
 	,{(UBYTE *)"procedureextension",       STRINGVALUE, 0, (LONG)procedureextension}
 	,{(UBYTE *)"processbucketsize",     NUMERICALVALUE, 0, (LONG)DEFAULTPROCESSBUCKETSIZE}
+	,{(UBYTE *)"reducerlargesize",      NUMERICALVALUE, 0, (LONG)0}
+	,{(UBYTE *)"reducerpercent",        NUMERICALVALUE, 0, (LONG)DEFAULTREDUCERPERCENT}
 	,{(UBYTE *)"resettimeonclear",          ONOFFVALUE, 0, (LONG)1}
 	,{(UBYTE *)"scratchsize",           NUMERICALVALUE, 0, (LONG)SCRATCHSIZE}
 	,{(UBYTE *)"shmwinsize",            NUMERICALVALUE, 0, (LONG)SHMWINSIZE}
@@ -567,6 +569,57 @@ int AllocSetups(void)
 	sp = GetSetupPar((UBYTE *)"sortiosize");
 	IOsize = sp->value;
 	if ( IOsize < AM.MaxTer ) { IOsize = AM.MaxTer; sp->value = IOsize; }
+#ifdef WITHMPI
+	/* Shuffle-buffer arena: ALL ranks must agree on the sbuf/rbuf slot size so
+	   sender flush <= receiver Irecv capacity. The agreed value is the MAPPER
+	   arena, and it is taken from the LIVE AllocSort arena AFTER the allocation
+	   below -- NOT from the raw (LargeSize+SmallEsize) form.set values. AllocSort
+	   floors small buffers up (SmallSize>=16*MaxTer, SmallEsize>=1.5*SmallSize,
+	   LargeSize>=2*SmallSize, +MaxFpatches floor), so the raw values underestimate
+	   the real arena `sTop2-lBuffer` whenever a buffer trips a floor. That
+	   underestimate made the receiver slot smaller than the live-arena-sized
+	   sender chunk and truncated cross-rank transfers on small buffers (the smoke
+	   test). Here we only stash the mapper largesize, before the per-role reducer
+	   override below changes it; PF.shuffle_arena_words is computed after AllocSort. */
+	LONG pf_mapper_largesize = LargeSize;
+	/* Per-role lBuffer: reducer ranks read `reducerlargesize` when set (>0),
+	   else fall back to the mapper `largesize` above. Role is derived the same
+	   way as parallel.c:2118-2122 (PF.me >= numtasks-numreducers).
+	   NOTE: AM.ReducerPer is assigned further down in this function (line ~770),
+	   AFTER AllocSort runs above. Use AM.Prepercentage (set by DoTail from -r
+	   in startup.c) instead -- that's what AM.ReducerPer gets clamped to.
+	   Fallback: form.set `reducerpercent` -> default 50.
+	   smallsize / smallextension are NOT decoupled per role: the reducer never
+	   stores terms in sBuffer (PF_StoreBuffer memcpy's straight to lBuffer; the
+	   sTerms=0 reducer-EndSort skips the small-buffer path), and the shuffle
+	   arena is anchored at the mapper values via PF.shuffle_arena_words
+	   (parallel.c:476/:2816/:3056), so growing smallext on the reducer would be
+	   pure RAM waste. */
+	{
+		/* Gate strictly on -r<N> (AM.Prepercentage>0). Without -r the run is
+		   non-MR -- every rank is a plain slave, none is a reducer -- so the
+		   override must NOT fire, otherwise a non-MR run that happens to read a
+		   form.set containing `reducerlargesize` would wrongly enlarge ~half its
+		   ranks (the reducerpercent default is 50). We deliberately do NOT honor
+		   the reducerpercent form.set fallback here: real MR runs always pass
+		   -r<N> (CLAUDE.md: "activated at runtime with -r<N>"); a reducerpercent-
+		   only MR run simply inherits the mapper largesize (safe degradation). */
+		int rpercent = AM.Prepercentage;
+		if ( rpercent > 0 && rpercent < 50 && PF.me != MASTER ) {
+			int nr = (PF.numtasks - 1) * rpercent / 100;
+			if ( nr < 2 ) nr = 2;
+			int nm = PF.numtasks - nr;
+			if ( PF.me >= nm ) {
+				SETUPPARAMETERS *sp2 = GetSetupPar((UBYTE *)"reducerlargesize");
+				if ( sp2 && sp2->value > 0 ) {
+					LargeSize = sp2->value;
+					if ( PF.me == nm )
+						MesPrint("[reducer] reducerlargesize -> %l bytes", LargeSize);
+				}
+			}
+		}
+	}
+#endif
 #ifndef WITHPTHREADS
 #ifdef WITHZLIB
 	for ( j = 0; j < 2; j++ ) { AR.Fscr[j].ziosize = IOsize; }
@@ -575,6 +628,17 @@ int AllocSetups(void)
 	AM.S0 = 0;
 	AM.S0 = AllocSort(LargeSize,SmallSize,SmallEsize,TermsInSmall
 					,MaxPatches,MaxFpatches,IOsize,0);
+#ifdef WITHMPI
+	/* shuffle arena = LIVE mapper arena from AllocSort: sTop2-lBuffer equals
+	   sort->LargeSize + sort->SmallEsize in WORDs, i.e. the floored/adjusted
+	   values actually allocated (see the stash of pf_mapper_largesize above). On
+	   reducer ranks AM.S0 was sized with the larger reducerlargesize, so subtract
+	   that delta to recover the MAPPER arena every rank must agree on. The delta
+	   is 0 on every non-reducer rank and whenever no -r override fired, so this
+	   reduces exactly to the live arena -- the original (pre-decouple) behavior. */
+	PF.shuffle_arena_words = (LONG)(AM.S0->sTop2 - AM.S0->lBuffer)
+		- ((LONG)LargeSize - pf_mapper_largesize)/(LONG)sizeof(WORD);
+#endif
 	/* AM.S0->file.ziosize was already set to a (larger) value by AllocSort, here it is re-set. */
 #ifdef WITHZLIB
 	AM.S0->file.ziosize = IOsize;
@@ -732,6 +796,12 @@ int AllocSetups(void)
 	AM.SizeStoreCache = sp->value;
 	/* Make sure this is a multiple of sizeof(WORD). */
 	AM.SizeStoreCache = ((AM.SizeStoreCache+sizeof(WORD)-1)/sizeof(WORD))*sizeof(WORD);
+#ifdef WITHMPI
+	sp = GetSetupPar((UBYTE *)"reducerpercent");
+	AM.ReducerPer = sp->value;
+	if (AM.Prepercentage) AM.ReducerPer = AM.Prepercentage;
+	if (AM.ReducerPer < 0 || AM.ReducerPer >= 50 ) AM.ReducerPer = 50;
+#endif
 #ifndef WITHPTHREADS
 /*
 	Install the store caches (15-aug-2006 JV)

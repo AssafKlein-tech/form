@@ -55,6 +55,18 @@
 #define PF_OPT_HORNER_MSGTAG    71  /* master <-> slave: optimization */
 #define PF_OPT_COLLECT_MSGTAG   72  /* slave -> master: optimization */
 #define PF_MISC_MSGTAG         100
+#define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
+#define PF_ENDSHUFFLE_MSGTAG   111  /* same as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
+#define PF_ENDSHUFFLEALL_MSGTAG   112  /* Indicates the end of all shuffling operations*/
+#define PF_MERGERDONE_MSGTAG      113  /* merger -> master: partitioned-output module done; carries {counter, size} */
+/* Work-stealing load balancer (PF_STEAL). The master steers idle mappers; it
+   never sends work-control to a merger, so no master<->merger blocking cycle
+   exists (every message below is one-way into a poll loop or a reply to a
+   waiter). Mapper termination reuses the standard PF_ENDSORT path. */
+#define PF_ASSIGN_MSGTAG          114  /* master -> idle mapper: attach to the merger rank carried in the payload (a steer; the work itself still comes from that merger) */
+#define PF_MERGER_EXHAUSTED_MSGTAG 115 /* merger -> mapper: my input file is drained; go back to the master to be steered elsewhere */
+#define PF_MERGER_PROGRESS_MSGTAG 116  /* merger -> master: terms_left estimate (>=0), or -1 = FINISHED (drop me from the live set) */
+#define PF_STEAL_STOP_MSGTAG      117  /* master -> merger: all plain mappers are done; leave the responder phase and go to endsort */
 
 /*
  * A macro for checking the version of gcc.
@@ -164,23 +176,54 @@ typedef struct {
   	#] s/r-bufs : 
   	#[ global variables used by the PF_functions : need to be known everywhere
 */
+typedef struct {
+    MPI_Request *reqs;  // flat array of persistent requests
+} PF_Dispatch;
 
 typedef struct ParallelVars {
 	FILEHANDLE  slavebuf;       /* (slave) allocated if there are RHS expressions */
 	/* special buffers for nonblocking, unbuffered send/receives */
-	PF_BUFFER  *sbuf;           /* set of cyclic send buffers for master _and_ slave */
+	PF_BUFFER **sbufs;           /* set of cyclic send buffers for master _and_ slave */
 	PF_BUFFER **rbufs;          /* array of sets of cyclic receive buffers for master */
 	int         me;             /* Internal number of task: master is 0 */
 	int         numtasks;       /* total number of tasks */
 	int         parallel;       /* flags telling the master and slaves to do the sorting parallel */
 	                            /* [05nov2003 mt] This flag must be set to 0 in iniModule! */
+	int 		nummappers;		/* number of mappers*/
+	int 		numreducers;	/* number of reducers*/
+	int         nummergers;     /* number of mapper-mergers (0 = no merger tier). Set from PF_MERGERS env, broadcast in PF_Init. */
+	int         is_merger;      /* derived per PF_Processor call: true on ranks 1..nummergers when nummergers > 0 */
+	int         merger_parent;  /* derived per PF_Processor call: on a leaf reducer this is the destination merger rank (1..nummergers), else MASTER */
+	int         merger_groupsz; /* derived per PF_Processor call on merger ranks only: # of leaf reducers feeding THIS merger */
+	int        *merger_leaf_ranks; /* merger-only: rank-list of group leaves (length merger_groupsz). Lazily allocated. */
+	int         in_merger_phase; /* set inside PF_MergerLoop: gates FlushOut routing (sort.c:2206) so merger sends to MASTER, not to reducers. */
+	int         numnodes;        /* number of physical (shared-memory) nodes; discovered once in PF_LibInit. */
+	int         node_id;         /* this rank's node, 0..numnodes-1; discovered once in PF_LibInit. */
+	int        *rank_node;       /* global rank -> node_id map (length numtasks); allocated once in PF_LibInit, NULL if discovery failed. */
+	int        *merger_child_ranks; /* master-only: [0]=MASTER sentinel, [1..nummergers]=merger global ranks ascending. Built in PF_Processor; used by pf_loser_src_to_rank. */
+	FILEHANDLE *merger_outfile;  /* merger-only: node-local scratch this module writes its merged stream to when output is partitioned. Lazily allocated; swapped with merger_infile each module like AR.infile/outfile. */
+	FILEHANDLE *merger_infile;   /* merger-only: node-local scratch the merger distributes from when input is partitioned (previous module's output). */
+	int         merger_to_file;  /* set alongside in_merger_phase: 1 => PF_MergerLoop writes to merger_outfile (partitioned), 0 => forwards upstream to MASTER (LAST gather). */
+	int         input_src;       /* per-module, per-rank: where a mapper requests input term buckets. = node-merger when input is partitioned (sMRflag in {MAPREDUCE,LAST}), else MASTER. */
+	int         in_gather;       /* set during the off-parallel-exit gather (pf_master_gather): master merges the G merger files into one global scratch WITHOUT the mapper-phase barrier (PF_WaitAllSlaves) -- the mappers are idle, only the mergers stream. */
+	LONG       *merger_total_terms; /* master-only: per-merger count of TERMS each merger wrote to its node-local partitioned file (reported via PF_MERGERDONE_MSGTAG). Equals that merger's input-term count for the next module, and seeds the PF_STEAL load balancer's terms_left[]/live[]. Length nummergers, lazily allocated. */
+	int         prev_partitioned; /* 1 iff the most recently PROCESSED module wrote its output to partitioned merger files (pf_output_partitioned at PF_Processor time). Set in PF_Processor on every rank; read by the sMRflag transition (execute.c) to decide partitioned-input vs master-distributed FIRST. A module that processes no expression (no PF_Processor call) leaves it unchanged -- so a MR-flagged but empty .sort does NOT falsely advance the chain. */
+	PF_BUFFER  *distbuf;         /* merger-only: dedicated per-mapper distribution buffer used by PF_MergerDistribute (node-local input handoff). Separate from the shuffle/forward sbufs the same rank reuses. Lazily allocated. */
+	int         steal;           /* work-stealing load balancer (Step 2) on/off, from PF_STEAL env (default 0 = node-local only). Broadcast in PF_Init. When a node's merger drains it redirects its idle mappers to the master broker to steal node-remote buckets from a still-busy merger. */
 	int         rhsInParallel;  /* flag for parallel executing even if there are RHS expressions */
 	int         mkSlaveInfile;  /* flag tells that slavebuf is used on the slaves */
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
-	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbuf->numbufs) */
+	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
+	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
+	LONG        shuffle_arena_words; /* mapper-config sort buffer arena in WORDs = (mapper-largesize + mapper-smallextension)/sizeof(WORD).
+	                                    Set once in setfile.c::RecalcSetups BEFORE the per-role reducer override, so it's the SAME value
+	                                    on every rank. All three shuffle-buffer formula sites (PF_InitTree:473, PF_ReducerInit:2812,
+	                                    PF_allocateSbuf:3046) use this instead of the LOCAL arena (AT.SS->sTop2-AT.SS->lBuffer), so
+	                                    sender and receiver always agree on the slot size -- prevents MPI_ERR_TRUNCATE when the
+	                                    reducer* form.set overrides grow the reducer's local arena beyond the mapper's. */
 } PARALLELVARS;
 
 extern PARALLELVARS PF;
@@ -195,11 +238,14 @@ extern LONG PF_maxDollarChunkSize;
 */
 
 /* mpi.c */
+extern int    PF_GetDestReducer();
 extern int    PF_ISendSbuf(int,int);
+extern int    PF_WISendSbuf(int , int);
 extern int    PF_Bcast(void *buffer, int count);
 extern int    PF_RawSend(int,void *,LONG,int);
 extern LONG   PF_RawRecv(int *,void *,LONG,int *);
 
+extern int 	  PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size);
 extern int    PF_PreparePack(void);
 extern int    PF_Pack(const void *buffer, size_t count, MPI_Datatype type);
 extern int    PF_Unpack(void *buffer, size_t count, MPI_Datatype type);
@@ -233,6 +279,13 @@ static inline size_t sizeof_datatype(MPI_Datatype type)
 #define PF_LongMultiUnpack(buffer, count, type) PF_LongMultiUnpackImpl(buffer, count, sizeof_datatype(type), type)
 
 /* parallel.c */
+extern LONG PF_allocateSbuf(void);
+extern int PF_allocatePFTerm(int numtasks);
+extern LONG    PF_ForwardTermsToMaster(void);
+extern LONG    PF_MergerLoop(void);
+extern void    PF_ReceiveErrorMessage(int src, int tag);
+extern void   PF_SetupFlatRequestsView(void);
+extern int 	  PF_ReducerInit(void);
 extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);
@@ -259,9 +312,10 @@ extern void   PF_MLock(void);
 extern void   PF_MUnlock(void);
 extern LONG   PF_WriteFileToFile(int,UBYTE *,LONG);
 extern void   PF_FlushStdOutBuffer(void);
+extern int    PF_shuffle_nocompress;  /* env PF_SHUFFLE_NOCOMPRESS toggle for the per-reducer delta-compression path in PutOut/lowmr_sort */
 
 /*
-  	#] Function prototypes : 
+  	#] Function prototypes :
 */
 
 #endif
