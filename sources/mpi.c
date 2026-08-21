@@ -88,14 +88,14 @@ static int PF_longPackInit(void);      /*:[12oct2005 mt]*/
  *
  * @param  err  The return value of a MPI function to be checked.
  *
- * @remark  The MPI standard defines MPI_SUCCESS == 0. Then (_tmp_err == 0) appears
+ * @remark  The MPI standard defines MPI_SUCCESS == 0. Then (tmperr == 0) appears
  *          twice and we can expect the second evaluation will be eliminated by
  *          the compiler optimization.
  */
 #define MPI_ERRCODE_CHECK(err) \
 	do { \
-		int _tmp_err = (err); \
-		if ( _tmp_err != MPI_SUCCESS ) return _tmp_err != 0 ? _tmp_err : -1; \
+		int tmperr = (err); \
+		if ( tmperr != MPI_SUCCESS ) return tmperr != 0 ? tmperr : -1; \
 	} while (0)
 
 /*
@@ -340,13 +340,13 @@ int PF_Probe(int *src)
  */
 int PF_WISendSbuf(int tag, int dest)
 {
-    if (AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase) //to Master
+    if ( AC.sMRflag == NO_MAPREDUCE || PF.me >= PF.nummappers || PF.in_merger_phase ) /* to Master */
        {return PF_ISendSbuf(dest, tag);}
-	//reset the compress buffer for the next buffer
+/* reset the compress buffer for the next buffer */
 	AR.CompressPointers[dest] = AR.CompressBuffers[dest];
 	AR.CompressBuffers[dest][0] = 0;
-	if (tag == PF_BUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
-	else if ( tag == PF_ENDBUFFER_MSGTAG) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
+	if ( tag == PF_BUFFER_MSGTAG ) return PF_ISendSbuf(dest, PF_SHUFFLE_MSGTAG);
+	else if ( tag == PF_ENDBUFFER_MSGTAG ) return PF_ISendSbuf(dest, PF_ENDSHUFFLE_MSGTAG);
 	return (-1);
 }
 
@@ -376,31 +376,31 @@ int PF_ISendSbuf(int to, int tag)
 	static int finished;
 
 #ifdef PF_PROFILE
-	int _pf_send_phase = -1, _pf_wait_phase = -1, _pf_bytes_idx = -1;
+	int pf_send_phase = -1, pf_wait_phase = -1, pf_bytes_idx = -1;
 	if ( PF.me != MASTER ) {
 		if ( PF.in_merger_phase ) {
 			/* mapper-merger forwarding the merged stream upstream to master.
 			   A merger is a mapper RANK, so this check must precede the
 			   reducer test below (which keys on PF.me >= PF.nummappers). */
-			_pf_send_phase = PF_PHASE_MER_FORWARD_MPI;
-			_pf_wait_phase = PF_PHASE_MER_FORWARD_WAIT;
-			_pf_bytes_idx  = PF_EX_BYTES_MER_TO_MASTER;
+			pf_send_phase = PF_PHASE_MER_FORWARD_MPI;
+			pf_wait_phase = PF_PHASE_MER_FORWARD_WAIT;
+			pf_bytes_idx  = PF_EX_BYTES_MER_TO_MASTER;
 		} else if ( AC.sMRflag != NO_MAPREDUCE && PF.me >= PF.nummappers ) {
 			/* MR reducer forwarding its sorted stream upstream -- to the
 			   master, or to its mapper-merger when the merge tier is active
 			   (`to` is merger_parent then, not MASTER). A reducer's only
 			   PF_ISendSbuf calls are this forward, so no `to` test needed. */
-			_pf_send_phase = PF_PHASE_RED_FORWARD_MPI;
-			_pf_wait_phase = PF_PHASE_RED_FORWARD_WAIT;
-			_pf_bytes_idx  = PF_EX_BYTES_TO_MASTER;
+			pf_send_phase = PF_PHASE_RED_FORWARD_MPI;
+			pf_wait_phase = PF_PHASE_RED_FORWARD_WAIT;
+			pf_bytes_idx  = PF_EX_BYTES_TO_MASTER;
 		} else {
 			/* MR mapper -> reducer, OR non-MR slave -> master.
 			   Both are sender-side primitives ahead of a sort merge, so we
 			   group them under MAP_SEND_* for a clean MR-vs-org comparison
 			   in the visualization. */
-			_pf_send_phase = PF_PHASE_MAP_SEND_MPI;
-			_pf_wait_phase = PF_PHASE_MAP_SEND_WAIT;
-			_pf_bytes_idx  = PF_EX_BYTES_SENT;
+			pf_send_phase = PF_PHASE_MAP_SEND_MPI;
+			pf_wait_phase = PF_PHASE_MAP_SEND_WAIT;
+			pf_bytes_idx  = PF_EX_BYTES_SENT;
 		}
 	}
 	/* MAP_BYTES_SHUFFLED isolates the MR mapper->reducer fan-in from the
@@ -408,14 +408,14 @@ int PF_ISendSbuf(int to, int tag)
 	   Lets the viz compute per-link shuffle bandwidth without subtracting
 	   non-shuffle bytes. Only count when we're an MR mapper and the tag
 	   carries shuffle data. */
-	int _pf_count_shuffle = (PF.me < PF.nummappers && PF.me != MASTER
+	int pf_count_shuffle = (PF.me < PF.nummappers && PF.me != MASTER
 	                          && !PF.in_merger_phase
 	                          && AC.sMRflag != NO_MAPREDUCE
 	                          && (tag == PF_SHUFFLE_MSGTAG || tag == PF_BUFFER_MSGTAG
 	                              || tag == PF_ENDSHUFFLE_MSGTAG || tag == PF_ENDBUFFER_MSGTAG));
 #endif
 
-	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) { //checks whether the message length is greater than int before converting
+	if ( msg_size < 0 || msg_size > 0x7FFFFFFFL ) { /* checks whether the message length is greater than int before converting */
 		fprintf(stderr,"[%d] PF_ISendSbuf: invalid msg_size %lld (to=%d tag=%d)\n",
 		        PF.me,(long long)msg_size,to,tag);
 		fflush(stderr);
@@ -431,11 +431,11 @@ int PF_ISendSbuf(int to, int tag)
 		   PF_MergerInit and needs no handshake, so suppress it when the sink
 		   is anything other than MASTER. ENDBUFFER closes the run and re-arms
 		   the latch for the next one. */
-		if (stream_announced == 0 && to == MASTER){
+		if ( stream_announced == 0 && to == MASTER ) {
 			PF_Send(MASTER, PF_BUFFER_MSGTAG);
 			stream_announced = 1;
 		}
-		if (tag == PF_ENDBUFFER_MSGTAG) stream_announced = 0;
+		if ( tag == PF_ENDBUFFER_MSGTAG ) stream_announced = 0;
 		r = MPI_Ssend(s->buff[a],size,PF_WORD,to,tag,PF_COMM);
 		if ( r != MPI_SUCCESS ) {
 			fprintf(stderr,"[%d|%d] PF_ISendSbuf: MPI_Ssend returns: %d (to=%d tag=%d)\n",
@@ -448,10 +448,10 @@ int PF_ISendSbuf(int to, int tag)
 
 	switch ( tag ) { /* things to do before sending */
 		case PF_TERM_MSGTAG:
-			if ( s->request[to] != MPI_REQUEST_NULL) {
+			if ( s->request[to] != MPI_REQUEST_NULL ) {
 				PF_TIMER_BEGIN_RT(presend);
 				r = MPI_Wait(&s->request[to],&s->retstat[to]);
-				PF_TIMER_END_RT(presend, _pf_wait_phase);
+				PF_TIMER_END_RT(presend, pf_wait_phase);
 			}
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
@@ -461,10 +461,10 @@ int PF_ISendSbuf(int to, int tag)
 	{
 		PF_TIMER_BEGIN_RT(isend);
 		r = MPI_Isend(s->buff[a],size,PF_WORD,to,tag,PF_COMM,&s->request[a]);
-		PF_TIMER_END_RT(isend, _pf_send_phase);
+		PF_TIMER_END_RT(isend, pf_send_phase);
 #ifdef PF_PROFILE
-		if ( _pf_bytes_idx >= 0 ) pf_extras[_pf_bytes_idx] += (LONG)size * (LONG)sizeof(WORD);
-		if ( _pf_count_shuffle ) pf_extras[PF_EX_MAP_BYTES_SHUFFLED] += (LONG)size * (LONG)sizeof(WORD);
+		if ( pf_bytes_idx >= 0 ) pf_extras[pf_bytes_idx] += (LONG)size * (LONG)sizeof(WORD);
+		if ( pf_count_shuffle ) pf_extras[PF_EX_MAP_BYTES_SHUFFLED] += (LONG)size * (LONG)sizeof(WORD);
 #endif
 	}
 
@@ -478,13 +478,13 @@ int PF_ISendSbuf(int to, int tag)
 			if ( ++finished == PF.nummappers - 1 ) {
 				PF_TIMER_BEGIN_RT(endsort_wait);
 				r = MPI_Waitall(s->numbufs,s->request,s->status);
-				PF_TIMER_END_RT(endsort_wait, _pf_wait_phase);
+				PF_TIMER_END_RT(endsort_wait, pf_wait_phase);
 			}
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		case PF_SHUFFLE_MSGTAG:
 		case PF_BUFFER_MSGTAG:
-		if ( ++s->active >= s->numbufs ) s->active = 0;// update active cyclic buffer
+		if ( ++s->active >= s->numbufs ) s->active = 0;/* update active cyclic buffer */
 		/* Only the new active slot must be free for the next pack; other slots
 		   can complete lazily. MPI_Wait targets the one we need; replaces the
 		   prior MPI_Waitsome loop which spun re-entering until the right slot
@@ -494,18 +494,18 @@ int PF_ISendSbuf(int to, int tag)
 			PF_TIME_ELAPSED(TIMESTART);
 			r = MPI_Wait(&s->request[s->active], &s->retstat[0]);
 			PF_TIME_ELAPSED(TIMESTOP);
-			PF_TIMER_END_RT(buf_wait, _pf_wait_phase);
+			PF_TIMER_END_RT(buf_wait, pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 		}
 		break;
 		case PF_ENDSHUFFLE_MSGTAG:
 		case PF_ENDBUFFER_MSGTAG: {
-			if ( ++s->active >= s->numbufs ) s->active = 0; // update active cyclic buffer
+			if ( ++s->active >= s->numbufs ) s->active = 0; /* update active cyclic buffer */
 			PF_TIMER_BEGIN_RT(endbuf_wait);
 			PF_TIME_ELAPSED(TIMESTART);
 			r = MPI_Waitall(s->numbufs,s->request,s->status);
 			PF_TIME_ELAPSED(TIMESTOP);
-			PF_TIMER_END_RT(endbuf_wait, _pf_wait_phase);
+			PF_TIMER_END_RT(endbuf_wait, pf_wait_phase);
 			if ( r != MPI_SUCCESS ) return(r);
 			break;
 		}
@@ -674,14 +674,14 @@ int PF_WaitAnyRbuf(PF_BUFFER **rbuf, int* src, LONG *size)
 	PF_Dispatch* d = &PF.dispatch;
 	MPI_Status st;
 	int err = MPI_Waitany(PF_totalReq, d->reqs, &idx, &st);
-	if (err != MPI_SUCCESS) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
-	if(idx == MPI_UNDEFINED)  return PF_ENDSHUFFLEALL_MSGTAG;  // all requests are NULL
+	if ( err != MPI_SUCCESS ) { MesPrint("[%d] PF_WaitAnyRbuf: Error %d", PF.me,err);return err; }
+	if ( idx == MPI_UNDEFINED )  return PF_ENDSHUFFLEALL_MSGTAG;  /* all requests are NULL */
 	/* map flat index -> (source, buffer index) */
 	int bn = idx % PF.numrbufs;
-	*src = idx/PF.numrbufs; //which mapper
+	*src = idx/PF.numrbufs; /* which mapper */
 	PF_BUFFER *buf = rbuf[*src];
 	if ( buf->active != bn ) {
-		return(-1); //should not happen
+		return(-1); /* should not happen */
 	}
 	buf->status[bn] = st;
 	buf->request[bn] = MPI_REQUEST_NULL;
@@ -2087,13 +2087,13 @@ void PF_SetupFlatRequestsView()
 {
 	PF_Dispatch* d = &PF.dispatch;
 	PF_totalReq = PF.nummappers * PF.numrbufs;
-	if (!d->reqs)
+	if ( !d->reqs )
 		d->reqs  = (MPI_Request*)Malloc1(sizeof(MPI_Request)*PF_totalReq,  "Reducer: dispatch");
-    if (!d->reqs ) {
+    if ( !d->reqs ) {
 		MesPrint("PF_SetupFlatRequestsView: malloc error");
 		exit(-1);
 	}
-	for (int i=0; i<PF_totalReq; i++) d->reqs[i] = MPI_REQUEST_NULL;
+	for ( int i=0; i<PF_totalReq; i++ ) d->reqs[i] = MPI_REQUEST_NULL;
     return ;
 }
 /*

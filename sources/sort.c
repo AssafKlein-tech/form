@@ -99,11 +99,11 @@ WORD pf_compare_kcap = 0;
 */
 
 #ifdef WITHMPI
-#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if(PF.log){ WORD iii;\
+#define PRINTFBUF(TEXT,TERM,SIZE)  { UBYTE lbuf[24]; if ( PF.log ) { WORD iii;\
   NumToStr(lbuf,AC.CModule); \
   fprintf(stderr,"[%d|%s] %s : ",PF.me,lbuf,(char*)TEXT);\
-  if(TERM){ fprintf(stderr,"[%d] ",(int)(*TERM));\
-    if((SIZE)<500 && (SIZE)>0) for(iii=1;iii<(SIZE);iii++)\
+  if ( TERM ) { fprintf(stderr,"[%d] ",(int)(*TERM));\
+    if ( (SIZE)<500 && (SIZE)>0 ) for ( iii=1;iii<(SIZE);iii++ )\
       fprintf(stderr,"%d ",TERM[iii]); }\
   fprintf(stderr,"\n");\
   fflush(stderr); } }
@@ -146,7 +146,7 @@ static const UWORD R[256] = {
     0x91dc804f, 0xceba36c1, 0x42ed5f24, 0xbc10319d, 0x7c924eb8, 0x244b8702, 0xeed69351, 0x95b68d03,
     0x164fa85e, 0xa09b6f11, 0xd94e1788, 0x5e61b93d, 0x8f1237cb, 0xf8772f92, 0x6b9dc1a4, 0x31f24078,
 };
-//murmur3 hash
+/* murmur3 hash */
 static inline UWORD mix32(UWORD h) {
     h ^= h >> 16;
     h *= 0x85ebca6bU;
@@ -156,11 +156,11 @@ static inline UWORD mix32(UWORD h) {
     return h;
 }
 
-// ------------------------- scalar hash_int32 -------------------------
+/* ------------------------- scalar hash_int32 ------------------------- */
 static inline UWORD hash_uint32(UWORD ux) {
-    if (ux < 256U) 
+    if ( ux < 256U ) 
         return R[ux];
-    // fallback: mix the integer value itself
+/* fallback: mix the integer value itself */
     return mix32(ux);
 }
 
@@ -183,12 +183,12 @@ static inline UWORD pf_rotl32(UWORD x, unsigned r) {
 */
 static inline UWORD hash_list_scalar(const WORD *arr, WORD n) {
     UWORD h = 0; WORD i;
-    for (i = 0; i < n; i++) h = pf_rotl32(h, 13) ^ hash_uint32((UWORD)arr[i]);
+    for ( i = 0; i < n; i++ ) h = pf_rotl32(h, 13) ^ hash_uint32((UWORD)arr[i]);
     return mix32(h);
 }
 #ifdef __AVX512F__
 #include <immintrin.h>
-//murmur3 parallel hash
+/* murmur3 parallel hash */
 static inline __m512i mix32_vec(__m512i h) {
     __m512i t;
 
@@ -221,7 +221,7 @@ UWORD hash_list_avx512(const WORD *arr, WORD n) {
     __m512i vacc = _mm512_setzero_si512();
     const __m512i lane = _mm512_setr_epi32(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15);
 
-    for (; i + STRIDE <= n; i += STRIDE) {
+    for ( ; i + STRIDE <= n; i += STRIDE ) {
         __m512i v = _mm512_loadu_si512((const void*)&arr[i]);
         __mmask16 small = _mm512_cmpeq_epi32_mask(_mm512_srli_epi32(v, 8),
                                                   _mm512_setzero_si512());
@@ -235,8 +235,8 @@ UWORD hash_list_avx512(const WORD *arr, WORD n) {
         vacc = _mm512_xor_si512(vacc, _mm512_rolv_epi32(g, r));
     }
     _mm512_storeu_si512((void*)buf, vacc);
-    for (j = 0; j < 16; ++j) h ^= buf[j];
-    for (; i < n; i++)
+    for ( j = 0; j < 16; ++j ) h ^= buf[j];
+    for ( ; i < n; i++ )
         h ^= pf_rotl32(hash_uint32((UWORD)arr[i]), (unsigned)((13 * (n - 1 - i)) & 31));
     return mix32(h);
 }
@@ -253,7 +253,7 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
     const __m256i lane = _mm256_setr_epi32(0,1,2,3,4,5,6,7);
     const __m256i c31 = _mm256_set1_epi32(31), c32 = _mm256_set1_epi32(32);
 
-    for (; i + 8 <= n; i += 8) {
+    for ( ; i + 8 <= n; i += 8 ) {
         __m256i v = _mm256_loadu_si256((const __m256i*)&arr[i]);
         __m256i small = _mm256_cmpeq_epi32(_mm256_srli_epi32(v, 8), _mm256_setzero_si256());
         __m256i tbl = _mm256_i32gather_epi32((const int*)R,
@@ -272,8 +272,8 @@ UWORD hash_list32_avx2(const WORD *arr, WORD n) {
                                 _mm256_srlv_epi32(g, _mm256_and_si256(_mm256_sub_epi32(c32, r), c31))));
     }
     _mm256_storeu_si256((__m256i*)buf, acc);
-    for (j = 0; j < 8; ++j) h ^= buf[j];
-    for (; i < n; i++)
+    for ( j = 0; j < 8; ++j ) h ^= buf[j];
+    for ( ; i < n; i++ )
         h ^= pf_rotl32(hash_uint32((UWORD)arr[i]), (unsigned)((13 * (n - 1 - i)) & 31));
     return mix32(h);
 }
@@ -1139,7 +1139,7 @@ LONG EndSort(PHEAD WORD *buffer, int par)
 				retval = -1; goto RetRetval;
 			}
 #ifdef WITHMPI
-			if(lowmr_sort){
+			if ( lowmr_sort ) {
 				SETBASEPOSITION(pp,sSpace);
 				MULPOS(pp,sizeof(WORD));
 				ADD2POS(pp,S->fPatches[S->fPatchN]);
@@ -1185,7 +1185,7 @@ merge2:
 			*to++ = 0;
 			S->lFill = to;
 #ifdef WITHMPI
-			if (lowmr_sort || S->file.handle < 0 ){
+			if ( lowmr_sort || S->file.handle < 0 ) {
 #else
 			if ( S->file.handle < 0 ) {
 #endif
@@ -1353,7 +1353,7 @@ TooLarge:
 #endif
 		UpdateMaxSize();
 #ifdef WITHMPI
-	if ( !lowmr_sort ){
+	if ( !lowmr_sort ) {
 #endif
 		if ( MergePatches(0) ) {
 			MLOCK(ErrorMessageLock);
@@ -1795,7 +1795,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 	int dst = 0;
 	int mpi_dest = MASTER;
 	BOOL lowmr_sort = PF_LowMRsort();
-	if (!lowmr_sort && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE) {
+	if ( !lowmr_sort && PF.me != MASTER && AC.sMRflag != NO_MAPREDUCE ) {
 		mpi_dest = (PF.me >= PF.nummappers || PF.in_merger_phase) ? PF.merger_parent : MASTER;
 	}
 #endif
@@ -1816,7 +1816,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		}
 		else {
 		#ifdef WITHMPI
-			if (lowmr_sort ) {
+			if ( lowmr_sort ) {
 				PF_TIMER_BEGIN(MAP_HASH_ROUTE);
 				WORD *start = term;
 				WORD *end = start + *start;
@@ -1832,7 +1832,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 					&& (end - start) > AM.MR.HashPrefixWords )
 					end = start + AM.MR.HashPrefixWords;
 #if BITSINWORD == 16
-				while( start < end ) {
+				while ( start < end ) {
 					UWORD w = (UWORD)(*start++);
 					term_hash = (term_hash << 13) | (term_hash >> (BITSINWORD - 13));
 					term_hash ^= w;
@@ -1863,7 +1863,7 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 			/* Pre-compress size in bytes per term -- numerator for the
 			   wire compression ratio (decides 1b-i vs 1b-ii). lowmr_sort-gated
 			   so non-MR mapper writes to scratch don't pollute the counter. */
-			if (lowmr_sort) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_PRECOMPRESS, (*term) * sizeof(WORD));
+			if ( lowmr_sort ) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_PRECOMPRESS, (*term) * sizeof(WORD));
 #endif
 			PF_TIMER_BEGIN_IF(MAP_DELTA_COMPRESS, lowmr_sort);
 			if ( allow_compress && !AR.NoCompress && ( ncomp > 0 ) && AR.sLevel <= 0 ) {	/* Must compress */
@@ -1937,7 +1937,7 @@ nocompress:
 			r[-(ABS(r[-1]))] = 0;
 			WORD* top = AR.ComprTop;
 #ifdef WITHMPI
-				if(lowmr_sort)	
+				if ( lowmr_sort )	
 					top =  AR.CompressBuffers[dst] + AM.CompressSize;
 #endif
 				if ( r >= top ) {
@@ -2001,18 +2001,18 @@ nocompress:
 		/* Post-compress size in bytes per term -- denominator for the
 		   wire compression ratio. i is now the (possibly-compressed) length
 		   in WORDs that will land in the per-reducer compress buffer. */
-		if (lowmr_sort) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_POSTCOMPRESS, i * sizeof(WORD));
+		if ( lowmr_sort ) PF_TIMER_ADD_BYTES(PF_EX_MAP_BYTES_POSTCOMPRESS, i * sizeof(WORD));
 #endif
 		}
 		ret = i;
 		ADDPOS(*position,i*sizeof(WORD));
 #ifdef WITHMPI
 		PF_BUFFER *sbuf = NULL;
-		if (lowmr_sort) {
+		if ( lowmr_sort ) {
 			sbuf = PF.sbufs[dst];
 			fi->POfill = sbuf->fill[sbuf->active];
 			fi->POstop = sbuf->stop[sbuf->active];
-			if( fi->POfill + i >= fi->POstop ) {
+			if ( fi->POfill + i >= fi->POstop ) {
 				PF_TIMER_INC(PF_EX_MAP_SBUF_FLUSHES);
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -2028,10 +2028,10 @@ nocompress:
 		do {
 			if ( p >= fi->POstop ) {
 #ifdef WITHMPI /* [16mar1998 ar] */
-			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
-				if (!sbuf) sbuf = PF.sbufs[dst];
+			  if ( lowmr_sort || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) ) {
+				if ( !sbuf ) sbuf = PF.sbufs[dst];
 				sbuf->fill[sbuf->active] = fi->POstop;
-				if (lowmr_sort) PF_TIMER_INC(PF_EX_MAP_SBUF_FLUSHES);
+				if ( lowmr_sort ) PF_TIMER_INC(PF_EX_MAP_SBUF_FLUSHES);
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, mpi_dest);
 				p = fi->PObuffer = fi->POfill = fi->POfull = sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				fi->POstop = sbuf->stop[sbuf->active];
@@ -2112,7 +2112,7 @@ nocompress:
 				}
 			  }
 			}
-			if ( first ) { // if compressed the first two WORDS are the negetive size of the copy and the size left for the term
+			if ( first ) { /* if compressed the first two WORDS are the negative size of the copy and the size left for the term */
 				if ( first == 2 ) *p++ = k;
 				else *p++ = j;
 				first--;
@@ -2122,7 +2122,7 @@ nocompress:
 #ifdef WITHMPI
 		if ( lowmr_sort )
 			sbuf->fill[sbuf->active] = sbuf->full[sbuf->active] = p;
-		//maybe I can remove it after updateing the sbuf in the first mpi section
+/* maybe I can remove it after updateing the sbuf in the first mpi section */
 #endif
 		fi->POfull = fi->POfill = p;
 		PF_TIMER_END_IF(MAP_SBUF_COPY);
@@ -2160,9 +2160,9 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 	if ( AR.sLevel <= 0 && Expressions[AR.CurExpr].newbracketinfo
 		&& ( fi == AR.outfile || fi == AR.hidefile ) ) dobracketindex = 1;
 #ifdef WITHMPI /* [16mar1998 ar] */
-	if ( PF_LowMRsort() || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 )) {
-		if (PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase){
-			for (int i = PF.nummappers; i < PF.numtasks; i++){
+	if ( PF_LowMRsort() || (PF.me != MASTER && AR.sLevel <= 0 && (fi == AR.outfile || fi == AR.hidefile) && PF.parallel && PF.exprtodo < 0 ) ) {
+		if ( PF.me < PF.nummappers && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase ) {
+			for ( int i = PF.nummappers; i < PF.numtasks; i++ ) {
 				PF_BUFFER *sbuf = PF.sbufs[i];
 				/* On patch=1 (called from MergePatches) skip the send when this
 				   reducer's slot is empty - hash-skewed modules generate empties
@@ -2170,11 +2170,11 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 				   !patch branch below still emits the 0-terminator + ENDBUFFER
 				   tag that signals end-of-stream. */
 				int nonempty = sbuf->fill[sbuf->active] > sbuf->buff[sbuf->active];
-				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] || (patch && nonempty) ){
+				if ( sbuf->fill[sbuf->active] >= sbuf->stop[sbuf->active] || (patch && nonempty) ) {
 					PF_WISendSbuf(PF_BUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
 				}
-				if (!patch){
+				if ( !patch ) {
 					*(sbuf->fill[sbuf->active])++ = 0;
 					PF_WISendSbuf(PF_ENDBUFFER_MSGTAG, i);
 					sbuf->full[sbuf->active] = sbuf->fill[sbuf->active] = sbuf->buff[sbuf->active];
@@ -2190,7 +2190,7 @@ int FlushOut(POSITION *position, FILEHANDLE *fi, int compr)
 			   merger_parent == MASTER -> bit-for-bit unchanged behavior. */
 			int dest = (PF.me >= PF.nummappers || PF.in_merger_phase) ? PF.merger_parent : MASTER;
 			PF_BUFFER *sbuf = PF.sbufs[MASTER];
-			if ( fi->POfill >= fi->POstop ){
+			if ( fi->POfill >= fi->POstop ) {
 				sbuf->fill[sbuf->active] = fi->POstop;
 				PF_WISendSbuf(PF_BUFFER_MSGTAG, dest);
 				fi->POfull = fi->POfill = fi->PObuffer = sbuf->buff[sbuf->active];
@@ -4351,14 +4351,14 @@ ConMer:
 			else
 #endif
 #ifdef WITHMPI
-			if (!(PF_LowMRsort()) || par == 2)
+			if ( !( PF_LowMRsort() ) || par == 2 )
 			{
 #endif
-				if ( FlushOut(&position,fout,1) ) goto ReturnError;
-				ADDPOS(S->SizeInFile[par],1);
+			if ( FlushOut(&position,fout,1) ) goto ReturnError;
+			ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
 			}
-			else if (PF_LowMRsort()){
+			else if ( PF_LowMRsort() ) {
 				patch++;
 				if ( FlushOut(&position,fout,1) ) goto ReturnError;
 				PUTZERO(S->SizeInFile[par]);
@@ -4784,13 +4784,14 @@ EndOfMerge:
 		else
 #endif
 #ifdef WITHMPI
-		if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
+		if ( !( PF_LowMRsort() && fout == &(AT.SS->file) ) )
 		{
 #endif
-			if ( FlushOut(&position,fout,1) ) goto ReturnError;
-			ADDPOS(S->SizeInFile[par],1);
+		if ( FlushOut(&position,fout,1) ) goto ReturnError;
+		ADDPOS(S->SizeInFile[par],1);
 #ifdef WITHMPI
-		}else {
+		}
+		else {
 			patch++;
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			PUTZERO(S->SizeInFile[par]);
@@ -4804,9 +4805,17 @@ EndOfAll:
 		SeekFile(fout->handle,&position,SEEK_CUR);
 #endif
 #ifdef WITHMPI
-	if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
-#endif
+/*
+		An MR mapper ships its terms to the reducers instead of writing a
+		patch of its own, so it must not COUNT a patch here. It must still
+		record the position: S->fPatches[S->fPatchN] is the START of the next
+		patch, and readers rely on it tracking the current write position
+		whether or not a patch was added.
+*/
+		if ( !( PF_LowMRsort() && fout == &(AT.SS->file) ) ) { (S->fPatchN)++; }
+#else
 		(S->fPatchN)++;
+#endif
 		S->fPatches[S->fPatchN] = position;
 	}
 	if ( par == 0 && fout != AR.outfile ) {

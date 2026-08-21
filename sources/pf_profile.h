@@ -237,7 +237,7 @@ extern PF_ProfileSlot *pf_profile_stats;
 extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
 
 /*
-   Timer macros. PF_TIMER_BEGIN(P) introduces a local _pf_t_##P at the call
+   Timer macros. PF_TIMER_BEGIN(P) introduces a local pf_t_##P at the call
    site and (on first entry within a module) records the phase's relative
    start time in pf_phase_first_us[P]. PF_TIMER_END(P) accumulates duration
    and updates pf_phase_last_us[P]. MPI_Wtime() ~30 ns on Linux.
@@ -247,27 +247,27 @@ extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
    body of an unbraced if/else/for. All current call sites comply.
 */
 #define PF_TIMER_BEGIN(P) \
-	double _pf_t_##P = MPI_Wtime(); \
+	double pf_t_##P = MPI_Wtime(); \
 	if (pf_phase_first_us[PF_PHASE_##P] < 0) \
-		pf_phase_first_us[PF_PHASE_##P] = (LONG)((_pf_t_##P - pf_module_t0) * 1.0e6)
+		pf_phase_first_us[PF_PHASE_##P] = (LONG)((pf_t_##P - pf_module_t0) * 1.0e6)
 #define PF_TIMER_END(P) \
 	do { \
-		double _pf_now_##P = MPI_Wtime(); \
-		pf_phase_us[PF_PHASE_##P] += (LONG)((_pf_now_##P - _pf_t_##P) * 1.0e6); \
-		pf_phase_last_us[PF_PHASE_##P] = (LONG)((_pf_now_##P - pf_module_t0) * 1.0e6); \
+		double pf_now_##P = MPI_Wtime(); \
+		pf_phase_us[PF_PHASE_##P] += (LONG)((pf_now_##P - pf_t_##P) * 1.0e6); \
+		pf_phase_last_us[PF_PHASE_##P] = (LONG)((pf_now_##P - pf_module_t0) * 1.0e6); \
 	} while (0)
 /* Runtime-indexed timer: phase ID resolved at runtime (e.g. PF_ISendSbuf
    chooses MAP_SEND_* vs RED_FORWARD_* based on caller's role). Both first
    and last are attributed at END time since the index isn't known at BEGIN. */
-#define PF_TIMER_BEGIN_RT(name) double _pf_t_rt_##name = MPI_Wtime()
+#define PF_TIMER_BEGIN_RT(name) double pf_t_rt_##name = MPI_Wtime()
 #define PF_TIMER_END_RT(name, idx) \
 	do { \
 		if ((idx) >= 0) { \
-			double _pf_now_rt_##name = MPI_Wtime(); \
-			pf_phase_us[(idx)] += (LONG)((_pf_now_rt_##name - _pf_t_rt_##name) * 1.0e6); \
+			double pf_now_rt_##name = MPI_Wtime(); \
+			pf_phase_us[(idx)] += (LONG)((pf_now_rt_##name - pf_t_rt_##name) * 1.0e6); \
 			if (pf_phase_first_us[(idx)] < 0) \
-				pf_phase_first_us[(idx)] = (LONG)((_pf_t_rt_##name - pf_module_t0) * 1.0e6); \
-			pf_phase_last_us[(idx)] = (LONG)((_pf_now_rt_##name - pf_module_t0) * 1.0e6); \
+				pf_phase_first_us[(idx)] = (LONG)((pf_t_rt_##name - pf_module_t0) * 1.0e6); \
+			pf_phase_last_us[(idx)] = (LONG)((pf_now_rt_##name - pf_module_t0) * 1.0e6); \
 		} \
 	} while (0)
 /* Elapsed-wait accumulator (tools.c TimeElapsed). Profile-only, like the
@@ -281,19 +281,19 @@ extern LONG pf_compare1_diff_hist[PF_COMPARE1_HIST_BINS];
 #define PF_TIMER_INC(idx) (pf_extras[(idx)]++)
 #define PF_TIMER_ADD_COUNT(idx, n) (pf_extras[(idx)] += (LONG)(n))
 /* Conditional timer: same shape as PF_TIMER_BEGIN/END but only accumulates
-   when `cond` is true at BEGIN time. The local `_pf_t_##P` carries the gate
+   when `cond` is true at BEGIN time. The local `pf_t_##P` carries the gate
    (set to -1.0 when disabled). Lets us write straight-line code instead of
    duplicating bodies for MR-only call sites in shared functions like PutOut. */
 #define PF_TIMER_BEGIN_IF(P, cond) \
-	double _pf_t_##P = (cond) ? MPI_Wtime() : -1.0; \
-	if (_pf_t_##P >= 0.0 && pf_phase_first_us[PF_PHASE_##P] < 0) \
-		pf_phase_first_us[PF_PHASE_##P] = (LONG)((_pf_t_##P - pf_module_t0) * 1.0e6)
+	double pf_t_##P = (cond) ? MPI_Wtime() : -1.0; \
+	if (pf_t_##P >= 0.0 && pf_phase_first_us[PF_PHASE_##P] < 0) \
+		pf_phase_first_us[PF_PHASE_##P] = (LONG)((pf_t_##P - pf_module_t0) * 1.0e6)
 #define PF_TIMER_END_IF(P) \
 	do { \
-		if (_pf_t_##P >= 0.0) { \
-			double _pf_now_##P = MPI_Wtime(); \
-			pf_phase_us[PF_PHASE_##P] += (LONG)((_pf_now_##P - _pf_t_##P) * 1.0e6); \
-			pf_phase_last_us[PF_PHASE_##P] = (LONG)((_pf_now_##P - pf_module_t0) * 1.0e6); \
+		if (pf_t_##P >= 0.0) { \
+			double pf_now_##P = MPI_Wtime(); \
+			pf_phase_us[PF_PHASE_##P] += (LONG)((pf_now_##P - pf_t_##P) * 1.0e6); \
+			pf_phase_last_us[PF_PHASE_##P] = (LONG)((pf_now_##P - pf_module_t0) * 1.0e6); \
 		} \
 	} while (0)
 
