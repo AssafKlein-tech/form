@@ -3768,7 +3768,7 @@ LONG PF_allocateSbuf()
 				size = AR.infile->POsize/sizeof(WORD) - 1;
 			if ( sbuf == 0 ) { // allocate a buffer for each slave - use lbuffer space
 				if ( ( sbuf = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
-					return(-1);
+					return(0);   /* callers test == 0; -1 would read as success */
 			}
 			sbuf->buff[0] = AT.SS->lBuffer;
 			sbuf->full[0] = sbuf->fill[0] = sbuf->buff[0];
@@ -3799,15 +3799,29 @@ LONG PF_allocateSbuf()
 		for (int i = 0; i < PF.numsbufs; i++ )
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 		FILEHANDLE *fout = AR.outfile;
+		LONG size0;
 		sbuf->buff[0] = fout->PObuffer;
-		sbuf->stop[0] = fout->PObuffer+size;
-		if ( sbuf->stop[0] > fout->POstop ) return -1;
+		/* Slot 0 is carved out of fout's OWN PObuffer, so it can never be
+		   larger than that buffer. Stock ParFORM clamped the size right here
+		   ("if ( fout->POsize < size*sizeof(WORD) ) size = fout->POsize/sizeof(WORD)");
+		   the clamp was lost when this code was factored into PF_allocateSbuf.
+		   Without it a small ScratchSize makes the bounds test below fail, and
+		   because the failure returned -1 -- which every caller reads as
+		   success, since they test == 0 -- PF.sbufs[0] stayed NULL and the next
+		   use segfaulted in PutOut. Clamp slot 0 only: the value RETURNED from
+		   this function still sizes the MR per-reducer buffers, which have to
+		   match the receiver's Irecv capacity (PF.shuffle_arena_words). */
+		size0 = size;
+		if ( size0 > (LONG)(fout->POstop - fout->PObuffer) )
+			size0 = (LONG)(fout->POstop - fout->PObuffer);
+		if ( size0 <= 0 ) return 0;      /* genuinely unusable: report failure */
+		sbuf->stop[0] = fout->PObuffer + size0;
 		sbuf->fill[0] = sbuf->full[0] = sbuf->buff[0];
 		sbuf->active = 0;
 
 		fout->PObuffer = sbuf->buff[sbuf->active];
 		fout->POstop = sbuf->stop[sbuf->active];
-		fout->POsize = size*sizeof(WORD);
+		fout->POsize = size0*sizeof(WORD);
 		fout->POfill = fout->POfull = fout->PObuffer;
 	}
 	PF.sbufs[0] = sbuf;
