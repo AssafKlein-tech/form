@@ -1844,7 +1844,6 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 #else
 				term_hash = hash_list_scalar(start, (WORD)(end - start));
 #endif
-				//MesPrint("Term hash: %x and reducer %d", term_hash, term_hash % 4);
 				dst = term_hash % PF.numreducers + PF.nummappers;
 				mpi_dest = dst;  /* mapper: sbuf index == MPI dest */
 				r = rr = AR.CompressPointers[dst];
@@ -4316,7 +4315,6 @@ ConMer:
 
 		if ( fout->handle < 0 ) if ( Sflush(fout) ) goto PatCall;
 		if ( par ) {		/* Memory to file */
-			//MesPrint("MergePatches: rare direct copy");
 #ifdef WITHZLIB
 /*
 			We fix here the problem that the thing needs to go through PutOut
@@ -4392,7 +4390,6 @@ ConMer:
 			SetupAllInputGZIP(S);
 			m1 = m2 = copybuf;
 			position2 = S->iPatches[0];
-			MesPrint("MergePatches: rare file to file copy of one patch");
 			while ( ( length = FillInputGZIP(fin,&position2,
 					(UBYTE *)copybuf,
 					(S->SmallEsize*sizeof(WORD)-FRONTSIZE),0) ) > 0 ) {
@@ -4443,7 +4440,6 @@ ConMer:
 			else
 #endif
 #ifdef WITHMPI
-			//MesPrint("[%d] MergePatches: non to sort file flushout",PF.me);
 #endif
 			if ( FlushOut(&position,fout,1) ) goto ReturnError;
 			ADDPOS(S->SizeInFile[par],1);
@@ -4499,7 +4495,6 @@ ConMer:
 			poin2[i] = poin[i] + *(poin[i]);
 		}
 #ifdef WITHMPI
-		//MesPrint("[%d] MergePatches: sorting tree of patches",PF.me);
 #endif
 
 /*
@@ -5006,7 +5001,6 @@ int StoreTerm(PHEAD WORD *term)
 			The large buffer is too full. Merge and write it
 */
 #ifdef WITHMPI
-			//MesPrint("[%d] StoreTerm: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 #endif
 			if ( MergePatches(1) ) goto StoreCall;
 /*

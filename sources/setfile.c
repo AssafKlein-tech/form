@@ -613,7 +613,7 @@ int AllocSetups(void)
 				SETUPPARAMETERS *sp2 = GetSetupPar((UBYTE *)"reducerlargesize");
 				if ( sp2 && sp2->value > 0 ) {
 					LargeSize = sp2->value;
-					if ( PF.me == nm )
+					if ( PF.me == nm && PF.log )
 						MesPrint("[reducer] reducerlargesize -> %l bytes", LargeSize);
 				}
 			}

@@ -589,7 +589,6 @@ static WORD *PF_PutIn(int src)
 	WORD *lastterm = PF_term[src];
 	WORD *term = rbuf->fill[a];
 
-	//MesPrint("PF_PutIn: PutIn from %d active buffer %d next buffer %d", workerIdx, a, next);
 	if ( src <= 0 ) return(PF_term[0]);
 
 	if ( rbuf->full[a] == rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2 ) {
@@ -623,7 +622,6 @@ static WORD *PF_PutIn(int src)
 */
 	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
 newterms:
-		//MesPrint("PF_PutIn: Need new terms, copies %d bytes or %d bytes", term - rbuf->buff[a], *term);
 		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
 		/*
 			copy beginning of term to the next buffer so that it ends at m1
@@ -632,7 +630,6 @@ newterms:
 /*
 			copy term and lastterm to the new buffer, so that they end at m1
 */
-			//MesPrint("PF_PutIn: copy lastterm also");
 			m2 = rbuf->full[a] - 1;
 			while ( m2 >= term ) *m1-- = *m2--;
 			rbuf->fill[next] = term = m1 + 1;
@@ -651,13 +648,11 @@ newterms:
 		if ( rbuf->numbufs == 1 ) {
 			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 			size = (LONG)(rbuf->stop[a] - rbuf->full[a]);
-			//MesPrint("[%d] PF_PutIn: First Post non blocking receive from %d size %d", PF.me, src, size);
 			PF_IRecvRbuf(rbuf,a,workerIdx);
 		}
 /*
 			wait for new terms in the next buffer
 */
-		//MesPrint("[%d] PF_PutIn: Wait the next buffer to be filled from %d active buffer %d ", PF.me, workerIdx, next);
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 		{
 #ifdef PF_PROFILE
@@ -668,7 +663,6 @@ newterms:
 			tag = PF_WaitRbuf(rbuf,next,&size);
 			PF_TIMER_END_RT(rw, _pf_rw);
 		}
-		//MesPrint("[%d] PF_PutIn: got new terms tag %d", PF.me, tag);
 		rbuf->full[next] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) {
 			*rbuf->full[next]++ = 0;
@@ -837,7 +831,6 @@ static int PF_StoreBuffer()
 	int src = 0;
 	PF_TIME_ELAPSED(TIMERESET);
 newsrc: ;
-	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
 	PF_TIMER_BEGIN(RED_RECV_WAIT);
 	PF_TIME_ELAPSED(TIMESTART);
 	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
@@ -858,7 +851,6 @@ newsrc: ;
 */
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 		size = (LONG)(rbuf->stop[next] - rbuf->full[next]);
-		//MesPrint("[%d] PF_StoreBuffer: set receive request of size %d from %d", PF.me, size, src);
 		err = PF_IRecvRbuf(rbuf,next,src);
 		if (err) {MesPrint("[%d] PF_StoreBuffer: PF_IRecvRbuf error %d from %d", PF.me, err, src); return(-1); }
 		int k = src * PF.numrbufs + next;
@@ -881,7 +873,6 @@ newsrc: ;
 	sSpace = rbuf->full[a] - rbuf->fill[a];
 	/* Per-link reducer bandwidth: bytes consumed per buffer. */
 	PF_TIMER_ADD_BYTES(PF_EX_RED_BYTES_RECEIVED, sSpace * sizeof(WORD));
-	//MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace);
 	lSpace = sSpace + (S->lFill - S->lBuffer)
 				 - (AM.MaxTer/sizeof(WORD))*((LONG)S->lPatch);
 	SETBASEPOSITION(pp,lSpace);
@@ -893,7 +884,6 @@ newsrc: ;
 /*
 			The large buffer is too full. Merge and write it
 */
-			//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
 
 			if (_pf_merge_max_patches) PF_TIMER_INC(PF_EX_MERGE_MAX_PATCHES);
 			if (_pf_merge_lbuf_full)   PF_TIMER_INC(PF_EX_MERGE_LBUFFER_FULL);
@@ -1674,11 +1664,13 @@ int PF_EndSort(void)
 			DIFPOS(PF_exprsize, position, oldposition);
 		}
 		S->TermsLeft = PF_goutterms = total;
-		MesPrint("[0] PF_EndSort: partitioned output -- %l terms, %l bytes across %d merger files",
-		         total, total_bytes, (WORD)PF.nummergers);
-		if ( PF.nummergers > 0 )
-			MesPrint("[0] PF_EndSort: partitioned output -- mean %l bytes/merger",
-			         total_bytes / (LONG)PF.nummergers);
+		if ( PF.log ) {
+			MesPrint("[0] PF_EndSort: partitioned output -- %l terms, %l bytes across %d merger files",
+			         total, total_bytes, (WORD)PF.nummergers);
+			if ( PF.nummergers > 0 )
+				MesPrint("[0] PF_EndSort: partitioned output -- mean %l bytes/merger",
+				         total_bytes / (LONG)PF.nummergers);
+		}
 		return 1;   /* skip InitTree + loser-tree merge */
 	}
 /*
@@ -2496,7 +2488,6 @@ static int PF_WaitAllSlaves(void)
 				          && PF.nummergers > 0
 				          && next >= PF.nummappers )
 					PF_Wait4Slave(next);
-				//MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next);
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -2940,7 +2931,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 	}
 	/* One-time master announcement of the merger tier actually in effect,
 	   so a run is self-documenting. */
-	if ( PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0 ) {
+	if ( PF.log && PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0 ) {
 		static int s_merger_announced = 0;
 		if ( !s_merger_announced ) {
 			s_merger_announced = 1;
@@ -3237,7 +3228,6 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
 				if(PF.sbufs[k] == NULL){
 					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
-					//MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size);
 				}
 				else{
 					for ( i = 0; i < PF.numsbufs; i++ )
@@ -3329,11 +3319,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
-			//MesPrint("[%d] PF_Processor: starting endsort", PF.me);
 			PF_TIMER_BEGIN(MAP_ENDSORT_TOTAL);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
 			PF_TIMER_END(MAP_ENDSORT_TOTAL);
-			//MesPrint("[%d] PF_Processor: finished endsort", PF.me);
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
 			fout->POsize   = oldsize;
@@ -3911,13 +3899,9 @@ int PF_Init(int *argc, char ***argv)
 		}
 		if ( ( c = (char*)getenv("PF_RBUFS") ) != 0 ) {
 			PF.numrbufs = (int)atoi(c);
-			//fprintf(stdout,"[%d] changing numrbufs to: %d\n",PF.me,PF.numrbufs);
-			//fflush(stdout);
 		}
 		if ( ( c = (char*)getenv("PF_SBUFS") ) != 0 ) {
 			PF.numsbufs = (int)atoi(c);
-			//fprintf(stdout,"[%d] changing numsbufs to: %d\n",PF.me,PF.numsbufs);
-			//fflush(stdout);
 		}
 		if ( PF.numsbufs > 10 ) PF.numsbufs = 10;
 		if ( PF.numsbufs <  1 ) PF.numsbufs = 1;
@@ -3926,8 +3910,10 @@ int PF_Init(int *argc, char ***argv)
 
 		if ( ( c = (char*)getenv("PF_SHUFFLE_NOCOMPRESS") ) != 0 ) {
 			PF_shuffle_nocompress = (int)atoi(c);
-			fprintf(stderr,"[%d] PF_shuffle_nocompress=%d\n",PF.me,PF_shuffle_nocompress);
-			fflush(stderr);
+			if ( PF.log ) {
+				fprintf(stderr,"[%d] PF_shuffle_nocompress=%d\n",PF.me,PF_shuffle_nocompress);
+				fflush(stderr);
+			}
 		}
 
 		if ( ( c = getenv("PF_STATS") ) ) {
