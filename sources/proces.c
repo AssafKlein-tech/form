@@ -383,7 +383,16 @@ commonread:;
 				else
 #endif
 				{
-					curfile = AR.infile;   /* MR off-parallel gather may have swapped AR.infile/outfile inside PF_Processor */
+#ifdef WITHMPI
+/*
+					The MR off-parallel gather may have swapped AR.infile/outfile
+					inside PF_Processor, so curfile has to be re-resolved here.
+					Not for unhide though: there we arrived at commonread with
+					curfile = AR.hidefile, and the AR.InHiBuf recomputation below
+					must stay derived from the hide file.
+*/
+					if ( AR.GetFile != 2 ) curfile = AR.infile;
+#endif
 					NewSort(BHEAD0);
 					AR.MaxDum = AM.IndDum;
 					AN.ninterms = 0;
@@ -3329,21 +3338,21 @@ Renormalize:
 
 		if ( AN.PolyNormFlag ) {
 			if ( AN.PolyFunTodo == 0 ) {
-				int _pf_pfm_ret;
+				int retpfm;
 				PF_TIMER_BEGIN(MAP_POLYFUNMUL);
-				_pf_pfm_ret = PolyFunMul(BHEAD term);
+				retpfm = PolyFunMul(BHEAD term);
 				PF_TIMER_END(MAP_POLYFUNMUL);
-				if ( _pf_pfm_ret < 0 ) goto GenCall;
+				if ( retpfm < 0 ) goto GenCall;
 				if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
 			}
 			else {
 				WORD oldPolyFunExp = AR.PolyFunExp;
-				int _pf_pfm_ret;
+				int retpfm;
 				AR.PolyFunExp = 0;
 				PF_TIMER_BEGIN(MAP_POLYFUNMUL);
-				_pf_pfm_ret = PolyFunMul(BHEAD term);
+				retpfm = PolyFunMul(BHEAD term);
 				PF_TIMER_END(MAP_POLYFUNMUL);
-				if ( _pf_pfm_ret < 0 ) goto GenCall;
+				if ( retpfm < 0 ) goto GenCall;
 				AT.WorkPointer = term+*term;
 				AR.PolyFunExp = oldPolyFunExp;
 				if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
@@ -3352,9 +3361,9 @@ Renormalize:
 				AT.WorkPointer = term+*term;
 				if ( AN.PolyNormFlag ) {
 					PF_TIMER_BEGIN(MAP_POLYFUNMUL);
-					_pf_pfm_ret = PolyFunMul(BHEAD term);
+					retpfm = PolyFunMul(BHEAD term);
 					PF_TIMER_END(MAP_POLYFUNMUL);
-					if ( _pf_pfm_ret < 0 ) goto GenCall;
+					if ( retpfm < 0 ) goto GenCall;
 					if ( !*term ) { AN.PolyNormFlag = 0; goto Return0; }
 					AT.WorkPointer = term+*term;
 				}
@@ -3362,11 +3371,11 @@ Renormalize:
 			}
 		}
 		if ( idfunctionflag > 0 ) {
-			int _pf_tk_ret;
+			int rettk;
 			PF_TIMER_BEGIN(MAP_TAKEIDFUNCTION);
-			_pf_tk_ret = TakeIDfunction(BHEAD term);
+			rettk = TakeIDfunction(BHEAD term);
 			PF_TIMER_END(MAP_TAKEIDFUNCTION);
-			if ( _pf_tk_ret ) {
+			if ( rettk ) {
 				AT.WorkPointer = term + *term;
 				goto ReStart;
 			}
@@ -3403,28 +3412,28 @@ SkipCount:	level++;
 					if ( olddummies > AR.MaxDum ) AR.MaxDum = olddummies;
 				}
 				if ( AR.PolyFun > 0 && ( AR.sLevel <= 0 || AN.FunSorts[AR.sLevel]->PolyFlag > 0 ) ) {
-					int _pf_pp_ret;
+					int retpp;
 					PF_TIMER_BEGIN(MAP_PREPPOLY);
-					_pf_pp_ret = PrepPoly(BHEAD term,0);
+					retpp = PrepPoly(BHEAD term,0);
 					PF_TIMER_END(MAP_PREPPOLY);
-					if ( _pf_pp_ret != 0 ) goto Return0;
+					if ( retpp != 0 ) goto Return0;
 				}
 				else if ( AR.PolyFun > 0 ) {
-					int _pf_pp_ret;
+					int retpp;
 					PF_TIMER_BEGIN(MAP_PREPPOLY);
-					_pf_pp_ret = PrepPoly(BHEAD term,1);
+					retpp = PrepPoly(BHEAD term,1);
 					PF_TIMER_END(MAP_PREPPOLY);
-					if ( _pf_pp_ret != 0 ) goto Return0;
+					if ( retpp != 0 ) goto Return0;
 				}
 				if ( AR.sLevel <= 0 && AR.BracketOn ) {
-					int _pf_pb_ret;
+					int retpb;
 					if ( AT.WorkPointer < term + *term ) AT.WorkPointer = term + *term;
 					termout = AT.WorkPointer;
 					if ( AT.WorkPointer + *term + 3 > AT.WorkTop ) goto OverWork;
 					PF_TIMER_BEGIN(MAP_PUTBRACKET);
-					_pf_pb_ret = PutBracket(BHEAD term);
+					retpb = PutBracket(BHEAD term);
 					PF_TIMER_END(MAP_PUTBRACKET);
-					if ( _pf_pb_ret ) return(-1);
+					if ( retpb ) return(-1);
 					AN.RepPoint = RepSto;
 					*AT.WorkPointer = 0;
 					{

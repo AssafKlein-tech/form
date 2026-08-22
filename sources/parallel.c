@@ -454,7 +454,7 @@ static int PF_InitTree(void)
  		#[ the buffers : for the new coefficients and the terms
  		   we need one for each slave
 */
-	if (PF_term == NULL && PF_allocatePFTerm(PF.numtasks)) {MesPrint("Error in InitTree"); return -1;}
+	if ( PF_term == NULL && PF_allocatePFTerm(PF.numtasks) ) {MesPrint("Error in InitTree"); return -1;}
 /*
  		#] the buffers : 
  		#[ the receive buffers :
@@ -467,8 +467,7 @@ static int PF_InitTree(void)
 	   so sender slot == receiver slot across all (mapper,reducer,merger,master)
 	   pairs even when reducer* form.set overrides grow the reducer's local arena. */
 	size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
-	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
-	//size = size / 512;
+	if ( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2) ) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(alloc_numtasks*sizeof(PF_BUFFER*), "Master: rbufs") ) == NULL ) return(-1);
@@ -589,7 +588,7 @@ static WORD *PF_PutIn(int src)
 	WORD *lastterm = PF_term[src];
 	WORD *term = rbuf->fill[a];
 
-	//MesPrint("PF_PutIn: PutIn from %d active buffer %d next buffer %d", workerIdx, a, next);
+/* MesPrint("PF_PutIn: PutIn from %d active buffer %d next buffer %d", workerIdx, a, next); */
 	if ( src <= 0 ) return(PF_term[0]);
 
 	if ( rbuf->full[a] == rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2 ) {
@@ -598,12 +597,12 @@ static WORD *PF_PutIn(int src)
 */
 		{
 #ifdef PF_PROFILE
-			int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+			int pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
 			                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
 #endif
 			PF_TIMER_BEGIN_RT(rw);
 			tag = PF_WaitRbuf(rbuf,a,&size);
-			PF_TIMER_END_RT(rw, _pf_rw);
+			PF_TIMER_END_RT(rw, pf_rw);
 		}
 		rbuf->full[a] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) *rbuf->full[a]++ = 0;
@@ -616,14 +615,14 @@ static WORD *PF_PutIn(int src)
 			PF_IRecvRbuf(rbuf,next,workerIdx);
 		}
 	}
-	//last term from the buffer
+/* last term from the buffer */
 	if ( *term == 0 && term != rbuf->full[a] ) return(PF_term[0]);
 /*
 		exception is for rare cases when the terms fitted exactly into buffer
 */
 	if ( term + *term > rbuf->full[a] || term + 1 >= rbuf->full[a] ) {
 newterms:
-		//MesPrint("PF_PutIn: Need new terms, copies %d bytes or %d bytes", term - rbuf->buff[a], *term);
+/* MesPrint("PF_PutIn: Need new terms, copies %d bytes or %d bytes", term - rbuf->buff[a], *term); */
 		m1 = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 1;
 		/*
 			copy beginning of term to the next buffer so that it ends at m1
@@ -632,7 +631,7 @@ newterms:
 /*
 			copy term and lastterm to the new buffer, so that they end at m1
 */
-			//MesPrint("PF_PutIn: copy lastterm also");
+/* MesPrint("PF_PutIn: copy lastterm also"); */
 			m2 = rbuf->full[a] - 1;
 			while ( m2 >= term ) *m1-- = *m2--;
 			rbuf->fill[next] = term = m1 + 1;
@@ -651,24 +650,24 @@ newterms:
 		if ( rbuf->numbufs == 1 ) {
 			rbuf->full[a] = rbuf->buff[a] + AM.MaxTer/sizeof(WORD) + 2;
 			size = (LONG)(rbuf->stop[a] - rbuf->full[a]);
-			//MesPrint("[%d] PF_PutIn: First Post non blocking receive from %d size %d", PF.me, src, size);
+/* MesPrint("[%d] PF_PutIn: First Post non blocking receive from %d size %d", PF.me, src, size); */
 			PF_IRecvRbuf(rbuf,a,workerIdx);
 		}
 /*
 			wait for new terms in the next buffer
 */
-		//MesPrint("[%d] PF_PutIn: Wait the next buffer to be filled from %d active buffer %d ", PF.me, workerIdx, next);
+/* MesPrint("[%d] PF_PutIn: Wait the next buffer to be filled from %d active buffer %d ", PF.me, workerIdx, next); */
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 		{
 #ifdef PF_PROFILE
-			int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+			int pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
 			                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
 #endif
 			PF_TIMER_BEGIN_RT(rw);
 			tag = PF_WaitRbuf(rbuf,next,&size);
-			PF_TIMER_END_RT(rw, _pf_rw);
+			PF_TIMER_END_RT(rw, pf_rw);
 		}
-		//MesPrint("[%d] PF_PutIn: got new terms tag %d", PF.me, tag);
+/* MesPrint("[%d] PF_PutIn: got new terms tag %d", PF.me, tag); */
 		rbuf->full[next] += size;
 		if ( tag == PF_ENDBUFFER_MSGTAG ) {
 			*rbuf->full[next]++ = 0;
@@ -837,13 +836,13 @@ static int PF_StoreBuffer()
 	int src = 0;
 	TimeElapsed(TIMERESET);
 newsrc: ;
-	//MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me);
+/* MesPrint("[%d] PF_StoreBuffer: WaitAnyRbuf", PF.me); */
 	PF_TIMER_BEGIN(RED_RECV_WAIT);
 	TimeElapsed(TIMESTART);
 	tag = PF_WaitAnyRbuf(PF.rbufs,&src,&size);
 	TimeElapsed(TIMESTOP);
 	PF_TIMER_END(RED_RECV_WAIT);
-	if( tag  == PF_ENDSHUFFLEALL_MSGTAG)
+	if ( tag  == PF_ENDSHUFFLEALL_MSGTAG )
 	{
 		src = 0;
 		return 0;
@@ -858,18 +857,18 @@ newsrc: ;
 */
 		rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 		size = (LONG)(rbuf->stop[next] - rbuf->full[next]);
-		//MesPrint("[%d] PF_StoreBuffer: set receive request of size %d from %d", PF.me, size, src);
+/* MesPrint("[%d] PF_StoreBuffer: set receive request of size %d from %d", PF.me, size, src); */
 		err = PF_IRecvRbuf(rbuf,next,src);
-		if (err) {MesPrint("[%d] PF_StoreBuffer: PF_IRecvRbuf error %d from %d", PF.me, err, src); return(-1); }
+		if ( err ) {MesPrint("[%d] PF_StoreBuffer: PF_IRecvRbuf error %d from %d", PF.me, err, src); return(-1); }
 		int k = src * PF.numrbufs + next;
 		d->reqs[k] = rbuf->request[next];
 	}
-	else if ( tag != PF_ENDSHUFFLE_MSGTAG)
+	else if ( tag != PF_ENDSHUFFLE_MSGTAG )
 	{
 		return(-1);
 	}
 	rbuf = PF.rbufs[src];
-	if (!rbuf || !rbuf->buff || !rbuf->full || !rbuf->fill) {
+	if ( !rbuf || !rbuf->buff || !rbuf->full || !rbuf->fill ) {
 		return -1;
 	}
 	PF_TIMER_INC(PF_EX_BUFFERS_RECEIVED);
@@ -881,22 +880,22 @@ newsrc: ;
 	sSpace = rbuf->full[a] - rbuf->fill[a];
 	/* Per-link reducer bandwidth: bytes consumed per buffer. */
 	PF_TIMER_ADD_BYTES(PF_EX_RED_BYTES_RECEIVED, sSpace * sizeof(WORD));
-	//MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace);
+/* MesPrint("[%d] PF_StoreBuffer: saving patch of size %d to large buffer", PF.me, sSpace); */
 	lSpace = sSpace + (S->lFill - S->lBuffer)
 				 - (AM.MaxTer/sizeof(WORD))*((LONG)S->lPatch);
 	SETBASEPOSITION(pp,lSpace);
 	MULPOS(pp,sizeof(WORD));
 	{
-		int _pf_merge_max_patches = (S->lPatch >= S->MaxPatches);
-		int _pf_merge_lbuf_full = ((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer)) >= S->lTop;
-		if ( _pf_merge_max_patches || _pf_merge_lbuf_full ) {
+		int pf_merge_max_patches = (S->lPatch >= S->MaxPatches);
+		int pf_merge_lbuf_full = ((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer)) >= S->lTop;
+		if ( pf_merge_max_patches || pf_merge_lbuf_full ) {
 /*
 			The large buffer is too full. Merge and write it
 */
-			//MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop);
+/* MesPrint("[%d] PF_StoreBuffer: before MergePatches call. S->lPatch= %d,S->MaxPatches=%d, S->lFill= %d, S->lTop=%d",PF.me,S->lPatch,S->MaxPatches,((WORD *)(((UBYTE *)(S->lFill + sSpace)) + 2*AM.MaxTer )),S->lTop); */
 
-			if (_pf_merge_max_patches) PF_TIMER_INC(PF_EX_MERGE_MAX_PATCHES);
-			if (_pf_merge_lbuf_full)   PF_TIMER_INC(PF_EX_MERGE_LBUFFER_FULL);
+			if ( pf_merge_max_patches ) PF_TIMER_INC(PF_EX_MERGE_MAX_PATCHES);
+			if ( pf_merge_lbuf_full )   PF_TIMER_INC(PF_EX_MERGE_LBUFFER_FULL);
 			PF_TIMER_BEGIN(RED_MERGE_PATCHES);
 			PF_TIMER_INC(PF_EX_PATCHES_BUILT);
 			if ( MergePatches(1) ) return (-1);
@@ -916,13 +915,13 @@ newsrc: ;
 
 	ss = rbuf->fill[a];
 	while ( ss != rbuf->full[a] ) {
-		if (*ss == 0) break;
+		if ( *ss == 0 ) break;
 		S->TermsLeft++;
 		sss =  (*ss < 0) ? ss + ss[1] + 2 : ss + *ss ;
 #ifdef MR_DEBUG
 		/* Mappers produce well-formed term streams; this is a self-consistency
 		   check. Behind MR_DEBUG so the hot loop stays a single load+memcpy. */
-		if ( sss > rbuf->full[a] || sss <= rbuf->fill[a]){
+		if ( sss > rbuf->full[a] || sss <= rbuf->fill[a] ) {
 			MesPrint("[%d] PF_StoreBuffer: Error in term %d sss= %d, ss = %d full = %d", PF.me, *ss, sss, ss, rbuf->full[a]);
 			return(-1);
 		}
@@ -1570,7 +1569,7 @@ int PF_EndSort(void)
 	if ( PF.me != MASTER && !PF.in_merger_phase ) {
 		if ( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers )
 			return 0; /* plain mapper: nothing to do here */
-		if ((size = PF_allocateSbuf()) == 0 ) {
+		if ( (size = PF_allocateSbuf()) == 0 ) {
 			MesPrint("[%d] ERROR in endsort: Failed to allocate send buffer", PF.me);
 			return -1;
 		}
@@ -1887,12 +1886,12 @@ int PF_EndSort(void)
 					rbuf->full[next] = rbuf->buff[next] + AM.MaxTer/sizeof(WORD) + 2;
 					{
 #ifdef PF_PROFILE
-						int _pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
+						int pf_rw = PF.in_merger_phase ? PF_PHASE_MER_RECV_WAIT
 						                                : PF_PHASE_MAS_MERGE_RECV_WAIT;
 #endif
 						PF_TIMER_BEGIN_RT(rw);
 						tag = PF_WaitRbuf(rbuf, next, &size);
-						PF_TIMER_END_RT(rw, _pf_rw);
+						PF_TIMER_END_RT(rw, pf_rw);
 					}
 					rbuf->full[next] += size;
 					if ( tag == PF_ENDBUFFER_MSGTAG ) {
@@ -2183,7 +2182,6 @@ strip:
 	i = *fi->POfill;
 	while ( i-- ) *tp++ = *fi->POfill++;
 RegRet:
-	//PRINTFBUF("PF_GetTerm returns",term,*term);
 	return(*term);
 }
 
@@ -2305,7 +2303,7 @@ static int PF_Wait4Slave(int src)
 	PF_CatchErrorMessages(&src, &tag);
 	PF_Receive(src, tag, &next, &tag);
 
-	if (tag == PF_BUFFER_MSGTAG ) {
+	if ( tag == PF_BUFFER_MSGTAG ) {
 		return next;
 	}
 	if ( tag != PF_READY_MSGTAG ) {
@@ -2418,7 +2416,7 @@ static int PF_WaitAllSlaves(void)
 		live       = (UBYTE*)Malloc1(sizeof(UBYTE)*PF.nummergers,"PF_steal live");
 		terms_left = (LONG*) Malloc1(sizeof(LONG) *PF.nummergers,"PF_steal terms_left");
 		helpers    = (int*)  Malloc1(sizeof(int)  *PF.nummergers,"PF_steal helpers");
-		//initialize live[] and terms_left[] from the master's per-merger input counts, and helpers[] from node-local mapper counts:
+/* initialize live[] and terms_left[] from the master's per-merger input counts, and helpers[] from node-local mapper counts: */
 		for ( g = 0; g < PF.nummergers; g++ ) {
 			LONG merger_terms = ( PF.merger_total_terms ) ? PF.merger_total_terms[g] : 0;
 			terms_left[g] = merger_terms;
@@ -2439,11 +2437,11 @@ static int PF_WaitAllSlaves(void)
 		num_plain = PF.nummappers - 1 - PF.nummergers;
 	}
 
-	//allocate an arraay for all the slaves (mappers and reducers) - numtaks + 1- for each slave and for
+/* allocate one flag per slave (mappers and reducers), PF.numtasks + 1 entries */
 	has_sent = (UBYTE*)Malloc1(sizeof(UBYTE)*(PF.numtasks + 1),"PF_WaitAllSlaves");
 
-	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; // reset array
-	for ( readySlaves = 1; readySlaves < PF.numtasks; ) { //loop until all expected slaves are ready
+	for ( i = 0; i < PF.numtasks; i++ ) has_sent[i] = 0; /* reset array */
+	for ( readySlaves = 1; readySlaves < PF.numtasks; ) { /* loop until all expected slaves are ready */
 		if ( next != PF_ANY_SOURCE) { /*Go to the next slave:*/
 			do{ /*Note, here readySlaves<PF.numtasks, so this loop can't be infinite*/
 				if ( ++next >= PF.numtasks ) next = 1;
@@ -2452,7 +2450,7 @@ static int PF_WaitAllSlaves(void)
 /*
 			Here PF_ProbeWithCatchingErrorMessages() is BLOCKING function if next = PF_ANY_SOURCE:
 */
-		tag = PF_ProbeWithCatchingErrorMessages(&next); //only probing
+		tag = PF_ProbeWithCatchingErrorMessages(&next); /* only probing */
 /*
 			Here next != PF_ANY_SOURCE
 */
@@ -2481,7 +2479,7 @@ static int PF_WaitAllSlaves(void)
 						stop_sent = 1;
 					}
 				}
-				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers)
+				if ( AC.sMRflag != NO_MAPREDUCE && next < PF.nummappers )
 					PF_Wait4Slave(next);
 				/* Merger tier: leaf reducer's data goes to a merger, not to
 				   master, so master's PF_InitTree Irecv from this leaf never
@@ -2492,7 +2490,7 @@ static int PF_WaitAllSlaves(void)
 				          && PF.nummergers > 0
 				          && next >= PF.nummappers )
 					PF_Wait4Slave(next);
-				//MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next);
+/* MesPrint("[0] PF_WaitAllSlaves: %d starts endsort", next); */
 /*
 					Note, we do NOT read results here! Messages from these slaves will be read
 					only after all slaves are ready, further in caller function
@@ -2563,7 +2561,7 @@ static int PF_WaitAllSlaves(void)
 					}
 				}
 				break;
-			// all mappers sent ready for the next term chunk. We need to tell them to stop.
+/* all mappers sent ready for the next term chunk. We need to tell them to stop. */
 			case PF_READY_MSGTAG:
 /*
 					idle slave
@@ -2825,15 +2823,15 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 #ifdef PF_PROFILE
 	pf_profile_per_node_init();
 	pf_profile_reset_module();
-	PF_OSCounters _pf_os_start;
-	pf_profile_snapshot_os(&_pf_os_start);
+	PF_OSCounters pf_os_start;
+	pf_profile_snapshot_os(&pf_os_start);
 	pf_module_t0 = MPI_Wtime();
 	pf_module_smrflag = (int)AC.sMRflag;   /* label this module FIRST/MAPREDUCE/LAST/none in the CSV */
 	if ( PF.me == MASTER ) pf_profile_alloc_master(PF.numtasks);
 #endif
 
 	PF.numreducers = (PF.numtasks - 1)*AM.ReducerPer / 100;
-	if (PF.numreducers <2 ) PF.numreducers = 2;
+	if ( PF.numreducers <2 ) PF.numreducers = 2;
 	PF.nummappers = AC.sMRflag != NO_MAPREDUCE ? (PF.numtasks - PF.numreducers): PF.numtasks;
 	PF.numreducers = PF.numtasks - PF.nummappers;
 	role = (PF.me < PF.nummappers) ? ROLE_MAPPER : ROLE_REDUCER;
@@ -2972,7 +2970,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			AC.inputnumbers[j] = -1;
 		}
 	}
-	if ( AC.mparallelflag != PARALLELFLAG ){
+	if ( AC.mparallelflag != PARALLELFLAG ) {
 		/* MAPREDUCE_LAST is the chain-exit gather module: non-parallel
 		   (mMRflag==NO_MAPREDUCE) but sMRflag still labels it LAST so the data
 		   path knows the global expression is scattered across the G node-local
@@ -2988,7 +2986,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 				if ( pf_master_gather(e,i) < 0 ) return(-1);
 			}
 		}
-		if(AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST) {return(0);}
+		if ( AC.sMRflag == NO_MAPREDUCE || AC.sMRflag == MAPREDUCE_LAST ) {return(0);}
 		MesPrint("ERROR: Calling Map Reduce without parallel");
 		return (-1);
 	}
@@ -3038,7 +3036,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			to the right places in the sortbuffers.
 */
 		NewSort(BHEAD0);   /* we need AT.SS to be set for this!!! */
-		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error Master PF_Processor"); return -1;}
+		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error Master PF_Processor"); return -1;}
 
 		PF_BUFFER *sb = PF.sbufs[0] ;
 /*
@@ -3156,9 +3154,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_Statistics(PF_stats,0);
 #ifdef PF_PROFILE
 		{
-			PF_OSCounters _pf_os_end;
-			pf_profile_snapshot_os(&_pf_os_end);
-			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			PF_OSCounters pf_os_end;
+			pf_profile_snapshot_os(&pf_os_end);
+			pf_profile_diff_os(&pf_os_start, &pf_os_end, pf_os_diff);
 			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
 			memcpy(pf_profile_stats[0].phase_us,       pf_phase_us,       sizeof(pf_phase_us));
 			memcpy(pf_profile_stats[0].phase_first_us, pf_phase_first_us, sizeof(pf_phase_first_us));
@@ -3183,7 +3181,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
  		#] Master: 
 */
 	}
-	else if (role==ROLE_MAPPER) {
+	else if ( role==ROLE_MAPPER ) {
 /*
  		#[ Mapper/Slave :
 */
@@ -3225,14 +3223,14 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			FILEHANDLE *fi = AC.RhsExprInModuleFlag && PF.rhsInParallel ? &PF.slavebuf : AR.infile;
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
-		if ((size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
+		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
 
-		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers) //if we in mapreduce and this is a mapper
+		if ( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ) /* if we in mapreduce and this is a mapper */
 		{
-			for (int k = PF.nummappers; k < PF.numtasks; k++){ //allocating the buffers in the destined reducers indices
-				if(PF.sbufs[k] == NULL){
+			for ( int k = PF.nummappers; k < PF.numtasks; k++ ) { /* allocating the buffers in the destined reducers indices */
+				if ( PF.sbufs[k] == NULL ) {
 					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
-					//MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size);
+/* MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size); */
 				}
 				else{
 					for ( i = 0; i < PF.numsbufs; i++ )
@@ -3244,16 +3242,16 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 /*
  		#] the slaves have to initialize their sendbuffer : 
 */
-		if( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ){
-			if(AR.CompressBuffers == NULL)
+		if ( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ) {
+			if ( AR.CompressBuffers == NULL )
 			{
 				AR.CompressBuffers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in PF_Processor");
 				AR.CompressPointers = (WORD**)Malloc1(PF.numtasks*sizeof(WORD*), "CompressBuffers in PF_Processor");
 				AR.CompressBuffers[0] = AR.CompressPointers[0] = AR.CompressBuffer;
-				for(i=0;i<PF.numtasks;i++) AR.CompressBuffers[i] = NULL;
+				for ( i=0;i<PF.numtasks;i++ ) AR.CompressBuffers[i] = NULL;
 			}
-			for(i=PF.nummappers;i<PF.numtasks;i++) {
-				if (AR.CompressBuffers[i] == NULL ){
+			for ( i=PF.nummappers;i<PF.numtasks;i++ ) {
+				if ( AR.CompressBuffers[i] == NULL ) {
 					AR.CompressBuffers[i] = (WORD *)Malloc1((AM.CompressSize+10)*sizeof(WORD),"compresssize");
 				}
 				AR.CompressPointers[i] = AR.CompressBuffers[i];
@@ -3324,11 +3322,11 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			WORD *oldbuff = fout->PObuffer;
 			WORD *oldstop = fout->POstop;
 			LONG  oldsize = fout->POsize;
-			//MesPrint("[%d] PF_Processor: starting endsort", PF.me);
+/* MesPrint("[%d] PF_Processor: starting endsort", PF.me); */
 			PF_TIMER_BEGIN(MAP_ENDSORT_TOTAL);
 			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
 			PF_TIMER_END(MAP_ENDSORT_TOTAL);
-			//MesPrint("[%d] PF_Processor: finished endsort", PF.me);
+/* MesPrint("[%d] PF_Processor: finished endsort", PF.me); */
 			fout->PObuffer = oldbuff;
 			fout->POstop   = oldstop;
 			fout->POsize   = oldsize;
@@ -3336,7 +3334,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 		send_time = TimeCPU(1) - send_time;
 		LONG waittime = TimeElapsed(TIMEGET);
-		if( AC.sMRflag != NO_MAPREDUCE) PF_Send(MASTER, PF_BUFFER_MSGTAG); //Send update to Master that the mapper is done sending terms to reducers
+		if ( AC.sMRflag != NO_MAPREDUCE ) PF_Send(MASTER, PF_BUFFER_MSGTAG); /* Send update to Master that the mapper is done sending terms to reducers */
 		/* Mapper-merger overlay (Phase 1 of reducer merge tree). On ranks
 		   1..PF.nummergers, after the mapper-phase EndSort + done-send, run
 		   a second merge pass over a group of leaf reducer streams and
@@ -3370,9 +3368,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&send_time,		 1, PF_LONG);
 #ifdef PF_PROFILE
 		{
-			PF_OSCounters _pf_os_end;
-			pf_profile_snapshot_os(&_pf_os_end);
-			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			PF_OSCounters pf_os_end;
+			pf_profile_snapshot_os(&pf_os_end);
+			pf_profile_diff_os(&pf_os_start, &pf_os_end, pf_os_diff);
 			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
 			pf_extras[PF_EX_TERMS_SENT] = PF_linterms;
 			PF_LongSinglePack(pf_phase_us,       PF_PHASE_COUNT, PF_LONG);
@@ -3413,7 +3411,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		}
 #endif
 	}
-	else { // role==ROLE_REDUCER
+	else { /* role==ROLE_REDUCER */
 /*
 		#[ the receive buffers :
 		*/
@@ -3451,9 +3449,9 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		PF_LongSinglePack(&ret,		 		 1, PF_LONG);
 #ifdef PF_PROFILE
 		{
-			PF_OSCounters _pf_os_end;
-			pf_profile_snapshot_os(&_pf_os_end);
-			pf_profile_diff_os(&_pf_os_start, &_pf_os_end, pf_os_diff);
+			PF_OSCounters pf_os_end;
+			pf_profile_snapshot_os(&pf_os_end);
+			pf_profile_diff_os(&pf_os_start, &pf_os_end, pf_os_diff);
 			pf_extras[PF_EX_WALLCLOCK_US] = (LONG)((MPI_Wtime() - pf_module_t0) * 1.0e6);
 			PF_LongSinglePack(pf_phase_us,       PF_PHASE_COUNT, PF_LONG);
 			PF_LongSinglePack(pf_phase_first_us, PF_PHASE_COUNT, PF_LONG);
@@ -3512,19 +3510,19 @@ int PF_ReducerInit()
 	int err;
 	PF_BUFFER **rbuf = PF.rbufs;
 	int numtasks = PF.nummappers; 
-	int numrbufs = PF.numrbufs; //for each mapper
+	int numrbufs = PF.numrbufs; /* for each mapper */
 	/* Use PF.shuffle_arena_words (mapper-config arena) -- same rationale as PF_InitTree:473. */
 	LONG size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
-	if( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2)) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
+	if ( size <= (LONG)(AM.MaxTer/sizeof(WORD) + 2) ) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
 	if ( rbuf == NULL ) {
 		if ( ( rbuf = (PF_BUFFER**)Malloc1(numtasks*sizeof(PF_BUFFER*), "Reducer: rbufs") ) == NULL ) return(-1);
 		if ( (rbuf[0] = PF_AllocBuf(1,1,0) ) == NULL ) return(-1);
 		for ( i = 1; i < numtasks; i++ ) {
-			if (!(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0))) return(-1);
+			if ( !(rbuf[i] = PF_AllocBuf(numrbufs,sizeof(WORD)*size,0)) ) return(-1);
 		}
 	}
-	if (PF_term == NULL && PF_allocatePFTerm(numtasks)) {MesPrint("Error in ReducerInit"); return -1;}
-	// create a receivers requests flat view
+	if ( PF_term == NULL && PF_allocatePFTerm(numtasks) ) {MesPrint("Error in ReducerInit"); return -1;}
+/* create a receivers requests flat view */
 	PF_SetupFlatRequestsView();
 	PF_Dispatch* d = &PF.dispatch;
 	for ( i = 1; i < numtasks; i++ ) {
@@ -3537,7 +3535,7 @@ int PF_ReducerInit()
 		*PF_term[i] = 0;
 		size = (LONG)(rbuf[i]->stop[rbuf[i]->active] - rbuf[i]->full[rbuf[i]->active]);
 		err = PF_IRecvRbuf(rbuf[i],rbuf[i]->active,i);
-		if (err) return err;
+		if ( err ) return err;
 		int k = i * numrbufs;
 		d->reqs[k] = rbuf[i]->request[rbuf[i]->active];
 	}
@@ -3564,7 +3562,7 @@ LONG PF_ForwardTermsToMaster()
 	*AR.CompressPointer = 0;
 	SeekScratch(AR.outfile,&position);
 	oldposition = position;
-	if(PF_StoreBuffer() == -1) return -1;
+	if ( PF_StoreBuffer() == -1 ) return -1;
 	/* Merger tier: bulk data goes to merger (not master), so the in-flow
 	   pre-handshake in PF_ISendSbuf (mpi.c) never fires for master. Send an
 	   explicit PF_BUFFER_MSGTAG to master now, after PF_StoreBuffer is done
@@ -3756,16 +3754,16 @@ LONG PF_MergerLoop(void)
  */
 LONG PF_allocateSbuf()
 {
-	if( PF.sbufs == NULL )
+	if ( PF.sbufs == NULL )
 	{
-		if ((PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return 0;}
+		if ( (PF.sbufs = (PF_BUFFER**)Malloc1(PF.numtasks*sizeof(PF_BUFFER), "Reducer: sbufs") ) == NULL ) {MesPrint("Error in endsort"); return 0;}
 		PF.sbufs[0] = 0;
-		for(int i = 0 ; i < PF.numtasks; i++)
+		for ( int i = 0 ; i < PF.numtasks; i++ )
 			PF.sbufs[i] = NULL;
 	}
 	PF_BUFFER *sbuf=PF.sbufs[0];
 	LONG size;
-	if(PF.me == MASTER){
+	if ( PF.me == MASTER ) {
 		size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
 		if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
 			size = AR.infile->POsize/sizeof(WORD) - 1;
@@ -3773,19 +3771,19 @@ LONG PF_allocateSbuf()
 			size = (LONG)((AT.SS->sTop2 - AT.SS->lBuffer)/(PF.numtasks));
 			if ( size > (LONG)(AR.infile->POsize/sizeof(WORD) - 1) )
 				size = AR.infile->POsize/sizeof(WORD) - 1;
-			if ( sbuf == 0 ) { // allocate a buffer for each slave - use lbuffer space
+			if ( sbuf == 0 ) { /* allocate a buffer for each slave - use lbuffer space */
 				if ( ( sbuf = PF_AllocBuf(PF.numtasks,size*sizeof(WORD),PF.numtasks) ) == NULL )
 					return(-1);
 			}
 			sbuf->buff[0] = AT.SS->lBuffer;
 			sbuf->full[0] = sbuf->fill[0] = sbuf->buff[0];
-			for (int j = 1; j < PF.numtasks; j++ ) {
+			for ( int j = 1; j < PF.numtasks; j++ ) {
 				sbuf->stop[j-1] = sbuf->buff[j] = sbuf->buff[j-1] + size;
 			}
 			sbuf->stop[PF.numtasks-1] = sbuf->buff[PF.numtasks-1] + size;
 			PF.sbufs[0] = sbuf;
 		}
-		for (int j = 0; j < PF.numtasks; j++ ) {
+		for ( int j = 0; j < PF.numtasks; j++ ) {
 			sbuf->full[j] = sbuf->fill[j] = sbuf->buff[j];
 		}
 	}
@@ -3798,12 +3796,12 @@ LONG PF_allocateSbuf()
 		   when a reducer's local arena is larger via reducer* form.set keys. */
 		size = (PF.shuffle_arena_words - 1)/(PF.numtasks - 1);
 		size -= (AM.MaxTer/sizeof(WORD) + 2);
-		if( size <= 0) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
-		if( sbuf == 0){
+		if ( size <= 0 ) size = (LONG)(2*(AM.MaxTer/sizeof(WORD) + 2));
+		if ( sbuf == 0 ) {
 			if ( (sbuf = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 1)) == NULL ) return 0;
 			sbuf->active = 0;
 		}
-		for (int i = 0; i < PF.numsbufs; i++ )
+		for ( int i = 0; i < PF.numsbufs; i++ )
 			sbuf->fill[i] = sbuf->full[i] = sbuf->buff[i];
 		FILEHANDLE *fout = AR.outfile;
 		sbuf->buff[0] = fout->PObuffer;
@@ -3819,7 +3817,6 @@ LONG PF_allocateSbuf()
 	}
 	PF.sbufs[0] = sbuf;
 	return size;
-	//size = (PF.sbufs[0]->stop[0] - PF.sbufs[0]->buff[0])/sizeof(WORD);
 }
 /*
 	#] PF_allocateSbuf :
@@ -3843,7 +3840,7 @@ int PF_allocatePFTerm(int numtasks)
 
 	PF_newcpos = (WORD **)p;  p += sizeof(WORD*) * numtasks;
 	PF_newclen =  (WORD *)p;  p += sizeof(WORD)  * numtasks;
-	for (int i = 0; i < numtasks; i++ ) {
+	for ( int i = 0; i < numtasks; i++ ) {
 		PF_newcpos[i] = (WORD *)p; p += sizeof(WORD)*AM.MaxTal;
 		PF_newclen[i] = 0;
 	}
@@ -3906,13 +3903,13 @@ int PF_Init(int *argc, char ***argv)
 		}
 		if ( ( c = (char*)getenv("PF_RBUFS") ) != 0 ) {
 			PF.numrbufs = (int)atoi(c);
-			//fprintf(stdout,"[%d] changing numrbufs to: %d\n",PF.me,PF.numrbufs);
-			//fflush(stdout);
+/* fprintf(stdout,"[%d] changing numrbufs to: %d\n",PF.me,PF.numrbufs); */
+/* fflush(stdout); */
 		}
 		if ( ( c = (char*)getenv("PF_SBUFS") ) != 0 ) {
 			PF.numsbufs = (int)atoi(c);
-			//fprintf(stdout,"[%d] changing numsbufs to: %d\n",PF.me,PF.numsbufs);
-			//fflush(stdout);
+/* fprintf(stdout,"[%d] changing numsbufs to: %d\n",PF.me,PF.numsbufs); */
+/* fflush(stdout); */
 		}
 		if ( PF.numsbufs > 10 ) PF.numsbufs = 10;
 		if ( PF.numsbufs <  1 ) PF.numsbufs = 1;
