@@ -107,6 +107,48 @@ static inline BOOL PF_LowMRsort() {
 	   it does NOT hash-route terms to reducers. */
 	return (PF.me < PF.nummappers && PF.me != MASTER && AR.sLevel <= 0 && PF.parallel && PF.exprtodo < 0 && AC.sMRflag != NO_MAPREDUCE && !PF.in_merger_phase);
 }
+
+/**
+ *	End of the part of a term that MR hash routing is allowed to look at.
+ *
+ *	Routing is only correct if every pair of terms that Compare1 calls EQUAL
+ *	hashes the same, because equal terms are summed at the reducer and terms
+ *	on different reducers never meet. Compare1 treats two things as not part
+ *	of a term's identity:
+ *
+ *	  - the PolyFun/PolyRatFun argument. Compare1 records S->PolyWise and
+ *	    skips it, so x*poly(a) and x*poly(b) compare equal and merge into
+ *	    x*poly(a+b). Hashing over the argument sends them to different
+ *	    reducers instead.
+ *	  - a trailing FLOATFUN in float mode (AT.aux_ != 0), which Compare1
+ *	    likewise returns 0 for via AT.SortFloatMode.
+ *
+ *	So the hash has to stop exactly where Compare1 stops looking. The walk
+ *	below is the same one PutOut and Compress use to locate the PolyFun in
+ *	front of the coefficient; the two are mutually exclusive there and here.
+ *
+ *	@param  term  the term
+ *	@return       one past the last WORD the hash may include
+ */
+static inline WORD *pf_hash_symend(PHEAD WORD *term)
+{
+	GETBIDENTITY
+	WORD *end = term + *term;
+	end -= ABS(end[-1]);                 /* strip the coefficient */
+	if ( AR.PolyFun ) {
+		WORD *p = term + 1;
+		while ( p < end && *p != AR.PolyFun ) p += p[1];
+		if ( p < end ) end = p;          /* strip the PolyFun subterm */
+	}
+#ifdef WITHFLOAT
+	else if ( AT.aux_ != 0 ) {
+		WORD *p = term + 1;
+		while ( p < end && *p != FLOATFUN ) p += p[1];
+		if ( p < end ) end = p;          /* strip the trailing FLOATFUN */
+	}
+#endif
+	return end;
+}
 /* The R[] table and the mix32/AVX helpers below all assume a 32-bit UWORD
    (the table entries are 32-bit constants), so they exist only in the
    non-16-bit build. NOTE: this was '#ifndef BITSINWORD == 16', which the
@@ -1551,12 +1593,10 @@ WORD PutOut(PHEAD WORD *term, POSITION *position, FILEHANDLE *fi, WORD ncomp)
 		#ifdef WITHMPI
 			if ( lowmr_sort ) {
 				PF_TIMER_BEGIN(MAP_HASH_ROUTE);
-				WORD *start = term;
-				WORD *end = start + *start;
-				end -= ABS(end[-1]);
+				WORD *start = term + 1;
+				WORD *end = pf_hash_symend(BHEAD term);
 				UWORD term_hash = 0;
-				start++;
-				/* AM.MR.HashPrefixWords=K (default 0 = whole symbolic part):
+				/* AM.MR.HashPrefixWords=K (default 0 = the whole range above):
 				   hash only the first K words, so terms sharing a K-word prefix
 				   (= adjacent in canonical order) route to the same reducer.
 				   Invariant preserved: same symbolic part => same prefix =>
