@@ -1,0 +1,141 @@
+checking for a BSD-compatible install... /usr/bin/install -c
+checking whether build environment is sane... yes
+checking for a race-free mkdir -p... /usr/bin/mkdir -p
+checking for gawk... gawk
+checking whether make sets $(MAKE)... yes
+checking whether make supports nested variables... yes
+checking for gcc... gcc
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables... 
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether gcc understands -c and -o together... yes
+checking whether make supports the include directive... yes (GNU style)
+checking dependency style of gcc... gcc3
+checking for g++... g++
+checking whether the compiler supports GNU C++... yes
+checking whether g++ accepts -g... yes
+checking for g++ option to enable C++11 features... none needed
+checking dependency style of g++... gcc3
+checking whether ln -s works... yes
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking whether C++11 requires any flag... -std=gnu++11
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+checking for sys/types.h... yes
+checking for unistd.h... yes
+checking for sys/time.h... yes
+checking for grep that handles long lines and -e... /usr/bin/grep
+checking for egrep... /usr/bin/grep -E
+checking for fcntl.h... yes
+checking for limits.h... yes
+checking for sys/file.h... yes
+checking for unordered_map... yes
+checking for tr1/unordered_map... yes
+checking for boost/unordered_map.hpp... no
+checking for unordered_set... yes
+checking for tr1/unordered_set... yes
+checking for boost/unordered_set.hpp... no
+checking __builtin_popcount... yes
+checking __attribute__((noreturn))... yes
+checking for inline... inline
+checking for special C compiler options needed for large files... no
+checking for _FILE_OFFSET_BITS value needed for large files... no
+checking for unistd.h... (cached) yes
+checking for gmp.h... yes
+checking for __gmpz_init in -lgmp... yes
+checking for mpfr.h... yes
+checking for mpfr_init2 in -lmpfr... yes
+checking for zlib.h... yes
+checking for get_crc_table in -lz... yes
+checking for zstd.h... no
+configure: zstd is not available
+checking for git... /usr/bin/git
+Cloning into '/home/assaf/opt/formwork/pr1/extern/zstd'...
+Submodule path 'extern/zstd': checked out 'f8745da6ff1ad1e7bab384bd1f9d742439278e99'
+checking how to run the C preprocessor... gcc -E
+checking for flint/flint.h... no
+configure: flint is not available
+checking whether pthreads works with -pthread... yes
+checking for pthread_rwlock_t... yes
+checking for the POSIX thread clock... yes
+checking for library containing clock_gettime... none required
+checking for mpicc... mpicc
+checking whether MPI works with mpicc... yes
+checking whether mpicc accepts -show... yes
+checking for mpic++... no
+checking for mpicxx... mpicxx
+checking whether MPI works with mpicxx... yes
+checking whether mpicxx accepts -show... yes
+checking for library containing clock_gettime... (cached) none required
+checking for doxygen... no
+checking for latex... no
+checking for pdflatex... no
+checking for dvips... no
+checking for makeindex... no
+checking for htlatex... no
+checking for latex2html... no
+checking for ruby... /home/assaf/opt/formtc/usr/bin/ruby
+checking whether ruby >= 2.0... yes
+checking for ruby test/unit... yes
+checking that generated files are newer than configure... done
+configure: creating ./config.status
+config.status: creating Makefile
+config.status: creating sources/Makefile
+config.status: creating doc/Makefile
+config.status: creating doc/manual/Makefile
+config.status: creating doc/manual/manual.tex
+config.status: creating doc/devref/Makefile
+config.status: creating doc/devref/devref.tex
+config.status: creating doc/doxygen/Makefile
+config.status: creating doc/doxygen/DoxyfileHTML
+config.status: creating doc/doxygen/DoxyfileLATEX
+config.status: creating doc/doxygen/DoxyfilePDFLATEX
+config.status: creating check/Makefile
+config.status: creating config.h
+config.status: executing depfiles commands
+
+##################### CONFIGURATION #####################
+
+FORM 5.0.0
+
+Compiling for: Opteron Linux (POSIX)
+
+Optionally linked libraries:
+    gmp
+    mpfr
+    zlib
+
+Optionally enabled features:
+    <NONE>
+
+The following executables can be compiled:
+    form       scalar version
+    tform      multi-threaded version
+    parform    parallel version using MPI
+
+Type 'make <executable name>' in the source directory to
+build a specific version. Type 'make' to build all.
+
+Type 'make install' to install the executables in
+    /usr/local/bin
+and the man page in
+    /usr/local/share/man
+
+Type 'make check' to run automatic tests.
+
+Available documentation:
+    <NONE>
+
+#########################################################
+

@@ -170,6 +170,7 @@ int CoModuleOption(UBYTE *s)
 			SKIPBLANKS(t)
 			if ( (option->func)(t) ) error = 1;
 		}
+		if ( error ) return(error);
 		if ( StrCmp((UBYTE *)(option->name),(UBYTE *)("polyfun")) == 0
 		 || StrCmp((UBYTE *)(option->name),(UBYTE *)("polyratfun")) == 0 ) {
 			polyflag = 1;
@@ -700,7 +701,7 @@ UBYTE * DoModDollar(UBYTE *s, int type)
 			md->number = number;
 			md->type = type;
 #ifdef WITHPTHREADS
-			if ( type == MODLOCAL ) {
+			if ( DollarLocalCopy(type) ) {
 				int j, i;
 				DOLLARS dglobal, dlocal;
 				md->dstruct = (DOLLARS)Malloc1(
@@ -725,8 +726,7 @@ UBYTE * DoModDollar(UBYTE *s, int type)
 							dlocal->where[i] = dglobal->where[i];
 						dlocal->where[dlocal->size] = 0;
 					}
-					dlocal->pthreadslockread = dummylock;
-					dlocal->pthreadslockwrite = dummylock;
+					INIRECLOCK(dlocal->pthreadslock);
 					dlocal->nfactors = dglobal->nfactors;
 					if ( dglobal->nfactors > 1 ) {
 						int nsize;

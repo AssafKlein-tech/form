@@ -27,15 +27,31 @@ endif
 TESTS += benchmark-fu.sh
 
 EXTRA_DIST = \
+	.diagrams_cache/feyngraph_qcd_3_none.dat \
+	.diagrams_cache/feyngraph_qcd_3_onepi_opicomponents1.dat \
+	.diagrams_cache/qgraf_qcd_glu_glu_3_none.dat \
+	.diagrams_cache/qgraf_qcd_glu_glu_3_onepifloop.dat \
+	.diagrams_cache/qgraf_qcd_quaQUA_gluglu_2_onepifloop.dat \
+	.diagrams_cache/qgraf_qcd_qua_qua_3_none.dat \
+	.diagrams_cache/qgraf_qcd_qua_qua_3_onepifloop.dat \
+	.diagrams_cache/qgraf_qcd_qua_quaglu_3_onepifloop.dat \
 	benchmark-fu.sh \
 	check-help.sh \
 	check.rb \
+	coverage.frm \
+	diagrams.frm \
+	diagrams/diagrams.h \
 	examples.frm \
 	extra/checkpoint.frm \
 	extra/color.frm \
 	extra/forcer.frm \
+	extra/mincer.frm \
 	extra/multithreaded.frm \
+	extra/mzv-dm.frm \
+	extra/series.frm \
+	extra/z-fmft.frm \
 	features.frm \
 	fixes.frm \
 	formunit/fu.frm \
+	polynomial.frm \
 	user.frm

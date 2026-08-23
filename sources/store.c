@@ -119,8 +119,8 @@ void SetScratch(FILEHANDLE *f, POSITION *position)
 	if ( f == AR.hidefile ) whichInInBuf = &(AR.InHiBuf);
 	else                    whichInInBuf = &(AR.InInBuf);
 #ifdef HIDEDEBUG
-	if ( f == AR.hidefile ) MesPrint("In the hide file");
-	else MesPrint("In the input file");
+	if ( f == AR.hidefile ) MesPrint("In the hide file: %s", f->name);
+	else MesPrint("In the input file: %s", f->name);
 	MesPrint("SetScratch to position %15p",position);
 	MesPrint("POposition = %15p, full = %l, fill = %l"
 		,&(f->POposition),(f->POfull-f->PObuffer)*sizeof(WORD)
@@ -3207,7 +3207,7 @@ GetTb3:
 					WCOPY(buffer, AS.Olduflags, AS.NumOldNumFactors);
 					M_free(AS.Olduflags, "uflags pointers");
 				}
-				AS.Oldvflags = buffer;
+				AS.Olduflags = buffer;
 
 				AS.NumOldNumFactors = capacity;
 			}

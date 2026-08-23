@@ -571,7 +571,45 @@ EOF
 	assert stdout =~ /~~~\$c = 2200/
 	assert stdout =~ /~~~\$max = 4/
 	assert stdout =~ /~~~\$min = 0/
-*--#] DolVarsParallel_1 : 
+*--#] DolVarsParallel_1 :
+*--#[ Sta_Also_1 :
+Symbols x,y,cosphi,sinphi;
+Local F = x+y;
+id x = cosphi*x-sinphi*y;
+also y = sinphi*x+cosphi*y;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("- y*sinphi + y*cosphi + x*sinphi + x*cosphi")
+*--#] Sta_Also_1 : 
+*--#[ Sta_Antibracket_1 :
+Symbols x, y;
+Local F = (1+x+x^2)*(1+y+y^2);
+AntiBracket y;
+Print;
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+   F =
+       + x * ( 1 + y + y^2 )
+
+       + x^2 * ( 1 + y + y^2 )
+
+       + 1 + y + y^2;
+EOF
+*--#] Sta_Antibracket_1 : 
+*--#[ Sta_Antiputinside_1 :
+Symbols x, y, z;
+Cfunction f;
+Local F = 10 + x + y^2 + y*z;
+Antiputinside f,x;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+      f(y*z) + f(y^2) + f(1)*x + f(10)
+")
+*--#] Sta_Antiputinside_1 : 
 *--#[ Sta_ArgImplode_1 :
     CF Z1, ..., Z4;
     S x, a, b;
@@ -587,9 +625,88 @@ EOF
     .end
 	assert succeeded?
 	assert result("s") =~ expr("0")
-*--#] Sta_ArgImplode_1 : 
+*--#] Sta_ArgImplode_1 :
+*--#[ Sta_Argtoextrasymbol_1 :
+Symbols x, y;
+Cfunction f;
+Local F = f(x + 1);
+Local F1 = f(y,x + 1);
+Argtoextrasymbol;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("f(Z1_)")
+assert result("F1") =~ expr("f(Z2_,Z1_)")
+*--#] Sta_Argtoextrasymbol_1 :
+*--#[ Sta_Argument_1 :
+Symbols x, y, z;
+CFunction f;
+Local F = f(x + 2*y + z^2);
+Argument;
+Identify y = x;
+Endargument;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+      f(z^2 + 3*x)
+")
+*--#] Sta_Argument_1 :
+*--#[ Sta_Argument_2 :
+Symbols x,y;
+CFunction f, f1, f2, f3;
+Local F = f(x,x,x,x) + f1(x,x,x,x) + f2(x,x) + f3(x);
+Argument 2,f,1,{f,f1},3,4;
+Identify x = y; 
+Endargument;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+f(y,y,y,y) + f1(x,y,y,y) + f2(x,y) + f3(x)
+")
+*--#] Sta_Argument_2 : 
+*--#[ Sta_Bracket_1 :
+Symbols x, y;
+Local F = (1+x+x^2)*(1+y+y^2);
+Bracket y;
+Print;
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+   F =
+       + y * ( 1 + x + x^2 )
+
+       + y^2 * ( 1 + x + x^2 )
+
+       + 1 + x + x^2;
+EOF
+*--#] Sta_Bracket_1 : 
+*--#[ Sta_Chainin_1 :
+Function f;
+Symbol x,y,z;
+Local F = f(x)*f(y)*f(z);
+ChainIn f;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+      f(x,y,z)
+")
+*--#] Sta_Chainin_1 : 
+*--#[ Sta_Chainout_1 :
+Function f;
+Symbol x,y,z;
+Local F = f(x,y,z);
+ChainOut f;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+      f(x)*f(y)*f(z)
+")
+*--#] Sta_Chainout_1 : 
 *--#[ Sta_Collect_1 :
-* TODO: change the result in the manual.
 S a,b,c;
 CF cfun;
 L  F =
@@ -624,6 +741,116 @@ assert result("G") =~ expr("
        A3(i5)*A3(i4)*g_(1,5_)
 ")
 *--#] Sta_CommuteInSet_1 : 
+*--#[ Sta_Commute_1 :
+    CFunction f,g;
+    Symbol x;
+    Local F = f(x)*g(x) + g(x)*f(x);
+    Print;
+    .end
+assert succeeded?
+assert result("F") =~ expr("
+       2*f(x)*g(x)
+")
+*--#] Sta_Commute_1 :
+*--#[ Sta_Denominators_1 :
+Symbols x, y;
+Cfunction rat, den;
+PolyRatFun rat;
+Local F = 1/(x+y); 
+Denominators den;
+Identify den(x?) = rat(1,x);
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+      rat(1,x + y)
+")
+*--#] Sta_Denominators_1 :
+*--#[ Sta_Discard_1 :
+Symbols x;
+Local F = x^3 + x^4 + x^5 + x^6;
+if ( count(x,1) > 5 ) Discard;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+       x^3 + x^4 + x^5
+")
+*--#] Sta_Discard_1 :
+*--#[ Sta_Do_1 :
+Symbol x,y;
+CFunction f;
+LocalFactorized F = (1+y)*(2+y)*(3+y)*(4+y)*(5+y);
+.sort
+#$nf = numfactors_(F);
+Local G = <x^1>+...+<x^`$nf'>;
+Do $i = 1,$nf;
+   Identify,only x^$i = f(F[factor_^$i]);
+Enddo;
+Print;
+ModuleOption local $i;
+.end
+assert succeeded?
+assert stdout =~ exact_pattern("
+   F =
+         ( 1 + y )
+       * ( 2 + y )
+       * ( 3 + y )
+       * ( 4 + y )
+       * ( 5 + y );
+")
+assert result("G") =~ expr("
+       f(1 + y) + f(2 + y) + f(3 + y) + f(4 + y) + f(5 + y)
+")
+*--#] Sta_Do_1 :
+*--#[ Sta_Drop_1 :
+Local F1 = 1;
+Local F2 = 2;
+Local F3 = 3;
+.sort
+Drop;
+Ndrop F1;
+Print;
+.end
+assert succeeded?
+assert result("F1") =~ expr("1")
+*--#] Sta_Drop_1 :
+*--#[ Sta_DropCoefficient_1 :
+Symbols x;
+Local F = 1 + 10*x + 20*x^2;
+DropCoefficient;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+       1 + x + x^2
+")
+*--#] Sta_DropCoefficient_1
+*--#[ Sta_DropCoefficient_2 :
+Symbols x;
+Cfunction f;
+Local F = f(1 + 5*x + 10*x^2);
+Argument;
+DropCoefficient;
+Endargument;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+       f(1 + x + x^2)
+")
+*--#] Sta_DropCoefficient_2  
+*--#[ Sta_DropSymbols_1 :
+Symbols x, y, z;
+Local F = 1 + x + x^2 + z^3 + 2^2*y^4;
+Dropsymbols;
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("
+       8
+")
+*--#] Sta_DropSymbols_1  
 *--#[ Sta_FactArg_1 :
 *TODO: OldFactArg is needed for the result in the manual.
     On OldFactArg;
@@ -644,7 +871,20 @@ assert result("G") =~ expr("
           f(a,b,-1,3) + f(a,b,3) + 2*f1(a*b) + f2(a*b,-1,3) + f2(a*b,3)
           + f3(a*b,-3) + f3(a*b,3)
         ")
-*--#] Sta_FactArg_1 : 
+*--#] Sta_FactArg_1 :
+*--#[ Sta_Factorize_1 :
+Symbols x;
+Local F = x^3 + 3*x^2 + 3*x + 1;
+Factorize;
+Print;
+.end
+	assert succeeded?
+	assert result("F") =~ expr("
+        ( 1 + x )
+       * ( 1 + x )
+       * ( 1 + x )
+        ")
+*--#] Sta_Factorize_1 :
 *--#[ Sta_Fill_1 :
     Table B(1:1);
     Local dummy = 1;
@@ -805,6 +1045,45 @@ assert result("G") =~ expr("
     assert succeeded?
     assert result("F") =~ expr("x^2*acc(-y^3-10*y^2-2*y-5,y^2-1)")
 *--#] Sta_PolyRatFun_1 : 
+*--#[ Sta_PushPopHide_1 : 
+Local F1 = 1;
+.sort
+PushHide;
+Local F2 = 1;
+* This statement does not affect F1:
+Multiply 2;
+.sort
+PushHide;
+Local F3 = 1;
+* This statement does not affect F1,F2:
+Multiply 2;
+.sort
+PopHide;
+* This statement does not affect F1:
+Multiply 2;
+.sort
+PopHide;
+* This statement affects all expressions:
+Multiply 2;
+Print;
+.end
+assert succeeded?
+assert result("F1") =~ expr("2") 
+assert result("F2") =~ expr("8") 
+assert result("F3") =~ expr("8") 
+*--#] Sta_PushPopHide_1 :
+*--#[ Sta_PushPopHide_2 : 
+Local F1 = 1;
+.sort
+PushHide;
+Multiply 2;
+.sort
+PopHide;
+.sort
+PopHide;
+.end
+assert compile_error?("PopHide statement without corresponding PushHide statement")
+*--#] Sta_PushPopHide_2 :
 *--#[ Sta_Print_1 :
     Symbols a,b,c;
     Local F = 3*a+2*b;
@@ -823,7 +1102,30 @@ assert result("G") =~ expr("
 	EOF
 	)
 	assert result("F") =~ expr("3*c + 5*b")
-*--#] Sta_Print_1 : 
+*--#] Sta_Print_1 :
+*--#[ Sta_Putinside_1 :
+Symbols x, y, z;
+Cfunction f;
+Local F = 1 + x + 2*x + y^2+ z^3;
+Putinside f,x;
+Print;
+.end
+	assert succeeded?
+	assert result("F") =~ expr("
+  f(2*x) + f(x) + f(1) + f(1)*z^3 + f(1)*y^2")
+*--#] Sta_Putinside_1 : 
+*--#[ Sta_Repeat_1 :
+Symbols x, y, z;
+CFunction f, g;
+Local F = f(x)*g(y)*g(z);
+Repeat;
+Identify f(?a)*g(?b) = f(?a,?b);
+Endrepeat;
+Print;
+.end
+	assert succeeded?
+	assert result("F") =~ expr("f(x,y,z)")
+*--#] Sta_Repeat_1 : 
 *--#[ Sta_ReplaceLoop_1 :
 *TODO: change the result in the manual.
     Functions f(antisymmetric),ff(cyclesymmetric);
@@ -863,6 +1165,79 @@ assert result("G") =~ expr("
 	assert result("F1") =~ expr("f(a,b,c,d)+f(a,c,b,d)+f(a,c,d,b)+f(c,a,b,d)+f(c,a,d,b)+f(c,d,a,b)")
 	assert result("F2") =~ expr("g(a,b,c,d)+g(a,c,b,d)+g(a,c,d,b)+g(c,a,b,d)+g(c,a,d,b)+g(c,d,a,b)")
 *--#] Sta_Shuffle_1 : 
+*--#[ Sta_Setexitflag_1 :
+CFunction f;
+Symbol x;
+Local test = <f(1)>+...+<f(6)>;
+Identify f(x?even_) = x;
+If (Match(f(x?)));
+   Print "Error: unreplaced f: %t";
+   SetExitFlag;
+EndIf;
+.sort
+Print;
+.end
+# For now, this hangs in ParFORM and is not valgrind clean for tform
+#pend_if mpi? || ( valgrind? && threaded? )
+assert succeeded?
+assert stdout =~ exact_pattern("
+Error: unreplaced f:  + f(1)
+Error: unreplaced f:  + f(3)
+Error: unreplaced f:  + f(5)
+")
+*--#] Sta_Setexitflag_1 : 
+*--#[ Sta_Splitarg_1 :
+CFunction f;
+Symbol a,b,c,d;
+Local test = f(a+b-5*c*d);
+SplitArg f;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f( - 5*c*d,b,a)")
+*--#] Sta_Splitarg_1 : 
+*--#[ Sta_Splitarg_2 :
+CFunction f,g,h;
+Symbol x,y;
+Local test = f(2 + 3*x + 4*x^2) + g(2 + 3*x + 4*x^2) + h(x + x*y + x^2*y);
+SplitArg (x) f;
+SplitArg (x^2) g;
+SplitArg (x*y) h;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(2 + 4*x^2,3*x) + g(2 + 3*x,4*x^2) + h(x + x^2*y,x*y)")
+*--#] Sta_Splitarg_2 : 
+*--#[ Sta_Splitarg_3 :
+CFunction f;
+Symbol x,y;
+Local test = f(2 + 3*x + 4*x^2 + 5*x*y + 6*y);
+SplitArg ((x)) f;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(2 + 6*y,3*x,5*x*y,4*x^2)")
+*--#] Sta_Splitarg_3 : 
+*--#[ Sta_Splitfirstarg_1 :
+CFunction f;
+Symbol x;
+Local test = f(1 + x + x^2 + x^3);
+SplitFirstArg f;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(x + x^2 + x^3,1)")
+*--#] Sta_Splitfirstarg_1 : 
+*--#[ Sta_Splitlastarg_1 :
+CFunction f;
+Symbol x;
+Local test = f(1 + x + x^2 + x^3);
+SplitLastArg f;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(1 + x + x^2,x^3)")
+*--#] Sta_Splitlastarg_1 : 
 *--#[ Sta_Stuffle_1 :
     CF  S,R;
     Symbols N,n;
@@ -889,21 +1264,81 @@ assert result("G") =~ expr("
 	  EOF
 	)
 *--#] Sta_Stuffle_1 : 
+*--#[ Sta_Sum_1 :
+CFunction f;
+Index mu,nu;
+Local test1 = f(mu,mu);
+Local test2 = f(mu,nu);
+Local test3 = f(mu,nu)*f(mu,nu);
+Sum mu,0,1,2, nu,0,1,2;
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("f(0,0) + f(1,1) + f(2,2)")
+assert result("test2") =~ expr("f(0,0) + f(0,1) + f(0,2) + f(1,0) + f(1,1) + f(1,2) + f(2,0) + f(2,1) + f(2,2)")
+assert result("test3") =~ expr("f(0,0)^2 + f(0,1)^2 + f(0,2)^2 + f(1,0)^2 + f(1,1)^2 + f(1,2)^2 + f(2,0)^2 + f(2,1)^2 + f(2,2)^2")
+*--#] Sta_Sum_1 : 
+*--#[ Sta_Sum_2 :
+CFunction f,g;
+Index mu,nu;
+Local test1 = f(mu,nu)*g(mu,nu);
+Local test2 = f(N2_?,N1_?)*g(N2_?,N1_?);
+Sum mu,nu;
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("f(N1_?,N2_?)*g(N1_?,N2_?)")
+assert result("test2") =~ expr("f(N1_?,N2_?)*g(N1_?,N2_?)")
+*--#] Sta_Sum_2 : 
+*--#[ Sta_Sum_3 :
+CFunction f,g;
+Index mu,nu;
+Local test = f(mu,nu)*g(mu,nu);
+Sum mu, nu,0,1,2;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(N1_?,0)*g(N1_?,0) + f(N1_?,1)*g(N1_?,1) + f(N1_?,2)*g(N1_?,2)")
+*--#] Sta_Sum_3 : 
+*--#[ Sta_Term_1 :
+CFunction f;
+Symbol x;
+Local test = f(10);
+Term;
+	Repeat Identify f(x?{>1}) = f(x-1) + f(x-2);
+EndTerm;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("34*f(0) + 55*f(1)")
+*--#] Sta_Term_1 : 
 *--#[ Sta_ToTensor_1 :
 *NOTE: "functions" option is needed.
-V p,p1,p2;
-F f;
-I mu;
-T tt,t;
-L F = p.p1^2*f(p,p1)*p(mu)*tt(p1,p,p2,p);
-totensor functions,p,t;
-P;
+Vector p,p1,p2;
+Function f;
+Index mu;
+Tensor tt,t;
+Local F = p.p1^2*f(p,p1)*p(mu)*tt(p1,p,p2,p);
+ToTensor functions, p,t;
+Print;
 .end
 assert succeeded?
 assert result("F") =~ expr("
   f(N1_?,p1)*tt(p1,N2_?,p2,N3_?)*t(p1,p1,mu,N1_?,N2_?,N3_?)
 ")
 *--#] Sta_ToTensor_1 : 
+*--#[ Sta_ToVector_1 :
+Tensor t1,t2;
+Vector v1,v2;
+Index mu1,mu2,mu3;
+Local test = t1(mu1,mu2,mu3) + t2(mu1,mu2,mu3);
+ToVector t1,v1;
+ToVector v2,t2;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("v1(mu1)*v1(mu2)*v1(mu3) + v2(mu1)*v2(mu2)*v2(mu3)")
+*--#] Sta_ToVector_1 : 
 *--#[ Sta_Transform_1 :
     Symbol x,x1,x2;
     CF  H,H1;
@@ -917,6 +1352,237 @@ assert result("F") =~ expr("
     assert succeeded?
     assert result("F") =~ expr("H(907202)")
 *--#] Sta_Transform_1 : 
+*--#[ Sta_Transform_2 :
+Symbol x,x1,x2;
+CF  H,H1;
+Off Statistics;
+L   F = H(3,4,2,6,1,1,1,2);
+repeat id H(?a,x?!{0,1},?b) = H(?a,0,x-1,?b);
+Print;
+.sort
+
+Multiply H1;
+repeat id H(x?,?a)*H1(?b) = H(?a)*H1(?b,1-x);
+id  H1(?a)*H = H(?a);
+Print;
+.sort
+
+repeat id H(x1?,x2?,?a) = H(2*x1+x2,?a);
+Print;
+.end
+assert succeeded?
+assert result("F") =~ expr("H(907202)")
+*--#] Sta_Transform_2 :
+*--#[ Sta_Transform_3 :  
+Symbol a;
+Vector p;
+CFunction f1,f2;
+Local test = f1(0,1) + f2(2,a) + f2(2,p);
+Transform f1 replace(1,last)=(0,1,1,0);
+* This will not affect f2(2,p) because xarg_ does not match vectors:
+Transform f2 replace(1,last)=(xarg_,2*xarg_+1);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f1(1,0) + f2(5,1 + 2*a) + f2(5,p)")
+*--#] Sta_Transform_3 :  
+*--#[ Sta_Transform_4 :  
+CFunction f2,f3;
+Local test = f2(1,1,0,1) + f3(1,1,0,1);
+Transform f2 encode(1,last):base=2;
+Transform f3 encode(1,last):base=3;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f2(13) + f3(37)")
+*--#] Sta_Transform_4 :  
+*--#[ Sta_Transform_5 :  
+CFunction f2,f3,F2,F3;
+Local test = f2(13) + f2(100) + f3(37) + F2(13) + F3(37);
+Transform f2 decode(1,5):base=2;
+Transform f3 decode(1,5):base=3;
+Transform F2 decode(5,1):base=2;
+Transform F3 decode(5,1):base=3;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f2(0,1,1,0,1) + f2(100) + f3(0,1,1,0,1) + F2(1,0,1,1,0) + F3(1,0,1,1,0)")
+*--#] Sta_Transform_5 :  
+*--#[ Sta_Transform_6 :  
+CFunction f;
+Symbol a;
+Local test = f(0,0,1,0,a,0,0,0,-1);
+Transform f implode(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(3,2*a,-4)")
+*--#] Sta_Transform_6 :  
+*--#[ Sta_Transform_7 :  
+CFunction f;
+Symbol a;
+Local test = f(3,2*a,-4);
+Transform f explode(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(0,0,1,0,a,0,0,0,-1)")
+*--#] Sta_Transform_7 :  
+*--#[ Sta_Transform_8 :  
+CFunction f,cyc;
+Symbol a1,...,a7;
+Local test = f(a1,a2,a3,a4,a5,a6,a7)*cyc(2,6);
+Identify cyc(?a$cyc) = 1;
+Transform f permute(1,3,5)($cyc);
+ModuleOption local $cyc;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(a3,a6,a5,a4,a1,a2,a7)")
+*--#] Sta_Transform_8 :  
+*--#[ Sta_Transform_9 :  
+CFunction f;
+Local test = f(1,...,10);
+Transform f reverse(3,7);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(1,2,7,6,5,4,3,8,9,10)")
+*--#] Sta_Transform_9 :  
+*--#[ Sta_Transform_10 :  
+CFunction f,g;
+Function h,i;
+Symbol x;
+Vector p;
+Index mu;
+Local test = f(100,g(1),g(2)^2,x,x^2,mu,p,p.p,1/p.p,h*i,i*h);
+Identify f(?a) = f(?a,?a);
+Transform f dedup(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(100,g(1),g(2)^2,x,x^2,mu,p,p.p,p.p^-1,h*i,i*h)")
+*--#] Sta_Transform_10 :  
+*--#[ Sta_Transform_11 : 
+CFunction f,g,h;
+Local test = f(1,...,9) + g(1,...,9) + h(1,...,9);
+Transform f cycle(3,7)=-1;
+Transform g permute(3,...,7);
+Transform h cycle(3,7)=+2;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(1,2,4,5,6,7,3,8,9) + g(1,2,4,5,6,7,3,8,9) + h(1,2,6,7,3,4,5,8,9)")
+*--#] Sta_Transform_11 : 
+*--#[ Sta_Transform_11b : 
+CFunction h;
+Local test = h(1,...,9);
+Transform h cycle(3,7)=2;
+Print;
+.end
+assert compile_error?("Cycle in a Transform statement should be followed by =+/-number/$")
+*--#] Sta_Transform_11b : 
+*--#[ Sta_Transform_12 :
+CFunction f;
+Symbol y,n;
+Local test = f(0) + f(1) + f(0,1) + f(0,0,1) + f(0,1,1)
+   + f(0,0) + f(1,0) + f(1,1) + f(1,0,0) + f(0,1,0) + f(1,0,1);
+Transform f islyndon(1,last)=(y,n);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(0)*y + f(0,0)*n + f(0,0,1)*y + f(0,1)*y + f(0,1,0)*n + f(0,1,1)*y + f(1)*y + f(1,0)*n + f(1,0,0)*n + f(1,0,1)*n + f(1,1)*n") 
+*--#] Sta_Transform_12 : 
+*--#[ Sta_Transform_13 :
+CFunction f;
+Symbol y,n;
+Local test = f(0) + f(1) + f(0,1) + f(0,0,1) + f(0,1,1)
+   + f(0,0) + f(1,0) + f(1,1) + f(1,0,0) + f(0,1,0) + f(1,0,1);
+Transform f tolyndon(1,last)=(y,n);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(0)*y + f(0,0)*n + 3*f(0,0,1)*y + 2*f(0,1)*y + 2*f(0,1,1)*y + f(1)*y + f(1,1)*n") 
+*--#] Sta_Transform_13 : 
+*--#[ Sta_Transform_14 :
+CFunction f;
+Symbol x;
+Local test = f(<x^5>,...,<x^1>);
+Transform f addargs(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(x + x^2 + x^3 + x^4 + x^5)") 
+*--#] Sta_Transform_14 : 
+*--#[ Sta_Transform_15 :
+CFunction f;
+Symbol x;
+Local test = f(<x^5>,...,<x^1>);
+Transform f mulargs(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(x^15)") 
+*--#] Sta_Transform_15 : 
+*--#[ Sta_Transform_16 :
+CFunction f,g;
+Symbol x;
+Local test = f(1,...,5) + g(1,...,5);
+Transform f dropargs(2,4);
+Transform g dropargs(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(1,5) + g") 
+*--#] Sta_Transform_16 : 
+*--#[ Sta_Transform_17 :
+CFunction f,g;
+Symbol x;
+Local test = f(1,...,5) + g(1,...,5);
+Transform f selectargs(2,4);
+Transform g selectargs(1,last);
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("f(2,3,4) + g(1,2,3,4,5)") 
+*--#] Sta_Transform_17 : 
+*--#[ Sta_TryReplace_1 : 
+Symbol x,y,z;
+Local test = x+z;
+* These will replace x by y but not z by y, because z
+* comes before y in the default sort ordering:
+TryReplace x,y;
+TryReplace z,y;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("z+y")
+*--#] Sta_TryReplace_1 : 
+*--#[ Sta_While_1 : 
+Symbol x,y,z;
+Local Fx = (1+x)^6;
+Local Fy = (1+y)^6;
+Local Fz = (1+z)^6;
+
+While (Count(x,1) > 3);
+   Multiply 1/x;
+EndWhile;
+
+Repeat;
+   If (Count(y,1) > 3);
+      Multiply 1/y;
+   EndIf;
+EndRepeat;
+
+While (Count(z,1) > 3) Multiply 1/z;
+
+Print;
+.end
+assert succeeded?
+assert result("Fx") =~ expr("1 + 6*x + 15*x^2 + 42*x^3");
+assert result("Fy") =~ expr("1 + 6*y + 15*y^2 + 42*y^3");
+assert result("Fz") =~ expr("1 + 6*z + 15*z^2 + 42*z^3");
+*--#] Sta_While_1 : 
 *--#[ Fun_distrib_1 :
     Symbols x1,...,x4;
     CFunctions f,f1,f2;

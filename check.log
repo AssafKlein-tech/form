@@ -1,0 +1,1242 @@
+Making check in doc
+make[1]: Entering directory '/home/assaf/opt/formwork/pr1/doc'
+Making check in doxygen
+make[2]: Entering directory '/home/assaf/opt/formwork/pr1/doc/doxygen'
+make[2]: Nothing to be done for 'check'.
+make[2]: Leaving directory '/home/assaf/opt/formwork/pr1/doc/doxygen'
+Making check in manual
+make[2]: Entering directory '/home/assaf/opt/formwork/pr1/doc/manual'
+make[2]: Nothing to be done for 'check'.
+make[2]: Leaving directory '/home/assaf/opt/formwork/pr1/doc/manual'
+Making check in devref
+make[2]: Entering directory '/home/assaf/opt/formwork/pr1/doc/devref'
+make[2]: Nothing to be done for 'check'.
+make[2]: Leaving directory '/home/assaf/opt/formwork/pr1/doc/devref'
+make[2]: Entering directory '/home/assaf/opt/formwork/pr1/doc'
+make[2]: Nothing to be done for 'check-am'.
+make[2]: Leaving directory '/home/assaf/opt/formwork/pr1/doc'
+make[1]: Leaving directory '/home/assaf/opt/formwork/pr1/doc'
+Making check in sources
+make[1]: Entering directory '/home/assaf/opt/formwork/pr1/sources'
+[ -f version.h ] || ln -s "./version.h.in" version.h
+make[1]: Leaving directory '/home/assaf/opt/formwork/pr1/sources'
+Making check in check
+make[1]: Entering directory '/home/assaf/opt/formwork/pr1/check'
+make  check-TESTS
+make[2]: Entering directory '/home/assaf/opt/formwork/pr1/check'
+Check /home/assaf/opt/formwork/pr1/sources/form
+FORM 5.0.0 (Aug 21 2026)                         Run: Fri Aug 21 16:27:47 2026
+Loaded suite ./check
+Started
+..O
+===============================================================================
+Omission: (windows?) [test_AppendPath_windows(Test_AppendPath_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+...............................................................................
+...............................................................................
+...............................................................................
+..............................................O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_1(Test_PullReq649_1)]
+./check.rb:413:in `do_test'
+===============================================================================
+O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_2(Test_PullReq649_2)]
+./check.rb:413:in `do_test'
+===============================================================================
+.O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_4(Test_PullReq649_4)]
+./check.rb:413:in `do_test'
+===============================================================================
+....O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_9(Test_PullReq649_9)]
+./check.rb:413:in `do_test'
+===============================================================================
+............................O
+===============================================================================
+Omission: (windows?) [test_TempSortDir_windows(Test_TempSortDir_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+...............................................................................
+..................................................
+Finished in 59.257548794 seconds.
+-------------------------------------------------------------------------------
+453 tests, 1523 assertions, 0 failures, 0 errors, 0 pendings, 6 omissions, 0 notifications
+101.342% passed
+-------------------------------------------------------------------------------
+7.64 tests/s, 25.70 assertions/s
+Check /home/assaf/opt/formwork/pr1/sources/tform
+TFORM 5.0.0 (Aug 21 2026) 4 workers              Run: Fri Aug 21 16:28:47 2026
+Loaded suite ./check
+Started
+..O
+===============================================================================
+Omission: (windows?) [test_AppendPath_windows(Test_AppendPath_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+...............................................................................
+...............................................................................
+...............................................................................
+...............................................................................
+....O
+===============================================================================
+Omission: (windows?) [test_TempSortDir_windows(Test_TempSortDir_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+..................................................................P
+===============================================================================
+Pending: test_moebius_3(Test_moebius_3): (serial? && total_memory < 8_000_000_000) || (threaded? && total_memory < 20_000_000_000) || (mpi? && total_memory < 20_000_000_000) || (github? && valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-29616-nkbqi6/features.rb:176:in `test_moebius_3'
+     173: 
+     174: 
+     175: 
+  => 176: def test_moebius_3; do_test {
+     177: # memory usage is so intense
+     178: # too heavy on GitHub (often fails)
+     179: assert(succeeded?, 'Failed for succeeded?')
+===============================================================================
+..............................................................
+Finished in 59.580016829 seconds.
+-------------------------------------------------------------------------------
+453 tests, 1505 assertions, 0 failures, 0 errors, 1 pendings, 2 omissions, 0 notifications
+100.443% passed
+-------------------------------------------------------------------------------
+7.60 tests/s, 25.26 assertions/s
+Check /home/assaf/opt/formwork/pr1/sources/parform
+ParFORM 5.0.0 (Aug 21 2026) 3 workers            Run: Fri Aug 21 16:29:47 2026
+Loaded suite ./check
+Started
+..O
+===============================================================================
+Omission: (windows?) [test_AppendPath_windows(Test_AppendPath_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+.............................................................P
+===============================================================================
+Pending: test_Issue165(Test_Issue165): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:1716:in `test_Issue165'
+     1713: 
+     1714: 
+     1715: 
+  => 1716: def test_Issue165; do_test {
+     1717: # Known to fail with ParFORM (#166)
+     1718: assert(succeeded?, 'Failed for succeeded?')
+     1719: assert result("F") =~ expr("2550250000")
+===============================================================================
+........P
+===============================================================================
+Pending: test_Issue183(Test_Issue183): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:1812:in `test_Issue183'
+     1809: 
+     1810: 
+     1811: 
+  => 1812: def test_Issue183; do_test {
+     1813: # Runtime errors may freeze ParFORM.
+     1814: assert runtime_error?("Term too complex during normalization")
+     1815: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+...........P
+===============================================================================
+Pending: test_Issue211(Test_Issue211): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2143:in `test_Issue211'
+     2140: 
+     2141: 
+     2142: 
+  => 2143: def test_Issue211; do_test {
+     2144: # Only for 64-bit systems. Otherwise "Output term too large".
+     2145: # For now it fails because
+     2146: #   "Currently Stage 4 sorts are not allowed for function arguments or $ variables."
+===============================================================================
+
+===============================================================================
+Issue214 (fixes.frm:2066) FAILED
+===============================================================================
+
+===============================================================================
+
+F
+===============================================================================
+Failure: test_Issue214(Test_Issue214):
+  timeout (= 10 sec) in 1.frm of Issue214 (fixes.frm:2066).
+  <false> is not true.
+./check.rb:451:in `block (2 levels) in do_test'
+./check.rb:446:in `times'
+./check.rb:446:in `block in do_test'
+./check.rb:433:in `times'
+./check.rb:433:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2089:in `test_Issue214'
+     2086: 
+     2087: 
+     2088: 
+  => 2089: def test_Issue214; do_test {
+     2090: # This is not valgrind clean under parform
+     2091: assert(succeeded?, 'Failed for succeeded?')
+     2092: assert result("test") =~ expr("0")
+===============================================================================
+.....................P
+===============================================================================
+Pending: test_Issue261_2(Test_Issue261_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2388:in `test_Issue261_2'
+     2385: 
+     2386: 
+     2387: 
+  => 2388: def test_Issue261_2; do_test {
+     2389: # Runtime errors may freeze ParFORM.
+     2390: assert runtime_error?
+     2391: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue261_3(Test_Issue261_3): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2396:in `test_Issue261_3'
+     2393: 
+     2394: 
+     2395: 
+  => 2396: def test_Issue261_3; do_test {
+     2397: # Runtime errors may freeze ParFORM.
+     2398: assert runtime_error?
+     2399: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue261_4(Test_Issue261_4): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2407:in `test_Issue261_4'
+     2404: 
+     2405: 
+     2406: 
+  => 2407: def test_Issue261_4; do_test {
+     2408: # Runtime errors may freeze ParFORM.
+     2409: assert runtime_error?
+     2410: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue261_5(Test_Issue261_5): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2416:in `test_Issue261_5'
+     2413: 
+     2414: 
+     2415: 
+  => 2416: def test_Issue261_5; do_test {
+     2417: # Runtime errors may freeze ParFORM.
+     2418: assert runtime_error?
+     2419: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue261_6(Test_Issue261_6): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2426:in `test_Issue261_6'
+     2423: 
+     2424: 
+     2425: 
+  => 2426: def test_Issue261_6; do_test {
+     2427: # Runtime errors may freeze ParFORM.
+     2428: assert runtime_error?
+     2429: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue261_7(Test_Issue261_7): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:2435:in `test_Issue261_7'
+     2432: 
+     2433: 
+     2434: 
+  => 2435: def test_Issue261_7; do_test {
+     2436: # Runtime errors may freeze ParFORM.
+     2437: assert runtime_error?
+     2438: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+.........................P
+===============================================================================
+Pending: test_Issue39(Test_Issue39): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:392:in `test_Issue39'
+     389: 
+     390: 
+     391: 
+  => 392: def test_Issue39; do_test {
+     393: # Runtime errors may freeze ParFORM.
+     394: assert runtime_error?
+     395: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+.....P
+===============================================================================
+Pending: test_Issue42_1(Test_Issue42_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:464:in `test_Issue42_1'
+     461: 
+     462: 
+     463: 
+  => 464: def test_Issue42_1; do_test {
+     465: # ParFORM hangs for #FactDollar (#46)
+     466: assert(succeeded?, 'Failed for succeeded?')
+     467: f = expr("""
+===============================================================================
+....................P
+===============================================================================
+Pending: test_Issue512_1(Test_Issue512_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3070:in `test_Issue512_1'
+     3067: 
+     3068: 
+     3069: 
+  => 3070: def test_Issue512_1; do_test {
+     3071: # Fails due to polynomial size on 32bit builds
+     3072: # Runtime errors may freeze ParFORM.
+     3073: assert runtime_error?("Please increase SmallExtension setup parameter.")
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue512_2(Test_Issue512_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3099:in `test_Issue512_2'
+     3096: 
+     3097: 
+     3098: 
+  => 3099: def test_Issue512_2; do_test {
+     3100: # Fails due to polynomial size on 32bit builds
+     3101: # Runtime errors may freeze ParFORM.
+     3102: assert runtime_error?("Please increase SubSmallExtension setup parameter.")
+===============================================================================
+..................P
+===============================================================================
+Pending: test_Issue567_1(Test_Issue567_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3712:in `test_Issue567_1'
+     3709: 
+     3710: 
+     3711: 
+  => 3712: def test_Issue567_1; do_test {
+     3713: # Runtime errors may freeze ParFORM.
+     3714: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3715: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_2(Test_Issue567_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3722:in `test_Issue567_2'
+     3719: 
+     3720: 
+     3721: 
+  => 3722: def test_Issue567_2; do_test {
+     3723: # Runtime errors may freeze ParFORM.
+     3724: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3725: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3a(Test_Issue567_3a): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3732:in `test_Issue567_3a'
+     3729: 
+     3730: 
+     3731: 
+  => 3732: def test_Issue567_3a; do_test {
+     3733: # Runtime errors may freeze ParFORM.
+     3734: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3735: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3b(Test_Issue567_3b): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3742:in `test_Issue567_3b'
+     3739: 
+     3740: 
+     3741: 
+  => 3742: def test_Issue567_3b; do_test {
+     3743: # Runtime errors may freeze ParFORM.
+     3744: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3745: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3c(Test_Issue567_3c): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3752:in `test_Issue567_3c'
+     3749: 
+     3750: 
+     3751: 
+  => 3752: def test_Issue567_3c; do_test {
+     3753: # Runtime errors may freeze ParFORM.
+     3754: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3755: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3d(Test_Issue567_3d): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3762:in `test_Issue567_3d'
+     3759: 
+     3760: 
+     3761: 
+  => 3762: def test_Issue567_3d; do_test {
+     3763: # Runtime errors may freeze ParFORM.
+     3764: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3765: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3e(Test_Issue567_3e): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3772:in `test_Issue567_3e'
+     3769: 
+     3770: 
+     3771: 
+  => 3772: def test_Issue567_3e; do_test {
+     3773: # Runtime errors may freeze ParFORM.
+     3774: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3775: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue567_3f(Test_Issue567_3f): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3782:in `test_Issue567_3f'
+     3779: 
+     3780: 
+     3781: 
+  => 3782: def test_Issue567_3f; do_test {
+     3783: # Runtime errors may freeze ParFORM.
+     3784: assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
+     3785: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue577_1(Test_Issue577_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3831:in `test_Issue577_1'
+     3828: 
+     3829: 
+     3830: 
+  => 3831: def test_Issue577_1; do_test {
+     3832: # ParFORM has valgrind errors with this. See discussion in PR 586.
+     3833: assert(succeeded?, 'Failed for succeeded?')
+     3834: assert result("test2") =~ expr("4")
+===============================================================================
+P
+===============================================================================
+Pending: test_Issue577_2(Test_Issue577_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:3860:in `test_Issue577_2'
+     3857: 
+     3858: 
+     3859: 
+  => 3860: def test_Issue577_2; do_test {
+     3861: # ParFORM has valgrind errors with this. See discussion in PR 586.
+     3862: assert runtime_error?("isnumerical: expression is not yet defined!")
+     3863: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+...............P
+===============================================================================
+Pending: test_Issue647(Test_Issue647): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:4168:in `test_Issue647'
+     4165: 
+     4166: 
+     4167: 
+  => 4168: def test_Issue647; do_test {
+     4169: assert(succeeded?, 'Failed for succeeded?')
+     4170: assert result("diff1") =~ expr("0")
+     4171: assert result("diff2") =~ expr("0")
+===============================================================================
+...P
+===============================================================================
+Pending: test_Issue668_2(Test_Issue668_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:4210:in `test_Issue668_2'
+     4207: 
+     4208: 
+     4209: 
+  => 4210: def test_Issue668_2; do_test {
+     4211: assert runtime_error?("Setups in .frm file: Keyword not recognized: x")
+     4212: } end; def requires; (linux?) end; def requires_str; %((linux?)) end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     4213: class Test_Issue695_1 < Test::Unit::TestCase; include FormTest
+===============================================================================
+................................P
+===============================================================================
+Pending: test_Issue94(Test_Issue94): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/fixes.rb:1006:in `test_Issue94'
+     1003: 
+     1004: 
+     1005: 
+  => 1006: def test_Issue94; do_test {
+     1007: # Runtime errors may freeze ParFORM.
+     1008: assert runtime_error?
+     1009: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+.....................................O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_1(Test_PullReq649_1)]
+./check.rb:413:in `do_test'
+===============================================================================
+O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_2(Test_PullReq649_2)]
+./check.rb:413:in `do_test'
+===============================================================================
+.O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_4(Test_PullReq649_4)]
+./check.rb:413:in `do_test'
+===============================================================================
+....O
+===============================================================================
+Omission: (threaded?) [test_PullReq649_9(Test_PullReq649_9)]
+./check.rb:413:in `do_test'
+===============================================================================
+..........P
+===============================================================================
+Pending: test_Sta_Fill_2(Test_Sta_Fill_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/examples.rb:679:in `test_Sta_Fill_2'
+     676: 
+     677: 
+     678: 
+  => 679: def test_Sta_Fill_2; do_test {
+     680: # RHS expressions in Fill doesn't work in ParFORM. (#17)
+     681: # Anyway, the user is warned even in the sequential FORM, and should avoid it.
+     682: assert(finished?, 'Failed for finished?')
+===============================================================================
+.P
+===============================================================================
+Pending: test_Sta_Fill_4(Test_Sta_Fill_4): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/examples.rb:714:in `test_Sta_Fill_4'
+     711: 
+     712: 
+     713: 
+  => 714: def test_Sta_Fill_4; do_test {
+     715: # RHS expressions in Fill doesn't work in ParFORM. (#17)
+     716: # Anyway, the user is warned even in the sequential FORM, and should avoid it.
+     717: assert(finished?, 'Failed for finished?')
+===============================================================================
+...............O
+===============================================================================
+Omission: (windows?) [test_TempSortDir_windows(Test_TempSortDir_windows)]
+./check.rb:413:in `do_test'
+===============================================================================
+.P
+===============================================================================
+Pending: test_TimeoutAfter_2(Test_TimeoutAfter_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:306:in `test_TimeoutAfter_2'
+     303: 
+     304: 
+     305: 
+  => 306: def test_TimeoutAfter_2; do_test {
+     307: # Sometimes, FORM can terminate without printing the error message, so don't
+     308: # assert anything. We only test whether this hits the test suite timeout limit,
+     309: # or not. TODO in principle this can be considered to be a bug, to be looked at
+===============================================================================
+.............P
+===============================================================================
+Pending: test_diagrams_err_1(Test_diagrams_err_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3230:in `test_diagrams_err_1'
+     3227: 
+     3228: 
+     3229: 
+  => 3230: def test_diagrams_err_1; do_test {
+     3231: assert runtime_error?('Invalid coupling constant in vertex statement.')
+     3232: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3233: class Test_diagrams_err_2 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_2(Test_diagrams_err_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3239:in `test_diagrams_err_2'
+     3236: 
+     3237: 
+     3238: 
+  => 3239: def test_diagrams_err_2; do_test {
+     3240: assert runtime_error?('Invalid negative power of coupling constant.')
+     3241: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3242: class Test_diagrams_err_3 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_3(Test_diagrams_err_3): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3250:in `test_diagrams_err_3'
+     3247: 
+     3248: 
+     3249: 
+  => 3250: def test_diagrams_err_3; do_test {
+     3251: assert runtime_error?('Insufficient external momenta in diagrams_')
+     3252: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3253: class Test_diagrams_err_4 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_4(Test_diagrams_err_4): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3261:in `test_diagrams_err_4'
+     3258: 
+     3259: 
+     3260: 
+  => 3261: def test_diagrams_err_4; do_test {
+     3262: assert runtime_error?('Insufficient internal momenta in diagrams_')
+     3263: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3264: class Test_diagrams_err_5 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_5(Test_diagrams_err_5): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3272:in `test_diagrams_err_5'
+     3269: 
+     3270: 
+     3271: 
+  => 3272: def test_diagrams_err_5; do_test {
+     3273: assert runtime_error?('Invalid negative external momentum in diagrams_: -q2')
+     3274: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3275: class Test_diagrams_err_6 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_6(Test_diagrams_err_6): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3283:in `test_diagrams_err_6'
+     3280: 
+     3281: 
+     3282: 
+  => 3283: def test_diagrams_err_6; do_test {
+     3284: assert runtime_error?('Invalid negative internal momentum in diagrams_: -p1')
+     3285: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3286: class Test_diagrams_err_7 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_7(Test_diagrams_err_7): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3294:in `test_diagrams_err_7'
+     3291: 
+     3292: 
+     3293: 
+  => 3294: def test_diagrams_err_7; do_test {
+     3295: assert runtime_error?('Invalid repeated momentum in diagrams_: q1')
+     3296: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+     3297: class Test_diagrams_err_8 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_diagrams_err_8(Test_diagrams_err_8): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:3305:in `test_diagrams_err_8'
+     3302: 
+     3303: 
+     3304: 
+  => 3305: def test_diagrams_err_8; do_test {
+     3306: assert runtime_error?('Invalid repeated momentum in diagrams_: q1')
+     3307: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+...........................................P
+===============================================================================
+Pending: test_moebius_3(Test_moebius_3): (serial? && total_memory < 8_000_000_000) || (threaded? && total_memory < 20_000_000_000) || (mpi? && total_memory < 20_000_000_000) || (github? && valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:176:in `test_moebius_3'
+     173: 
+     174: 
+     175: 
+  => 176: def test_moebius_3; do_test {
+     177: # memory usage is so intense
+     178: # too heavy on GitHub (often fails)
+     179: assert(succeeded?, 'Failed for succeeded?')
+===============================================================================
+P
+===============================================================================
+Pending: test_mzv_error_1(Test_mzv_error_1): (wordsize == 2) || (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:2353:in `test_mzv_error_1'
+     2350: 
+     2351: 
+     2352: 
+  => 2353: def test_mzv_error_1; do_test {
+     2354: assert runtime_error?("Error: Weight of Euler/MZV sum greater than 2.")
+     2355: assert runtime_error?("Please increase the maximum weight in #startfloat.")
+     2356: } end; def pendings; (wordsize == 2) || (mpi?) end; def pendings_str; %((wordsize == 2) || (mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_mzv_error_2(Test_mzv_error_2): (wordsize == 2) || (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:2363:in `test_mzv_error_2'
+     2360: 
+     2361: 
+     2362: 
+  => 2363: def test_mzv_error_2; do_test {
+     2364: assert runtime_error?("Divergent MZV in CalculateMZV")
+     2365: } end; def pendings; (wordsize == 2) || (mpi?) end; def pendings_str; %((wordsize == 2) || (mpi?)) end; end
+     2366: class Test_mzv_error_3 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_mzv_error_3(Test_mzv_error_3): (wordsize == 2) || (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:2372:in `test_mzv_error_3'
+     2369: 
+     2370: 
+     2371: 
+  => 2372: def test_mzv_error_3; do_test {
+     2373: assert runtime_error?("Illegal index[0] in CalculateMZV: -2")
+     2374: } end; def pendings; (wordsize == 2) || (mpi?) end; def pendings_str; %((wordsize == 2) || (mpi?)) end; end
+     2375: class Test_mzv_error_4 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_mzv_error_4(Test_mzv_error_4): (wordsize == 2) || (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:2381:in `test_mzv_error_4'
+     2378: 
+     2379: 
+     2380: 
+  => 2381: def test_mzv_error_4; do_test {
+     2382: assert runtime_error?("Illegal index[1] in CalculateMZVhalf: -1")
+     2383: } end; def pendings; (wordsize == 2) || (mpi?) end; def pendings_str; %((wordsize == 2) || (mpi?)) end; end
+     2384: class Test_mzv_error_5 < Test::Unit::TestCase; include FormTest
+===============================================================================
+P
+===============================================================================
+Pending: test_mzv_error_5(Test_mzv_error_5): (wordsize == 2) || (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/features.rb:2390:in `test_mzv_error_5'
+     2387: 
+     2388: 
+     2389: 
+  => 2390: def test_mzv_error_5; do_test {
+     2391: assert runtime_error?("Divergent Euler sum in CalculateEuler")
+     2392: } end; def pendings; (wordsize == 2) || (mpi?) end; def pendings_str; %((wordsize == 2) || (mpi?)) end; end
+     2393: class Test_humanstats < Test::Unit::TestCase; include FormTest
+===============================================================================
+..P
+===============================================================================
+Pending: test_polynomial_div_nvar_1(Test_polynomial_div_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:679:in `test_polynomial_div_nvar_1'
+     676: 
+     677: 
+     678: 
+  => 679: def test_polynomial_div_nvar_1; do_test {
+     680: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     681: assert stdout =~ exact_pattern("div: OK")
+     682: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_div_nvar_2(Test_polynomial_div_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:695:in `test_polynomial_div_nvar_2'
+     692: 
+     693: 
+     694: 
+  => 695: def test_polynomial_div_nvar_2; do_test {
+     696: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     697: assert stdout =~ exact_pattern("div: OK")
+     698: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_div_nvar_5(Test_polynomial_div_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:711:in `test_polynomial_div_nvar_5'
+     708: 
+     709: 
+     710: 
+  => 711: def test_polynomial_div_nvar_5; do_test {
+     712: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     713: assert stdout =~ exact_pattern("div: OK")
+     714: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_1(Test_polynomial_error_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1055:in `test_polynomial_error_1'
+     1052: 
+     1053: 
+     1054: 
+  => 1055: def test_polynomial_error_1; do_test {
+     1056: assert runtime_error?
+     1057: assert stdout =~ exact_pattern("ERROR: polynomials and polyratfuns must contain symbols only")
+     1058: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_10(Test_polynomial_error_10): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1159:in `test_polynomial_error_10'
+     1156: 
+     1157: 
+     1158: 
+  => 1159: def test_polynomial_error_10; do_test {
+     1160: assert runtime_error?
+     1161: assert stdout =~ exact_pattern("flint::ratfun_normalize: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1162: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_11(Test_polynomial_error_11): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1172:in `test_polynomial_error_11'
+     1169: 
+     1170: 
+     1171: 
+  => 1172: def test_polynomial_error_11; do_test {
+     1173: assert runtime_error?
+     1174: assert stdout =~ exact_pattern("flint::to_argument_mpoly: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1175: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_12(Test_polynomial_error_12): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1186:in `test_polynomial_error_12'
+     1183: 
+     1184: 
+     1185: 
+  => 1186: def test_polynomial_error_12; do_test {
+     1187: assert runtime_error?
+     1188: assert stdout =~ exact_pattern("flint::to_argument_mpoly: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1189: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_2(Test_polynomial_error_2): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1065:in `test_polynomial_error_2'
+     1062: 
+     1063: 
+     1064: 
+  => 1065: def test_polynomial_error_2; do_test {
+     1066: assert runtime_error?
+     1067: assert stdout =~ exact_pattern("ERROR: polynomials and polyratfuns must contain symbols only")
+     1068: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_3(Test_polynomial_error_3): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1073:in `test_polynomial_error_3'
+     1070: 
+     1071: 
+     1072: 
+  => 1073: def test_polynomial_error_3; do_test {
+     1074: assert runtime_error?
+     1075: assert stdout =~ exact_pattern("flint::inverse_poly error: inverse does not exist") || stdout =~ exact_pattern("ERROR: polynomial inverse does not exist")
+     1076: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_4(Test_polynomial_error_4): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1082:in `test_polynomial_error_4'
+     1079: 
+     1080: 
+     1081: 
+  => 1082: def test_polynomial_error_4; do_test {
+     1083: assert runtime_error?
+     1084: assert stdout =~ exact_pattern("ERROR: PolyRatFun cannot have zero arguments")
+     1085: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_5(Test_polynomial_error_5): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1092:in `test_polynomial_error_5'
+     1089: 
+     1090: 
+     1091: 
+  => 1092: def test_polynomial_error_5; do_test {
+     1093: assert runtime_error?
+     1094: assert stdout =~ exact_pattern("ERROR: PolyRatFun cannot have more than two arguments")
+     1095: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_6(Test_polynomial_error_6): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1103:in `test_polynomial_error_6'
+     1100: 
+     1101: 
+     1102: 
+  => 1103: def test_polynomial_error_6; do_test {
+     1104: assert runtime_error?
+     1105: assert stdout =~ exact_pattern("ERROR: PolyRatFun cannot have more than two arguments")
+     1106: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_7(Test_polynomial_error_7): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1118:in `test_polynomial_error_7'
+     1115: 
+     1116: 
+     1117: 
+  => 1118: def test_polynomial_error_7; do_test {
+     1119: assert runtime_error?
+     1120: assert stdout =~ exact_pattern("flint::ratfun_normalize: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1121: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_8(Test_polynomial_error_8): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1131:in `test_polynomial_error_8'
+     1128: 
+     1129: 
+     1130: 
+  => 1131: def test_polynomial_error_8; do_test {
+     1132: assert runtime_error?
+     1133: assert stdout =~ exact_pattern("flint::to_argument_poly: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1134: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_error_9(Test_polynomial_error_9): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1145:in `test_polynomial_error_9'
+     1142: 
+     1143: 
+     1144: 
+  => 1145: def test_polynomial_error_9; do_test {
+     1146: assert runtime_error?
+     1147: assert stdout =~ exact_pattern("flint::to_argument_poly: output exceeds MaxTermSize") || stdout =~ exact_pattern("ERROR: PolyRatFun doesn't fit in a term")
+     1148: } end; def pendings; (mpi?) end; def pendings_str; %((mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_extra_1(Test_polynomial_extra_1): (mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:1034:in `test_polynomial_extra_1'
+     1031: 
+     1032: 
+     1033: 
+  => 1034: def test_polynomial_extra_1; do_test {
+     1035: assert(succeeded?, 'Failed for succeeded?')
+     1036: assert result("test1")  =~ expr("prf(x*y + x*z + 1,w*x)")
+     1037: assert result("test2")  =~ expr("prf(x^2 + x + 1,x^2)")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factarg_nvar_1(Test_polynomial_factarg_nvar_1): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:777:in `test_polynomial_factarg_nvar_1'
+     774: 
+     775: 
+     776: 
+  => 777: def test_polynomial_factarg_nvar_1; do_test {
+     778: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     779: # This needs longer if running without flint.
+     780: assert succeeded? || warning?("FORM was not built with FLINT support.")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factarg_nvar_2(Test_polynomial_factarg_nvar_2): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:797:in `test_polynomial_factarg_nvar_2'
+     794: 
+     795: 
+     796: 
+  => 797: def test_polynomial_factarg_nvar_2; do_test {
+     798: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     799: # This needs longer if running without flint.
+     800: assert succeeded? || warning?("FORM was not built with FLINT support.")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factarg_nvar_5(Test_polynomial_factarg_nvar_5): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:817:in `test_polynomial_factarg_nvar_5'
+     814: 
+     815: 
+     816: 
+  => 817: def test_polynomial_factarg_nvar_5; do_test {
+     818: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     819: # This one is not valgrind clean for flint < 3.2.1 !
+     820: # This needs longer if running without flint.
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factdol_nvar_1(Test_polynomial_factdol_nvar_1): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:838:in `test_polynomial_factdol_nvar_1'
+     835: 
+     836: 
+     837: 
+  => 838: def test_polynomial_factdol_nvar_1; do_test {
+     839: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     840: # This needs longer if running without flint.
+     841: assert succeeded? || warning?("FORM was not built with FLINT support.")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factdol_nvar_2(Test_polynomial_factdol_nvar_2): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:858:in `test_polynomial_factdol_nvar_2'
+     855: 
+     856: 
+     857: 
+  => 858: def test_polynomial_factdol_nvar_2; do_test {
+     859: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     860: # This needs longer if running without flint.
+     861: assert succeeded? || warning?("FORM was not built with FLINT support.")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_factdol_nvar_5(Test_polynomial_factdol_nvar_5): (wordsize == 2 || mpi?) || (valgrind?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:878:in `test_polynomial_factdol_nvar_5'
+     875: 
+     876: 
+     877: 
+  => 878: def test_polynomial_factdol_nvar_5; do_test {
+     879: # This takes too long when running without FLINT under lcov. Skip if valgrind, and hence lcov.
+     880: # This needs longer if running without flint.
+     881: assert succeeded? || warning?("FORM was not built with FLINT support.")
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_gcd_nvar_1(Test_polynomial_gcd_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:583:in `test_polynomial_gcd_nvar_1'
+     580: 
+     581: 
+     582: 
+  => 583: def test_polynomial_gcd_nvar_1; do_test {
+     584: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     585: assert stdout =~ exact_pattern("gcd: OK")
+     586: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_gcd_nvar_2(Test_polynomial_gcd_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:599:in `test_polynomial_gcd_nvar_2'
+     596: 
+     597: 
+     598: 
+  => 599: def test_polynomial_gcd_nvar_2; do_test {
+     600: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     601: assert stdout =~ exact_pattern("gcd: OK")
+     602: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_gcd_nvar_5(Test_polynomial_gcd_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:615:in `test_polynomial_gcd_nvar_5'
+     612: 
+     613: 
+     614: 
+  => 615: def test_polynomial_gcd_nvar_5; do_test {
+     616: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     617: assert stdout =~ exact_pattern("gcd: OK")
+     618: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_inverse_nvar_1(Test_polynomial_inverse_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:992:in `test_polynomial_inverse_nvar_1'
+     989: 
+     990: 
+     991: 
+  => 992: def test_polynomial_inverse_nvar_1; do_test {
+     993: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     994: assert stdout =~ exact_pattern("inv: OK")
+     995: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_mul_nvar_1(Test_polynomial_mul_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:631:in `test_polynomial_mul_nvar_1'
+     628: 
+     629: 
+     630: 
+  => 631: def test_polynomial_mul_nvar_1; do_test {
+     632: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     633: assert stdout =~ exact_pattern("mul: OK")
+     634: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_mul_nvar_2(Test_polynomial_mul_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:647:in `test_polynomial_mul_nvar_2'
+     644: 
+     645: 
+     646: 
+  => 647: def test_polynomial_mul_nvar_2; do_test {
+     648: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     649: assert stdout =~ exact_pattern("mul: OK")
+     650: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_mul_nvar_5(Test_polynomial_mul_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:663:in `test_polynomial_mul_nvar_5'
+     660: 
+     661: 
+     662: 
+  => 663: def test_polynomial_mul_nvar_5; do_test {
+     664: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     665: assert stdout =~ exact_pattern("mul: OK")
+     666: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+.P
+===============================================================================
+Pending: test_polynomial_prf_add_nvar_1(Test_polynomial_prf_add_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:944:in `test_polynomial_prf_add_nvar_1'
+     941: 
+     942: 
+     943: 
+  => 944: def test_polynomial_prf_add_nvar_1; do_test {
+     945: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     946: assert stdout =~ exact_pattern("prf add: OK")
+     947: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_prf_add_nvar_2(Test_polynomial_prf_add_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:960:in `test_polynomial_prf_add_nvar_2'
+     957: 
+     958: 
+     959: 
+  => 960: def test_polynomial_prf_add_nvar_2; do_test {
+     961: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     962: assert stdout =~ exact_pattern("prf add: OK")
+     963: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_prf_add_nvar_5(Test_polynomial_prf_add_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:976:in `test_polynomial_prf_add_nvar_5'
+     973: 
+     974: 
+     975: 
+  => 976: def test_polynomial_prf_add_nvar_5; do_test {
+     977: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     978: assert stdout =~ exact_pattern("prf add: OK")
+     979: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_prf_norm_nvar_1(Test_polynomial_prf_norm_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:896:in `test_polynomial_prf_norm_nvar_1'
+     893: 
+     894: 
+     895: 
+  => 896: def test_polynomial_prf_norm_nvar_1; do_test {
+     897: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     898: assert stdout =~ exact_pattern("prf norm: OK")
+     899: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_prf_norm_nvar_2(Test_polynomial_prf_norm_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:912:in `test_polynomial_prf_norm_nvar_2'
+     909: 
+     910: 
+     911: 
+  => 912: def test_polynomial_prf_norm_nvar_2; do_test {
+     913: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     914: assert stdout =~ exact_pattern("prf norm: OK")
+     915: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_prf_norm_nvar_5(Test_polynomial_prf_norm_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:928:in `test_polynomial_prf_norm_nvar_5'
+     925: 
+     926: 
+     927: 
+  => 928: def test_polynomial_prf_norm_nvar_5; do_test {
+     929: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     930: assert stdout =~ exact_pattern("prf norm: OK")
+     931: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_rem_nvar_1(Test_polynomial_rem_nvar_1): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:727:in `test_polynomial_rem_nvar_1'
+     724: 
+     725: 
+     726: 
+  => 727: def test_polynomial_rem_nvar_1; do_test {
+     728: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     729: assert stdout =~ exact_pattern("rem: OK")
+     730: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_rem_nvar_2(Test_polynomial_rem_nvar_2): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:743:in `test_polynomial_rem_nvar_2'
+     740: 
+     741: 
+     742: 
+  => 743: def test_polynomial_rem_nvar_2; do_test {
+     744: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     745: assert stdout =~ exact_pattern("rem: OK")
+     746: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+P
+===============================================================================
+Pending: test_polynomial_rem_nvar_5(Test_polynomial_rem_nvar_5): (wordsize == 2 || mpi?)
+./check.rb:423:in `do_test'
+/tmp/form_check_20260821-32956-5x5ct0/polynomial.rb:759:in `test_polynomial_rem_nvar_5'
+     756: 
+     757: 
+     758: 
+  => 759: def test_polynomial_rem_nvar_5; do_test {
+     760: assert succeeded? || warning?("FORM was not built with FLINT support.")
+     761: assert stdout =~ exact_pattern("rem: OK")
+     762: } end; def pendings; (wordsize == 2 || mpi?) end; def pendings_str; %((wordsize == 2 || mpi?)) end; end
+===============================================================================
+................
+Finished in 118.713798474 seconds.
+-------------------------------------------------------------------------------
+453 tests, 1436 assertions, 1 failures, 0 errors, 81 pendings, 6 omissions, 0 notifications
+101.119% passed
+-------------------------------------------------------------------------------
+3.82 tests/s, 12.10 assertions/s
+FAIL: check-help.sh
+FORM 5.0.0 (Aug 21 2026)
+  0.053333 form units in 5.299 seconds (cpu time)
+  corresponding to 36.23 form units per hour
+PASS: benchmark-fu.sh
+========================================================
+1 of 2 tests failed
+Please report to https://github.com/form-dev/form/issues
+========================================================
+make[2]: *** [Makefile:346: check-TESTS] Error 1
+make[2]: Leaving directory '/home/assaf/opt/formwork/pr1/check'
+make[1]: *** [Makefile:471: check-am] Error 2
+make[1]: Leaving directory '/home/assaf/opt/formwork/pr1/check'
+make: *** [Makefile:408: check-recursive] Error 1

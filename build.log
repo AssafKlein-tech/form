@@ -1,0 +1,81 @@
+make: Entering directory '/home/assaf/opt/formwork/pr1/sources'
+[ -f version.h ] || ln -s "./version.h.in" version.h
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-optimize.o -MD -MP -MF .deps/tform-optimize.Tpo -c -o tform-optimize.o `test -f 'optimize.cc' || echo './'`optimize.cc
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-polygcd.o -MD -MP -MF .deps/tform-polygcd.Tpo -c -o tform-polygcd.o `test -f 'polygcd.cc' || echo './'`polygcd.cc
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-polywrap.o -MD -MP -MF .deps/tform-polywrap.Tpo -c -o tform-polywrap.o `test -f 'polywrap.cc' || echo './'`polywrap.cc
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-pre.o -MD -MP -MF .deps/tform-pre.Tpo -c -o tform-pre.o `test -f 'pre.c' || echo './'`pre.c
+mv -f .deps/tform-polywrap.Tpo .deps/tform-polywrap.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-proces.o -MD -MP -MF .deps/tform-proces.Tpo -c -o tform-proces.o `test -f 'proces.c' || echo './'`proces.c
+mv -f .deps/tform-polygcd.Tpo .deps/tform-polygcd.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-ratio.o -MD -MP -MF .deps/tform-ratio.Tpo -c -o tform-ratio.o `test -f 'ratio.c' || echo './'`ratio.c
+mv -f .deps/tform-pre.Tpo .deps/tform-pre.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-reken.o -MD -MP -MF .deps/tform-reken.Tpo -c -o tform-reken.o `test -f 'reken.c' || echo './'`reken.c
+mv -f .deps/tform-ratio.Tpo .deps/tform-ratio.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-reshuf.o -MD -MP -MF .deps/tform-reshuf.Tpo -c -o tform-reshuf.o `test -f 'reshuf.c' || echo './'`reshuf.c
+mv -f .deps/tform-proces.Tpo .deps/tform-proces.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-sch.o -MD -MP -MF .deps/tform-sch.Tpo -c -o tform-sch.o `test -f 'sch.c' || echo './'`sch.c
+mv -f .deps/tform-reken.Tpo .deps/tform-reken.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-setfile.o -MD -MP -MF .deps/tform-setfile.Tpo -c -o tform-setfile.o `test -f 'setfile.c' || echo './'`setfile.c
+mv -f .deps/tform-sch.Tpo .deps/tform-sch.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-smart.o -MD -MP -MF .deps/tform-smart.Tpo -c -o tform-smart.o `test -f 'smart.c' || echo './'`smart.c
+mv -f .deps/tform-smart.Tpo .deps/tform-smart.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-sort.o -MD -MP -MF .deps/tform-sort.Tpo -c -o tform-sort.o `test -f 'sort.c' || echo './'`sort.c
+mv -f .deps/tform-setfile.Tpo .deps/tform-setfile.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-spectator.o -MD -MP -MF .deps/tform-spectator.Tpo -c -o tform-spectator.o `test -f 'spectator.c' || echo './'`spectator.c
+mv -f .deps/tform-reshuf.Tpo .deps/tform-reshuf.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-startup.o -MD -MP -MF .deps/tform-startup.Tpo -c -o tform-startup.o `test -f 'startup.c' || echo './'`startup.c
+sort.c: In function ‘MergePatches’:
+sort.c:4351:25: warning: this ‘else’ clause does not guard... [-Wmisleading-indentation]
+ 4351 |                         else
+      |                         ^~~~
+In file included from form3.h:330,
+                 from sort.c:61:
+declare.h:219:22: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘else’
+  219 | #define ADDPOS(pp,x) (pp).p1 = ((pp).p1+(LONG)(x))
+      |                      ^
+sort.c:4358:33: note: in expansion of macro ‘ADDPOS’
+ 4358 |                                 ADDPOS(S->SizeInFile[par],1);
+      |                                 ^~~~~~
+sort.c:4784:17: warning: this ‘else’ clause does not guard... [-Wmisleading-indentation]
+ 4784 |                 else
+      |                 ^~~~
+In file included from form3.h:330,
+                 from sort.c:61:
+declare.h:219:22: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘else’
+  219 | #define ADDPOS(pp,x) (pp).p1 = ((pp).p1+(LONG)(x))
+      |                      ^
+sort.c:4791:25: note: in expansion of macro ‘ADDPOS’
+ 4791 |                         ADDPOS(S->SizeInFile[par],1);
+      |                         ^~~~~~
+mv -f .deps/tform-optimize.Tpo .deps/tform-optimize.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-store.o -MD -MP -MF .deps/tform-store.Tpo -c -o tform-store.o `test -f 'store.c' || echo './'`store.c
+mv -f .deps/tform-spectator.Tpo .deps/tform-spectator.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-symmetr.o -MD -MP -MF .deps/tform-symmetr.Tpo -c -o tform-symmetr.o `test -f 'symmetr.c' || echo './'`symmetr.c
+mv -f .deps/tform-startup.Tpo .deps/tform-startup.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-tables.o -MD -MP -MF .deps/tform-tables.Tpo -c -o tform-tables.o `test -f 'tables.c' || echo './'`tables.c
+mv -f .deps/tform-symmetr.Tpo .deps/tform-symmetr.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-token.o -MD -MP -MF .deps/tform-token.Tpo -c -o tform-token.o `test -f 'token.c' || echo './'`token.c
+mv -f .deps/tform-tables.Tpo .deps/tform-tables.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-tools.o -MD -MP -MF .deps/tform-tools.Tpo -c -o tform-tools.o `test -f 'tools.c' || echo './'`tools.c
+mv -f .deps/tform-sort.Tpo .deps/tform-sort.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-transform.o -MD -MP -MF .deps/tform-transform.Tpo -c -o tform-transform.o `test -f 'transform.c' || echo './'`transform.c
+mv -f .deps/tform-store.Tpo .deps/tform-store.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-wildcard.o -MD -MP -MF .deps/tform-wildcard.Tpo -c -o tform-wildcard.o `test -f 'wildcard.c' || echo './'`wildcard.c
+mv -f .deps/tform-token.Tpo .deps/tform-token.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-unixfile.o -MD -MP -MF .deps/tform-unixfile.Tpo -c -o tform-unixfile.o `test -f 'unixfile.c' || echo './'`unixfile.c
+mv -f .deps/tform-unixfile.Tpo .deps/tform-unixfile.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-evaluate.o -MD -MP -MF .deps/tform-evaluate.Tpo -c -o tform-evaluate.o `test -f 'evaluate.c' || echo './'`evaluate.c
+mv -f .deps/tform-tools.Tpo .deps/tform-tools.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-float.o -MD -MP -MF .deps/tform-float.Tpo -c -o tform-float.o `test -f 'float.c' || echo './'`float.c
+mv -f .deps/tform-evaluate.Tpo .deps/tform-evaluate.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHPTHREADS    -Wall -Wextra -O3 -pthread  -MT tform-threads.o -MD -MP -MF .deps/tform-threads.Tpo -c -o tform-threads.o `test -f 'threads.c' || echo './'`threads.c
+mv -f .deps/tform-wildcard.Tpo .deps/tform-wildcard.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-startup.o -MD -MP -MF .deps/parform-startup.Tpo -c -o parform-startup.o `test -f 'startup.c' || echo './'`startup.c
+mv -f .deps/parform-startup.Tpo .deps/parform-startup.Po
+g++ -std=gnu++11 -Wall -Wextra -O3     -o form form-argument.o form-checkpoint.o form-comexpr.o form-compcomm.o form-compiler.o form-compress.o form-comtool.o form-diagrams.o form-diawrap.o form-dict.o form-dollar.o form-execute.o form-extcmd.o form-factor.o form-features.o form-findpat.o form-function.o form-grcc.o form-if.o form-index.o form-lus.o form-message.o form-minos.o form-model.o form-module.o form-mytime.o form-names.o form-normal.o form-notation.o form-opera.o form-optimize.o form-pattern.o form-poly.o form-polyfact.o form-polygcd.o form-polywrap.o form-pre.o form-proces.o form-ratio.o form-reken.o form-reshuf.o form-sch.o form-setfile.o form-smart.o form-sort.o form-spectator.o form-startup.o form-store.o form-symmetr.o form-tables.o form-token.o form-tools.o form-transform.o form-wildcard.o form-unixfile.o   form-evaluate.o form-float.o   -lz -lmpfr -lgmp 
+mv -f .deps/tform-transform.Tpo .deps/tform-transform.Po
+mpicxx -std=gnu++11 -Wall -Wextra -O3      -o parform parform-argument.o parform-checkpoint.o parform-comexpr.o parform-compcomm.o parform-compiler.o parform-compress.o parform-comtool.o parform-diagrams.o parform-diawrap.o parform-dict.o parform-dollar.o parform-execute.o parform-extcmd.o parform-factor.o parform-features.o parform-findpat.o parform-function.o parform-grcc.o parform-if.o parform-index.o parform-lus.o parform-message.o parform-minos.o parform-model.o parform-module.o parform-mytime.o parform-names.o parform-normal.o parform-notation.o parform-opera.o parform-optimize.o parform-pattern.o parform-poly.o parform-polyfact.o parform-polygcd.o parform-polywrap.o parform-pre.o parform-proces.o parform-ratio.o parform-reken.o parform-reshuf.o parform-sch.o parform-setfile.o parform-smart.o parform-sort.o parform-spectator.o parform-startup.o parform-store.o parform-symmetr.o parform-tables.o parform-token.o parform-tools.o parform-transform.o parform-wildcard.o parform-unixfile.o   parform-evaluate.o parform-float.o  parform-mpi.o parform-parallel.o parform-pf_profile.o  -lz -lmpfr -lgmp 
+mv -f .deps/tform-float.Tpo .deps/tform-float.Po
+mv -f .deps/tform-threads.Tpo .deps/tform-threads.Po
+g++ -std=gnu++11 -Wall -Wextra -O3 -pthread     -o tform tform-argument.o tform-checkpoint.o tform-comexpr.o tform-compcomm.o tform-compiler.o tform-compress.o tform-comtool.o tform-diagrams.o tform-diawrap.o tform-dict.o tform-dollar.o tform-execute.o tform-extcmd.o tform-factor.o tform-features.o tform-findpat.o tform-function.o tform-grcc.o tform-if.o tform-index.o tform-lus.o tform-message.o tform-minos.o tform-model.o tform-module.o tform-mytime.o tform-names.o tform-normal.o tform-notation.o tform-opera.o tform-optimize.o tform-pattern.o tform-poly.o tform-polyfact.o tform-polygcd.o tform-polywrap.o tform-pre.o tform-proces.o tform-ratio.o tform-reken.o tform-reshuf.o tform-sch.o tform-setfile.o tform-smart.o tform-sort.o tform-spectator.o tform-startup.o tform-store.o tform-symmetr.o tform-tables.o tform-token.o tform-tools.o tform-transform.o tform-wildcard.o tform-unixfile.o   tform-evaluate.o tform-float.o  tform-threads.o   -lz -lmpfr -lgmp 
+make: Leaving directory '/home/assaf/opt/formwork/pr1/sources'

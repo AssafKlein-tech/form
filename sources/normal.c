@@ -1,11 +1,12 @@
 /** @file normal.c
  * 
- *  Mainly the routine Normalize. This routine brings terms to standard
- *	FORM. Currently it has one serious drawback. Its buffers are all
- *	in the stack. This means these buffers have a fixed size (NORMSIZE).
- *	In the past this has caused problems and NORMSIZE had to be increased.
+ *	Mainly the routine Normalize. This routine brings terms to standard
+ *	form. Its main buffers are in AT, but they have a fixed size controlled
+ *	by NORMSIZE, which limit the maximum complexity of terms which can be
+ *	normalized.
  *
- *	It is not clear whether Normalize can be called recursively.
+ *	Normalize is called recursively, currently via:
+ *		Normalize -> ExpandRat -> Normalize.
  */
 /* #[ License : */
 /*
@@ -185,8 +186,7 @@ int Commute(WORD *fleft, WORD *fright)
 
 	This is the big normalization routine. It has a great need
 	to be economical.
-	There is a fixed limit to the number of objects coming in.
-	Something should be done about it.
+	The limit on the number of objects coming in is given by NORMSIZE.
 
 */
 
@@ -199,20 +199,41 @@ int Normalize(PHEAD WORD *term)
 	WORD *t, *m, *r, i, j, k, l, nsym, *ss, *tt, *u;
 	WORD shortnum, stype;
 	WORD *stop, *to = 0, *from = 0;
-/*
-	The next variables could be better off in the AT.WorkSpace (?)
-	Now they make stackallocations rather bothersome.
-*/
-	WORD psym[7*NORMSIZE],*ppsym;
-	WORD pvec[NORMSIZE],*ppvec,nvec;
-	WORD pdot[3*NORMSIZE],*ppdot,ndot;
-	WORD pdel[2*NORMSIZE],*ppdel,ndel;
-	WORD pind[NORMSIZE],nind;
-	WORD *peps[NORMSIZE/3],neps;
-	WORD *pden[NORMSIZE/3],nden;
-	WORD *pcom[NORMSIZE],ncom;
-	WORD *pnco[NORMSIZE],nnco;
-	WORD *pcon[2*NORMSIZE],ncon;		/* Pointer to contractable indices */
+
+	WORD *ppsym, *ppvec, *ppdot, *ppdel;
+	WORD nvec, ndot, ndel, nind, neps, nden, ncom, nnco, ncon;
+
+	AT.NormDepth++;
+#ifdef DEBUGGING
+	if ( AT.NormDepth > 2 ) {
+		// We don't expect this to happen in the current codebase.
+		Terminate(-1);
+	}
+#endif
+	if ( AT.NormDepth > AT.NormDataSize ) {
+		NORMDATA **top = AT.NormData + AT.NormDataSize;
+		DoubleBuffer((void **)&(AT.NormData), (void **)&(top),
+			sizeof(*AT.NormData), "double NormData pointers");
+		AT.NormDataSize *= 2;
+		for ( LONG i = AT.NormDepth-1; i < AT.NormDataSize; i++ ) {
+			AT.NormData[i] = NULL;
+		}
+	}
+	if ( AT.NormData[AT.NormDepth-1] == NULL ) {
+		AT.NormData[AT.NormDepth-1] = AllocNormData();
+	}
+
+	WORD  *psym = AT.NormData[AT.NormDepth-1]->psym;
+	WORD  *pvec = AT.NormData[AT.NormDepth-1]->pvec;
+	WORD  *pdot = AT.NormData[AT.NormDepth-1]->pdot;
+	WORD  *pdel = AT.NormData[AT.NormDepth-1]->pdel;
+	WORD  *pind = AT.NormData[AT.NormDepth-1]->pind;
+	WORD **peps = AT.NormData[AT.NormDepth-1]->peps;
+	WORD **pden = AT.NormData[AT.NormDepth-1]->pden;
+	WORD **pcom = AT.NormData[AT.NormDepth-1]->pcom;
+	WORD **pnco = AT.NormData[AT.NormDepth-1]->pnco;
+	WORD **pcon = AT.NormData[AT.NormDepth-1]->pcon;
+
 	WORD *n_coef, ncoef;				/* Accumulator for the coefficient */
 	WORD *n_llnum, *lnum, nnum;
 	WORD *termout, oldtoprhs = 0, subtype;
@@ -239,11 +260,22 @@ int Normalize(PHEAD WORD *term)
 PrintTerm(term,"Normalize");
 */
 
+	if ( AT.SS == AT.S0 ) {
+		if ( *term > AT.SS->verbMaxTermSize ) {
+			AT.SS->verbMaxTermSize = *term;
+		}
+	}
+
 Restart:
 	didcontr = 0;
 	ReplaceType = -1;
 	t = term;
-	if ( !*t ) { TermFree(n_coef,"NormCoef"); TermFree(n_llnum,"n_llnum"); return(regval); }
+	if ( !*t ) {
+		AT.NormDepth--;
+		TermFree(n_coef,"NormCoef");
+		TermFree(n_llnum,"n_llnum");
+		return(regval);
+	}
 	r = t + *t;
 	ncoef = r[-1];
 	i = ABS(ncoef);
@@ -531,18 +563,18 @@ NextSymbol:;
 					}
 					if ( nummodopt < NumModOptdollars ) {
 						ptype = ModOptdollars[nummodopt].type;
-						if ( ptype == MODLOCAL ) {
+						if ( DollarLocalCopy(ptype) ) {
 							d = ModOptdollars[nummodopt].dstruct+AT.identity;
 						}
 						else {
-							LOCK(d->pthreadslockread);
+							LOCK(d->pthreadslock);
 						}
 					}
 				}
 #endif
 				if ( d->type == DOLZERO ) {
 #ifdef WITHPTHREADS
-					if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					if ( t[3] == 0 ) goto NormZZ;
 					if ( t[3] < 0 ) goto NormInf;
@@ -558,7 +590,7 @@ NextSymbol:;
 					}
 					if ( nnum == 0 || ( nnum == 1 && lnum[0] == 0 ) ) {
 #ifdef WITHPTHREADS
-						if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+						if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 						if ( t[3] < 0 ) goto NormInf;
 						else if ( t[3] == 0 ) goto NormZZ;
@@ -569,7 +601,7 @@ NextSymbol:;
 					if ( t[3] < 0 ) {
 						if ( Divvy(BHEAD (UWORD *)n_coef,&ncoef,(UWORD *)lnum,nnum) ) {
 #ifdef WITHPTHREADS
-							if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							goto FromNorm;
 						}
@@ -577,7 +609,7 @@ NextSymbol:;
 					else if ( t[3] > 0 ) {
 						if ( Mully(BHEAD (UWORD *)n_coef,&ncoef,(UWORD *)lnum,nnum) ) {
 #ifdef WITHPTHREADS
-							if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							goto FromNorm;
 						}
@@ -587,7 +619,7 @@ NextSymbol:;
 				else if ( d->type == DOLINDEX ) {
 					if ( d->index == 0 ) {
 #ifdef WITHPTHREADS
-						if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+						if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 						goto NormZero;
 					}
@@ -658,7 +690,7 @@ IllDollarExp:
 					t[4] = AM.dbufnum;
 					if ( t[3] == 0 ) {
 #ifdef WITHPTHREADS
-						if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+						if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 						break;
 					}
@@ -667,7 +699,7 @@ IllDollarExp:
 					while ( t < m ) {
 						if ( *t == DOLLAREXPRESSION ) {
 #ifdef WITHPTHREADS
-							if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							d = Dollars + t[2];
 #ifdef WITHPTHREADS
@@ -677,11 +709,11 @@ IllDollarExp:
 								}
 								if ( nummodopt < NumModOptdollars ) {
 									ptype = ModOptdollars[nummodopt].type;
-									if ( ptype == MODLOCAL ) {
+									if ( DollarLocalCopy(ptype) ) {
 										d = ModOptdollars[nummodopt].dstruct+AT.identity;
 									}
 									else {
-										LOCK(d->pthreadslockread);
+										LOCK(d->pthreadslock);
 									}
 								}
 							}
@@ -694,13 +726,13 @@ IllDollarExp:
 						t += t[1];
 					}
 #ifdef WITHPTHREADS
-					if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					goto RegEnd;
 				}
 				else {
 #ifdef WITHPTHREADS
-					if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					MLOCK(ErrorMessageLock);
 					MesPrint("!!!This $ variation has not been implemented yet!!!");
@@ -708,7 +740,7 @@ IllDollarExp:
 					goto NormMin;
 				}
 #ifdef WITHPTHREADS
-				if ( ptype > 0 && ptype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+				if ( ptype > 0 && ! DollarLocalCopy(ptype) ) { UNLOCK(d->pthreadslock); }
 #endif
 				}
 				else {
@@ -1097,7 +1129,7 @@ PasteIn:;
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 						}
@@ -4096,6 +4128,11 @@ NoRep:
 		MUNLOCK(ErrorMessageLock);
 		goto NormMin;
 	}
+	if ( AT.SS == AT.S0 ) {
+		if ( ( m + i - termout ) > AT.SS->verbMaxTermSize ) {
+			AT.SS->verbMaxTermSize = m+i-termout;
+		}
+	}
 	if ( ReplaceType >= 0 ) {
 		t = n_coef;
 		i--;
@@ -4134,6 +4171,7 @@ NoRep:
 		C->numrhs = oldtoprhs;
 		C->Pointer = C->Buffer + oldcpointer;
 */
+		AT.NormDepth--;
 		TermFree(n_llnum,"n_llnum");
 		TermFree(n_coef,"NormCoef");
 		return(1);
@@ -4161,6 +4199,7 @@ RegEnd:
 		TermAssign(term);
 	}
 */
+	AT.NormDepth--;
 	TermFree(n_llnum,"n_llnum");
 	TermFree(n_coef,"NormCoef");
 	return(regval);
@@ -4186,11 +4225,13 @@ NormPRF:
 NormZero:
 	*term = 0;
 	AT.WorkPointer = termout;
+	AT.NormDepth--;
 	TermFree(n_llnum,"n_llnum");
 	TermFree(n_coef,"NormCoef");
 	return(regval);
 
 NormMin:
+	AT.NormDepth--;
 	TermFree(n_llnum,"n_llnum");
 	TermFree(n_coef,"NormCoef");
 	return(-1);
@@ -4199,6 +4240,7 @@ FromNorm:
 	MLOCK(ErrorMessageLock);
 	MesCall("Norm");
 	MUNLOCK(ErrorMessageLock);
+	AT.NormDepth--;
 	TermFree(n_llnum,"n_llnum");
 	TermFree(n_coef,"NormCoef");
 	return(-1);
@@ -4561,7 +4603,7 @@ WORD DetCommu(WORD *terms)
 			else if ( *t == DOLLAREXPRESSION ) {
 /*
 				Technically this is not correct. We have to test first
-				whether this is MODLOCAL (in TFORM) and if so, use the
+				whether this is DollarLocalCopy (in TFORM) and if so, use the
 				local version. Anyway, this should be rare to never
 				occurring because dollars should be replaced.
 */
@@ -5164,7 +5206,10 @@ void DropSymbols(PHEAD WORD *term)
 int SymbolNormalize(WORD *term)
 {
 	GETIDENTITY
-	WORD buffer[7*NORMSIZE], *t, *b, *bb, *tt, *m, *tstop;
+	WORD *t, *b, *bb, *tt, *m, *tstop;
+	// Here we use a stack-allocated array, since things are much smaller
+	// compared to the full Normalize routine.
+	WORD buffer[7*NORMSIZE];
 	int i;
 	b = buffer;
 	*b++ = SYMBOL; *b++ = 2;
@@ -5174,10 +5219,12 @@ int SymbolNormalize(WORD *term)
 	while ( t < tstop ) {	/* Step 1: collect symbols */
 	  if ( *t == SYMBOL && t < tstop ) {
 		for ( i = 2; i < t[1]; i += 2 ) {
+			const WORD sym = t[i];
+			const WORD pow = t[i+1];
 			bb = buffer+2;
 			while ( bb < b ) {
-				if ( bb[0] == t[i] ) {	/* add powers */
-					bb[1] += t[i+1];
+				if ( bb[0] == sym ) {	/* add powers */
+					bb[1] += pow;
 					if ( bb[1] > MAXPOWER || bb[1] < -MAXPOWER ) {
 						MLOCK(ErrorMessageLock);
 						MesPrint("Power in SymbolNormalize out of range");
@@ -5192,18 +5239,18 @@ int SymbolNormalize(WORD *term)
 					}
 					goto Nexti;
 				}
-				else if ( bb[0] > t[i] ) { /* insert it */
+				else if ( bb[0] > sym ) { /* insert it */
 					m = b;
 					while ( m > bb ) { m[1] = m[-1]; m[0] = m[-2]; m -= 2; }
 					b += 2;
-					bb[0] = t[i];
-					bb[1] = t[i+1];
+					bb[0] = sym;
+					bb[1] = pow;
 					goto Nexti;
 				}
 				bb += 2;
 			}
 			if ( bb >= b ) { /* add it to the end */
-				*b++ = t[i]; *b++ = t[i+1];
+				*b++ = sym; *b++ = pow;
 			}
 Nexti:;
 		}

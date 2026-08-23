@@ -136,6 +136,7 @@ static KEYWORDV onoffoptions[] = {
 	,{"oldfactarg",		&(AC.OldFactArgFlag),	1,	0}
 	,{"memdebugflag",	&(AC.MemDebugFlag),	1,	0}
 	,{"oldgcd", 		&(AC.OldGCDflag),	1,	0}
+	,{"oldprfsign", 		&(AC.OldPRFSignFlag),	1,	0}
 	,{"innertest",      &(AC.InnerTest),  1,  0}
 	,{"wtimestats",     &(AC.WTimeStatsFlag),  1,  0}
 	,{"sortreallocate",	&(AC.SortReallocateFlag), 1, 0}
@@ -144,6 +145,7 @@ static KEYWORDV onoffoptions[] = {
 	,{"humanstats",	&(AC.HumanStatsFlag), 1, 0}
 	,{"humanstatistics",	&(AC.HumanStatsFlag), 1, 0}
 	,{"grccverbose", &(AC.GrccVerbose), 1, 0}
+	,{"sortverbose", &(AC.SortVerbose), 1, 0}
 };
 
 static WORD one = 1;
@@ -3923,7 +3925,7 @@ int CoAntiBracket(UBYTE *inp)
 	Syntax:
 		MultiBracket:{A|B} bracketinfo:...:{A|B} bracketinfo;
 */
-
+/* UNFINISHED_FEATURE_EXCL_START */
 int CoMultiBracket(UBYTE *inp)
 {
 	GETIDENTITY
@@ -4030,7 +4032,7 @@ RegEnd:
 	AT.bracketindexflag = 0;
 	return(error);
 }
-
+/* UNFINISHED_FEATURE_EXCL_STOP */
 /*
   	#] CoMultiBracket : 
   	#[ CountComp :
@@ -4257,7 +4259,9 @@ int CoIf(UBYTE *inp)
 	CBUF *C = cbuf+AC.cbufnum;
 	LONG x;
 #ifdef WITHFLOAT
+/* UNFINISHED_FEATURE_EXCL_START */
 	int spec;
+/* UNFINISHED_FEATURE_EXCL_STOP */
 #endif
 	if ( *inp == '(' && inp[1] == ',' ) inp += 2;
 	else if ( *inp == '(' ) inp++;	/* Usually we enter at the bracket */
@@ -4288,6 +4292,7 @@ ReDo:
 		if ( FG.cTable[*p] == 1 ) {		/* Number */
 			if ( gotexp == 1 ) { MesCerr("position for )",p); error = 1; }
 #ifdef WITHFLOAT
+/* UNFINISHED_FEATURE_EXCL_START */
 			pp = CheckFloat(p,&spec);
 			if ( pp > p ) {	/* Got one */
 HaveFloat:
@@ -4312,7 +4317,7 @@ HaveFloat:
 /*
 			Notation: Same as FLOATFUN but FLOATFUN replaced by IFFLOATNUMBER.
 */
-
+/* UNFINISHED_FEATURE_EXCL_STOP */
 #endif
 			u = w;
 			*w++ = LONGNUMBER;
@@ -4375,7 +4380,9 @@ OnlyNum:
 			u[2] = (u[1] - 3)/2;
 			if ( level ) u[2] = -u[2];
 #ifdef WITHFLOAT
+/* UNFINISHED_FEATURE_EXCL_START */
 DoneWithNumber:
+/* UNFINISHED_FEATURE_EXCL_STOP */
 #endif
 			gotexp = 1;
 		}
@@ -4775,10 +4782,12 @@ NoGood:			MesPrint("&Unrecognized word: %s",inp);
 			gotexp = 1;
 		}
 #ifdef WITHFLOAT
+/* UNFINISHED_FEATURE_EXCL_START */
 		else if ( *p == '.' ) {
 			pp = CheckFloat(p,&spec);
 			if ( pp > p ) goto HaveFloat;
 		}
+/* UNFINISHED_FEATURE_EXCL_STOP */
 #endif
 		else if ( *p == '(' ) {
 			if ( gotexp ) {
@@ -7407,7 +7416,7 @@ int CoEndSwitch(UBYTE *s)
   	#] CoEndSwitch : 
   	#[ CoSetUserFlag :
 */
-
+/* UNFINISHED_FEATURE_EXCL_START */
 int CoSetUserFlag(UBYTE *s)
 {
 	int error = 0;
@@ -7430,12 +7439,12 @@ int CoSetUserFlag(UBYTE *s)
 	}
 	return(error);
 }
-
+/* UNFINISHED_FEATURE_EXCL_STOP */
 /*
   	#] CoSetUserFlag : 
   	#[ CoClearUserFlag :
 */
-
+/* UNFINISHED_FEATURE_EXCL_START */
 int CoClearUserFlag(UBYTE *s)
 {
 	int error = 0;
@@ -7458,7 +7467,7 @@ int CoClearUserFlag(UBYTE *s)
 	}
 	return(error);
 }
-
+/* UNFINISHED_FEATURE_EXCL_STOP */
 /*
   	#] CoClearUserFlag : 
   	#[ CoCreateAllLoops :

@@ -1,0 +1,31 @@
+ParFORM 5.0.0 (Aug 21 2026) 3 workers            Run: Fri Aug 21 16:36:12 2026
+    #: MaxTermSize 500
+    #: ScratchSize 50M
+    Symbol x,y,z,i;
+    CFunction f;
+    Local test = sum_(i,1,100,f(i*(x+y))*(x+y)^20) - 52824783675150;
+    Bracket f;
+    .sort
+
+Time =       0.03 sec    Generated terms =       2101
+            test         Terms in output =       2101
+                         Bytes used      =      74076
+    Keep Brackets;
+    Identify f(x?) = x;
+    .sort
+
+Time =       0.05 sec    Generated terms =       4201
+            test         Terms in output =         23
+                         Bytes used      =        740
+    Identify x = 1;
+    Identify y = 2;
+    Print +s;
+    .end
+
+Time =       0.05 sec    Generated terms =         23
+            test         Terms in output =          0
+                         Bytes used      =          4
+
+   test = 0;
+
+  0.05 sec + 0.19 sec: 0.24 sec out of 0.05 sec

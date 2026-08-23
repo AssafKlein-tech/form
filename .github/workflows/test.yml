@@ -33,7 +33,7 @@ jobs:
           - {bin: tform,   test: extra,   timeout: 60, nthreads: 2, flint: no}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # ensures a reachable tag
 
@@ -49,7 +49,12 @@ jobs:
         run: make -C sources -j 4 ${{ matrix.bin }}
 
       - name: Test
-        run: ./check/check.rb ./sources/${{ matrix.bin }} --stat ${{ matrix.nthreads && format('-w{0}', matrix.nthreads) || '' }} ${{ matrix.timeout && format('--timeout {0}', matrix.timeout) || '' }} ${{ matrix.test != 'default' && format('-C {0}', matrix.test) || '' }}
+        run: >-
+          ./check/check.rb ./sources/${{ matrix.bin }} --stat
+          ${{ matrix.nthreads && format('-w{0}', matrix.nthreads) || '' }}
+          ${{ matrix.timeout && format('--timeout {0}', matrix.timeout) || '' }}
+          ${{ matrix.test != 'default' && format('-C {0}', matrix.test) || '' }}
+          ${{ ( matrix.test != 'default' && matrix.flint == 'no' ) && '-x ''HypSimplifyDiffLogDiffFuncs_(59|60|61|62)*'' -x HypSimplifyDiffLogDiffFuncs_126' || '' }}
 
   check-parform:
     name: Test (${{ matrix.test }}) for ${{ matrix.bin }}${{ matrix.nthreads && format(' -w{0}', matrix.nthreads) || '' }}${{ matrix.flint && format(' (flint - {0})', matrix.flint) || '' }}
@@ -61,7 +66,7 @@ jobs:
           - {bin: parform, test: default, timeout: 15}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # ensures a reachable tag
 
@@ -115,12 +120,34 @@ jobs:
           - {bin: tvorm, test: default, nthreads: 2, group: 8/10}
           - {bin: tvorm, test: default, nthreads: 2, group: 9/10}
           - {bin: tvorm, test: default, nthreads: 2, group: 10/10}
-          - {bin: vorm,  test: extra,   group: 1/1}
-          - {bin: tvorm, test: extra,   group: 1/1}
-          - {bin: tvorm, test: extra,   nthreads: 2, group: 1/1}
+          - {bin: vorm,  test: extra,   group: 1/5}
+          - {bin: vorm,  test: extra,   group: 2/5}
+          - {bin: vorm,  test: extra,   group: 3/5}
+          - {bin: vorm,  test: extra,   group: 4/5}
+          - {bin: vorm,  test: extra,   group: 5/5}
+          - {bin: tvorm, test: extra,   group: 1/10}
+          - {bin: tvorm, test: extra,   group: 2/10}
+          - {bin: tvorm, test: extra,   group: 3/10}
+          - {bin: tvorm, test: extra,   group: 4/10}
+          - {bin: tvorm, test: extra,   group: 5/10}
+          - {bin: tvorm, test: extra,   group: 6/10}
+          - {bin: tvorm, test: extra,   group: 7/10}
+          - {bin: tvorm, test: extra,   group: 8/10}
+          - {bin: tvorm, test: extra,   group: 9/10}
+          - {bin: tvorm, test: extra,   group: 10/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 1/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 2/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 3/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 4/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 5/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 6/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 7/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 8/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 9/10}
+          - {bin: tvorm, test: extra,   nthreads: 2, group: 10/10}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # ensures a reachable tag
 
@@ -163,7 +190,7 @@ jobs:
           - {bin: tvorm, test: extra,   timeout: 60, nthreads: 2, flint: no}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # ensures a reachable tag
 
@@ -180,15 +207,20 @@ jobs:
         run: make -C sources -j 4 ${{ matrix.bin }}
 
       - name: Test
-        run: ./check/check.rb ./sources/${{ matrix.bin }} --stat --timeout ${{ matrix.timeout && format('{0}', matrix.timeout) || '30' }} ${{ matrix.nthreads && format('-w{0}', matrix.nthreads) || '' }} ${{ matrix.test != 'default' && format('-C {0}', matrix.test) || '' }} --fake-valgrind
+        run: >-
+          ./check/check.rb ./sources/${{ matrix.bin }} --stat --fake-valgrind
+          --timeout ${{ matrix.timeout && format('{0}', matrix.timeout) || '30' }}
+          ${{ matrix.nthreads && format('-w{0}', matrix.nthreads) || '' }}
+          ${{ matrix.test != 'default' && format('-C {0}', matrix.test) || '' }}
+          ${{ ( matrix.test != 'default' && matrix.flint == 'no' ) && '-x ''HypSimplifyDiffLogDiffFuncs_(59|60|61|62)*'' -x HypSimplifyDiffLogDiffFuncs_126' || '' }}
 
       - name: Generate LCOV coverage data
         run: |
-          lcov -d . -c -o coverage.lcov
+          lcov --config-file .lcovrc -d . -c -o coverage.lcov
           lcov -r coverage.lcov '*/usr/include/*' '*/extern/*'${{ matrix.flint != 'no' && ' ''*/lib/*''' || '' }} -o coverage.lcov
 
       - name: Coveralls Parallel
-        uses: coverallsapp/github-action@v2
+        uses: coverallsapp/github-action@v2.3.8
         with:
           flag-name: ${{ matrix.bin }}${{ matrix.nthreads && format(' -w{0}', matrix.nthreads) || '' }} (${{ matrix.test }})${{ matrix.flint && format(' (flint - {0})', matrix.flint) || '' }}
           parallel: true
@@ -199,7 +231,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Coveralls Finished
-      uses: coverallsapp/github-action@v2
+      uses: coverallsapp/github-action@v2.3.8
       with:
         parallel-finished: true
 
@@ -217,15 +249,27 @@ jobs:
           - {bin: tform}
           - {bin: tform, nthreads: 2}
     steps:
-      # We have to use v1.
-      # See https://github.com/actions/checkout/issues/334
+      # 32-bit containers lack the amd64 libstdc++ runtime library needed by
+      # the runner-provided Node.js runtime.
+      # See: https://github.com/EliahKagan/gitoxide/pull/5
+      #
+      # Install Git so that actions/checkout can create a local Git repository
+      # instead of downloading the files through the GitHub REST API.
+      - name: Prerequisites for 32-bit containers
+        run: |
+          dpkg --add-architecture amd64
+          apt-get update
+          apt-get install --no-install-recommends -y ca-certificates git libstdc++6:amd64
+
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # ensures a reachable tag
 
       - name: Set up build
         uses: ./.github/actions/setup-build
         with:
-          features: ${{ matrix.bin }} noflint  # actions/cache@v4 doesn't work
+          features: ${{ matrix.bin }} noflint  # The FLINT interface currently assumes a 64-bit environment.
 
       - name: Build
         run: make -C sources -j 4 ${{ matrix.bin }}

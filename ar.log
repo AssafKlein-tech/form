@@ -1,0 +1,28 @@
+fatal: No names found, cannot describe anything.
+========================================================================
+Failed to determine the revision of the source code.
+
+The reason may be
+  - this is neither a source distribution (containing the configure
+    script) nor a cloned Git repository,
+  - this is a shallow clone and no version tags are reachable,
+  - some required utilities (e.g., git) are missing.
+
+Source distributions and some binaries can be found in:
+
+  http://www.nikhef.nl/~form/maindir/binaries/binaries.html
+  https://github.com/form-dev/form/releases
+
+The latest source code can be cloned by:
+
+  git clone https://github.com/form-dev/form.git
+
+You can continue the build, but binaries will not contain the revision
+information.
+========================================================================
+configure.ac:104: installing 'build-aux/compile'
+configure.ac:110: installing 'build-aux/config.guess'
+configure.ac:110: installing 'build-aux/config.sub'
+configure.ac:85: installing 'build-aux/install-sh'
+configure.ac:85: installing 'build-aux/missing'
+sources/Makefile.am: installing 'build-aux/depcomp'

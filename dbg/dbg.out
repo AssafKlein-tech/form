@@ -1,0 +1,50 @@
+ParFORM 5.0.0 (Aug 21 2026) 2 workers            Run: Fri Aug 21 16:32:41 2026
+    #: MaxTermSize 500
+    #: ScratchSize 1K
+    Off compress;
+    Symbol x,y,z,i;
+    CFunction f;
+    Local test = sum_(i,1,100,f(i*(x+y))*(x+y)^20) - 52824783675150;
+    Bracket f;
+    .sort
+[Assaf-Klein-PC:39357:0:39357] Caught signal 11 (Segmentation fault: address not mapped to object at address 0x8)
+==== backtrace (tid:  39357) ====
+ 0  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(ucs_handle_error+0x2e4) [0x74aabffc6fc4]
+ 1  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(+0x24fec) [0x74aabffcafec]
+ 2  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(+0x251aa) [0x74aabffcb1aa]
+ 3  /home/assaf/opt/formwork/pr1/sources/parform(+0x1b8b91) [0x5d3356b0eb91]
+ 4  /home/assaf/opt/formwork/pr1/sources/parform(+0x1b5a5e) [0x5d3356b0ba5e]
+ 5  /home/assaf/opt/formwork/pr1/sources/parform(+0x229baa) [0x5d3356b7fbaa]
+ 6  /home/assaf/opt/formwork/pr1/sources/parform(+0x164815) [0x5d3356aba815]
+ 7  /home/assaf/opt/formwork/pr1/sources/parform(+0x76b16) [0x5d33569ccb16]
+ 8  /home/assaf/opt/formwork/pr1/sources/parform(+0xc8fb7) [0x5d3356a1efb7]
+ 9  /home/assaf/opt/formwork/pr1/sources/parform(+0x14f0c9) [0x5d3356aa50c9]
+10  /home/assaf/opt/formwork/pr1/sources/parform(+0x1c9f0f) [0x5d3356b1ff0f]
+11  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x74aac7029d90]
+12  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80) [0x74aac7029e40]
+13  /home/assaf/opt/formwork/pr1/sources/parform(+0x11855) [0x5d3356967855]
+=================================
+Program terminating in process 1 at t.frm Line 7 --> 
+Terminate called from startup.c:1703 (onErrSig)
+[Assaf-Klein-PC:39358:0:39358] Caught signal 11 (Segmentation fault: address not mapped to object at address 0x8)
+==== backtrace (tid:  39358) ====
+ 0  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(ucs_handle_error+0x2e4) [0x78858b679fc4]
+ 1  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(+0x24fec) [0x78858b67dfec]
+ 2  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libucs.so.0(+0x251aa) [0x78858b67e1aa]
+ 3  /home/assaf/opt/formwork/pr1/sources/parform(+0x1b8337) [0x5a0fb292a337]
+ 4  /home/assaf/opt/formwork/pr1/sources/parform(+0x1b5a12) [0x5a0fb2927a12]
+ 5  /home/assaf/opt/formwork/pr1/sources/parform(+0x229baa) [0x5a0fb299bbaa]
+ 6  /home/assaf/opt/formwork/pr1/sources/parform(+0x164815) [0x5a0fb28d6815]
+ 7  /home/assaf/opt/formwork/pr1/sources/parform(+0x76b16) [0x5a0fb27e8b16]
+ 8  /home/assaf/opt/formwork/pr1/sources/parform(+0xc8fb7) [0x5a0fb283afb7]
+ 9  /home/assaf/opt/formwork/pr1/sources/parform(+0x14f0c9) [0x5a0fb28c10c9]
+10  /home/assaf/opt/formwork/pr1/sources/parform(+0x1c9f0f) [0x5a0fb293bf0f]
+11  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x788591829d90]
+12  /home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80) [0x788591829e40]
+13  /home/assaf/opt/formwork/pr1/sources/parform(+0x11855) [0x5a0fb2783855]
+=================================
+Program terminating in process 2 at t.frm Line 7 --> 
+Terminate called from startup.c:1703 (onErrSig)
+Program terminating in process 0 at t.frm Line 7 --> 
+Terminate called from startup.c:1703 (onErrSig)
+  40.99 sec + 0.01 sec: 41.00 sec out of 40.94 sec

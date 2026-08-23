@@ -1,11 +1,3 @@
-# m4_esyscmd_s implementation for autoconf < 2.64.
-# (Taken from m4sugar.m4 in autoconf 2.69.)
-m4_ifndef([m4_esyscmd_s], [m4_define([m4_esyscmd_s],
-[m4_chomp_all(m4_esyscmd([$1]))])])
-m4_ifndef([m4_chomp_all], [m4_define([m4_chomp_all],
-[m4_format([[%.*s]], m4_bregexp(m4_translit([[$1]], [
-/], [/ ]), [/*$]), [$1])])])
-
 # Get the version from
 # (1) .version file available in a tarball, or
 # (2) the latest tag in the repository.
@@ -76,27 +68,16 @@ m4_define([subdir_objects], [m4_esyscmd_s([
 	awk '{split ($NF,a,"."); if (a[1] >= 2 || (a[1] == 1 && a[2] >= 14)) { print "subdir-objects" }}'
 ])])
 
-AC_PREREQ([2.59])
+AC_PREREQ([2.69])
 AC_INIT([FORM], [FORM_VERSION], [https://github.com/form-dev/form/issues])
 AC_CONFIG_MACRO_DIR([m4])
 AC_CONFIG_SRCDIR([sources/form3.h])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR([build-aux])
-AM_INIT_AUTOMAKE([1.7 foreign -Wall dist-bzip2] serial_tests subdir_objects)
+AM_INIT_AUTOMAKE([1.11 foreign -Wall dist-bzip2] serial_tests subdir_objects)
 
 # Check for .version file
 AM_CONDITIONAL([FIXED_VERSION], [test -f $srcdir/.version])
-
-# Check for automake >= 1.10
-flag=false
-case $am__api_version in
-	1.6|1.7|1.8|1.9)
-		;;
-	*)
-		flag=:
-		;;
-esac
-AM_CONDITIONAL([AUTOMAKE_GE_110], [$flag])
 
 # Check for programs
 : ${CFLAGS=''}  # avoid autoconf's default CFLAGS/CXXFLAGS

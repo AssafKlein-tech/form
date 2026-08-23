@@ -1,0 +1,133 @@
+make: Entering directory '/home/assaf/opt/formwork/pr1/sources'
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-argument.o -MD -MP -MF .deps/parform-argument.Tpo -c -o parform-argument.o `test -f 'argument.c' || echo './'`argument.c
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-checkpoint.o -MD -MP -MF .deps/parform-checkpoint.Tpo -c -o parform-checkpoint.o `test -f 'checkpoint.c' || echo './'`checkpoint.c
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-comexpr.o -MD -MP -MF .deps/parform-comexpr.Tpo -c -o parform-comexpr.o `test -f 'comexpr.c' || echo './'`comexpr.c
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-compcomm.o -MD -MP -MF .deps/parform-compcomm.Tpo -c -o parform-compcomm.o `test -f 'compcomm.c' || echo './'`compcomm.c
+mv -f .deps/parform-comexpr.Tpo .deps/parform-comexpr.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-compiler.o -MD -MP -MF .deps/parform-compiler.Tpo -c -o parform-compiler.o `test -f 'compiler.c' || echo './'`compiler.c
+mv -f .deps/parform-checkpoint.Tpo .deps/parform-checkpoint.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-compress.o -MD -MP -MF .deps/parform-compress.Tpo -c -o parform-compress.o `test -f 'compress.c' || echo './'`compress.c
+mv -f .deps/parform-compress.Tpo .deps/parform-compress.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-comtool.o -MD -MP -MF .deps/parform-comtool.Tpo -c -o parform-comtool.o `test -f 'comtool.c' || echo './'`comtool.c
+mv -f .deps/parform-comtool.Tpo .deps/parform-comtool.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-diagrams.o -MD -MP -MF .deps/parform-diagrams.Tpo -c -o parform-diagrams.o `test -f 'diagrams.c' || echo './'`diagrams.c
+mv -f .deps/parform-diagrams.Tpo .deps/parform-diagrams.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-diawrap.o -MD -MP -MF .deps/parform-diawrap.Tpo -c -o parform-diawrap.o `test -f 'diawrap.cc' || echo './'`diawrap.cc
+mv -f .deps/parform-compiler.Tpo .deps/parform-compiler.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-dict.o -MD -MP -MF .deps/parform-dict.Tpo -c -o parform-dict.o `test -f 'dict.c' || echo './'`dict.c
+mv -f .deps/parform-dict.Tpo .deps/parform-dict.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-dollar.o -MD -MP -MF .deps/parform-dollar.Tpo -c -o parform-dollar.o `test -f 'dollar.c' || echo './'`dollar.c
+mv -f .deps/parform-diawrap.Tpo .deps/parform-diawrap.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-execute.o -MD -MP -MF .deps/parform-execute.Tpo -c -o parform-execute.o `test -f 'execute.c' || echo './'`execute.c
+mv -f .deps/parform-compcomm.Tpo .deps/parform-compcomm.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-extcmd.o -MD -MP -MF .deps/parform-extcmd.Tpo -c -o parform-extcmd.o `test -f 'extcmd.c' || echo './'`extcmd.c
+mv -f .deps/parform-argument.Tpo .deps/parform-argument.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-factor.o -MD -MP -MF .deps/parform-factor.Tpo -c -o parform-factor.o `test -f 'factor.c' || echo './'`factor.c
+mv -f .deps/parform-extcmd.Tpo .deps/parform-extcmd.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-features.o -MD -MP -MF .deps/parform-features.Tpo -c -o parform-features.o `test -f 'features.cc' || echo './'`features.cc
+mv -f .deps/parform-factor.Tpo .deps/parform-factor.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-findpat.o -MD -MP -MF .deps/parform-findpat.Tpo -c -o parform-findpat.o `test -f 'findpat.c' || echo './'`findpat.c
+mv -f .deps/parform-features.Tpo .deps/parform-features.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-function.o -MD -MP -MF .deps/parform-function.Tpo -c -o parform-function.o `test -f 'function.c' || echo './'`function.c
+mv -f .deps/parform-execute.Tpo .deps/parform-execute.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-grcc.o -MD -MP -MF .deps/parform-grcc.Tpo -c -o parform-grcc.o `test -f 'grcc.cc' || echo './'`grcc.cc
+mv -f .deps/parform-dollar.Tpo .deps/parform-dollar.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-if.o -MD -MP -MF .deps/parform-if.Tpo -c -o parform-if.o `test -f 'if.c' || echo './'`if.c
+mv -f .deps/parform-findpat.Tpo .deps/parform-findpat.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-index.o -MD -MP -MF .deps/parform-index.Tpo -c -o parform-index.o `test -f 'index.c' || echo './'`index.c
+mv -f .deps/parform-if.Tpo .deps/parform-if.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-lus.o -MD -MP -MF .deps/parform-lus.Tpo -c -o parform-lus.o `test -f 'lus.c' || echo './'`lus.c
+mv -f .deps/parform-index.Tpo .deps/parform-index.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-message.o -MD -MP -MF .deps/parform-message.Tpo -c -o parform-message.o `test -f 'message.c' || echo './'`message.c
+mv -f .deps/parform-function.Tpo .deps/parform-function.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-minos.o -MD -MP -MF .deps/parform-minos.Tpo -c -o parform-minos.o `test -f 'minos.c' || echo './'`minos.c
+mv -f .deps/parform-message.Tpo .deps/parform-message.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-model.o -MD -MP -MF .deps/parform-model.Tpo -c -o parform-model.o `test -f 'model.c' || echo './'`model.c
+mv -f .deps/parform-model.Tpo .deps/parform-model.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-module.o -MD -MP -MF .deps/parform-module.Tpo -c -o parform-module.o `test -f 'module.c' || echo './'`module.c
+mv -f .deps/parform-minos.Tpo .deps/parform-minos.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-mytime.o -MD -MP -MF .deps/parform-mytime.Tpo -c -o parform-mytime.o `test -f 'mytime.cc' || echo './'`mytime.cc
+mv -f .deps/parform-module.Tpo .deps/parform-module.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-names.o -MD -MP -MF .deps/parform-names.Tpo -c -o parform-names.o `test -f 'names.c' || echo './'`names.c
+mv -f .deps/parform-mytime.Tpo .deps/parform-mytime.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-normal.o -MD -MP -MF .deps/parform-normal.Tpo -c -o parform-normal.o `test -f 'normal.c' || echo './'`normal.c
+mv -f .deps/parform-lus.Tpo .deps/parform-lus.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-notation.o -MD -MP -MF .deps/parform-notation.Tpo -c -o parform-notation.o `test -f 'notation.c' || echo './'`notation.c
+mv -f .deps/parform-notation.Tpo .deps/parform-notation.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-opera.o -MD -MP -MF .deps/parform-opera.Tpo -c -o parform-opera.o `test -f 'opera.c' || echo './'`opera.c
+mv -f .deps/parform-names.Tpo .deps/parform-names.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-optimize.o -MD -MP -MF .deps/parform-optimize.Tpo -c -o parform-optimize.o `test -f 'optimize.cc' || echo './'`optimize.cc
+mv -f .deps/parform-opera.Tpo .deps/parform-opera.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-pattern.o -MD -MP -MF .deps/parform-pattern.Tpo -c -o parform-pattern.o `test -f 'pattern.c' || echo './'`pattern.c
+mv -f .deps/parform-grcc.Tpo .deps/parform-grcc.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-poly.o -MD -MP -MF .deps/parform-poly.Tpo -c -o parform-poly.o `test -f 'poly.cc' || echo './'`poly.cc
+mv -f .deps/parform-pattern.Tpo .deps/parform-pattern.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-polyfact.o -MD -MP -MF .deps/parform-polyfact.Tpo -c -o parform-polyfact.o `test -f 'polyfact.cc' || echo './'`polyfact.cc
+mv -f .deps/parform-normal.Tpo .deps/parform-normal.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-polygcd.o -MD -MP -MF .deps/parform-polygcd.Tpo -c -o parform-polygcd.o `test -f 'polygcd.cc' || echo './'`polygcd.cc
+mv -f .deps/parform-poly.Tpo .deps/parform-poly.Po
+g++ -std=gnu++11 -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-polywrap.o -MD -MP -MF .deps/parform-polywrap.Tpo -c -o parform-polywrap.o `test -f 'polywrap.cc' || echo './'`polywrap.cc
+mv -f .deps/parform-polyfact.Tpo .deps/parform-polyfact.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-pre.o -MD -MP -MF .deps/parform-pre.Tpo -c -o parform-pre.o `test -f 'pre.c' || echo './'`pre.c
+mv -f .deps/parform-polygcd.Tpo .deps/parform-polygcd.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-proces.o -MD -MP -MF .deps/parform-proces.Tpo -c -o parform-proces.o `test -f 'proces.c' || echo './'`proces.c
+mv -f .deps/parform-polywrap.Tpo .deps/parform-polywrap.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-ratio.o -MD -MP -MF .deps/parform-ratio.Tpo -c -o parform-ratio.o `test -f 'ratio.c' || echo './'`ratio.c
+mv -f .deps/parform-optimize.Tpo .deps/parform-optimize.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-reken.o -MD -MP -MF .deps/parform-reken.Tpo -c -o parform-reken.o `test -f 'reken.c' || echo './'`reken.c
+mv -f .deps/parform-pre.Tpo .deps/parform-pre.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-reshuf.o -MD -MP -MF .deps/parform-reshuf.Tpo -c -o parform-reshuf.o `test -f 'reshuf.c' || echo './'`reshuf.c
+mv -f .deps/parform-ratio.Tpo .deps/parform-ratio.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-sch.o -MD -MP -MF .deps/parform-sch.Tpo -c -o parform-sch.o `test -f 'sch.c' || echo './'`sch.c
+mv -f .deps/parform-reken.Tpo .deps/parform-reken.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-setfile.o -MD -MP -MF .deps/parform-setfile.Tpo -c -o parform-setfile.o `test -f 'setfile.c' || echo './'`setfile.c
+mv -f .deps/parform-proces.Tpo .deps/parform-proces.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-smart.o -MD -MP -MF .deps/parform-smart.Tpo -c -o parform-smart.o `test -f 'smart.c' || echo './'`smart.c
+mv -f .deps/parform-smart.Tpo .deps/parform-smart.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-sort.o -MD -MP -MF .deps/parform-sort.Tpo -c -o parform-sort.o `test -f 'sort.c' || echo './'`sort.c
+mv -f .deps/parform-setfile.Tpo .deps/parform-setfile.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-spectator.o -MD -MP -MF .deps/parform-spectator.Tpo -c -o parform-spectator.o `test -f 'spectator.c' || echo './'`spectator.c
+sort.c: In function ‘MergePatches’:
+sort.c:4807:9: warning: this ‘if’ clause does not guard... [-Wmisleading-indentation]
+ 4807 |         if (!(PF_LowMRsort() && fout == &(AT.SS->file)))
+      |         ^~
+sort.c:4810:17: note: ...this statement, but the latter is misleadingly indented as if it were guarded by the ‘if’
+ 4810 |                 S->fPatches[S->fPatchN] = position;
+      |                 ^
+mv -f .deps/parform-spectator.Tpo .deps/parform-spectator.Po
+[ -f version.h ] || ln -s "./version.h.in" version.h
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-store.o -MD -MP -MF .deps/parform-store.Tpo -c -o parform-store.o `test -f 'store.c' || echo './'`store.c
+mv -f .deps/parform-sch.Tpo .deps/parform-sch.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-symmetr.o -MD -MP -MF .deps/parform-symmetr.Tpo -c -o parform-symmetr.o `test -f 'symmetr.c' || echo './'`symmetr.c
+mv -f .deps/parform-reshuf.Tpo .deps/parform-reshuf.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-tables.o -MD -MP -MF .deps/parform-tables.Tpo -c -o parform-tables.o `test -f 'tables.c' || echo './'`tables.c
+mv -f .deps/parform-symmetr.Tpo .deps/parform-symmetr.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-token.o -MD -MP -MF .deps/parform-token.Tpo -c -o parform-token.o `test -f 'token.c' || echo './'`token.c
+mv -f .deps/parform-store.Tpo .deps/parform-store.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-tools.o -MD -MP -MF .deps/parform-tools.Tpo -c -o parform-tools.o `test -f 'tools.c' || echo './'`tools.c
+mv -f .deps/parform-sort.Tpo .deps/parform-sort.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-transform.o -MD -MP -MF .deps/parform-transform.Tpo -c -o parform-transform.o `test -f 'transform.c' || echo './'`transform.c
+mv -f .deps/parform-tables.Tpo .deps/parform-tables.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-wildcard.o -MD -MP -MF .deps/parform-wildcard.Tpo -c -o parform-wildcard.o `test -f 'wildcard.c' || echo './'`wildcard.c
+mv -f .deps/parform-token.Tpo .deps/parform-token.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-unixfile.o -MD -MP -MF .deps/parform-unixfile.Tpo -c -o parform-unixfile.o `test -f 'unixfile.c' || echo './'`unixfile.c
+mv -f .deps/parform-unixfile.Tpo .deps/parform-unixfile.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-evaluate.o -MD -MP -MF .deps/parform-evaluate.Tpo -c -o parform-evaluate.o `test -f 'evaluate.c' || echo './'`evaluate.c
+mv -f .deps/parform-evaluate.Tpo .deps/parform-evaluate.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-float.o -MD -MP -MF .deps/parform-float.Tpo -c -o parform-float.o `test -f 'float.c' || echo './'`float.c
+mv -f .deps/parform-tools.Tpo .deps/parform-tools.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-mpi.o -MD -MP -MF .deps/parform-mpi.Tpo -c -o parform-mpi.o `test -f 'mpi.c' || echo './'`mpi.c
+mv -f .deps/parform-wildcard.Tpo .deps/parform-wildcard.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-parallel.o -MD -MP -MF .deps/parform-parallel.Tpo -c -o parform-parallel.o `test -f 'parallel.c' || echo './'`parallel.c
+mv -f .deps/parform-mpi.Tpo .deps/parform-mpi.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-pf_profile.o -MD -MP -MF .deps/parform-pf_profile.Tpo -c -o parform-pf_profile.o `test -f 'pf_profile.c' || echo './'`pf_profile.c
+make: 'form' is up to date.
+make: 'tform' is up to date.
+mv -f .deps/parform-pf_profile.Tpo .deps/parform-pf_profile.Po
+gcc -DHAVE_CONFIG_H -I. -I..  -DWITHMPI -DPF_WITHGETENV -DPF_WITHLOG  -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include -I/home/assaf/opt/formtc/usr/lib/x86_64-linux-gnu/openmpi/include/openmpi   -Wall -Wextra -O3   -MT parform-startup.o -MD -MP -MF .deps/parform-startup.Tpo -c -o parform-startup.o `test -f 'startup.c' || echo './'`startup.c
+mv -f .deps/parform-transform.Tpo .deps/parform-transform.Po
+mv -f .deps/parform-startup.Tpo .deps/parform-startup.Po
+mv -f .deps/parform-float.Tpo .deps/parform-float.Po
+mv -f .deps/parform-parallel.Tpo .deps/parform-parallel.Po
+mpicxx -std=gnu++11 -Wall -Wextra -O3      -o parform parform-argument.o parform-checkpoint.o parform-comexpr.o parform-compcomm.o parform-compiler.o parform-compress.o parform-comtool.o parform-diagrams.o parform-diawrap.o parform-dict.o parform-dollar.o parform-execute.o parform-extcmd.o parform-factor.o parform-features.o parform-findpat.o parform-function.o parform-grcc.o parform-if.o parform-index.o parform-lus.o parform-message.o parform-minos.o parform-model.o parform-module.o parform-mytime.o parform-names.o parform-normal.o parform-notation.o parform-opera.o parform-optimize.o parform-pattern.o parform-poly.o parform-polyfact.o parform-polygcd.o parform-polywrap.o parform-pre.o parform-proces.o parform-ratio.o parform-reken.o parform-reshuf.o parform-sch.o parform-setfile.o parform-smart.o parform-sort.o parform-spectator.o parform-startup.o parform-store.o parform-symmetr.o parform-tables.o parform-token.o parform-tools.o parform-transform.o parform-wildcard.o parform-unixfile.o   parform-evaluate.o parform-float.o  parform-mpi.o parform-parallel.o parform-pf_profile.o  -lz -lmpfr -lgmp 
+make: Leaving directory '/home/assaf/opt/formwork/pr1/sources'

@@ -89,7 +89,7 @@ void flint::cleanup_master(void) {
 	#[ flint::divmod_mpoly :
 */
 WORD* flint::divmod_mpoly(PHEAD const WORD *a, const WORD *b, const bool return_rem,
-	const WORD must_fit_term, const var_map_t &var_map) {
+	const WORD must_fit_term, const var_map_t &var_map, const bool sort_vars) {
 
 	flint::mpoly_ctx ctx(var_map.size());
 	flint::mpoly pa(ctx.d), pb(ctx.d), denpa(ctx.d), denpb(ctx.d);
@@ -100,16 +100,20 @@ WORD* flint::divmod_mpoly(PHEAD const WORD *a, const WORD *b, const bool return_
 	// The input won't have any symbols with negative powers, but there may be rational
 	// coefficients. Verify this:
 	if ( fmpz_mpoly_is_fmpz(denpa.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::divmod_mpoly: error: denpa is non-constant");
+		MesPrint("!>flint::divmod_mpoly: error: denpa is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_mpoly_is_fmpz(denpb.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::divmod_mpoly: error: denpb is non-constant");
+		MesPrint("!>flint::divmod_mpoly: error: denpb is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 
@@ -133,10 +137,10 @@ WORD* flint::divmod_mpoly(PHEAD const WORD *a, const WORD *b, const bool return_
 	const uint64_t prev_size = 0;
 	const uint64_t out_size = return_rem ?
 		(uint64_t)flint::to_argument_mpoly(BHEAD NULL, with_arghead, must_fit_term, write, prev_size,
-			rem.d, var_map, ctx.d, scale.d)
+			rem.d, var_map, ctx.d, sort_vars, scale.d)
 		:
 		(uint64_t)flint::to_argument_mpoly(BHEAD NULL, with_arghead, must_fit_term, write, prev_size,
-			div.d, var_map, ctx.d, scale.d)
+			div.d, var_map, ctx.d, sort_vars, scale.d)
 		;
 	WORD* res = (WORD *)Malloc1(sizeof(WORD)*out_size, "flint::divrem_mpoly");
 
@@ -144,12 +148,12 @@ WORD* flint::divmod_mpoly(PHEAD const WORD *a, const WORD *b, const bool return_
 	// Write out the result
 	write = true;
 	if ( return_rem ) {
-		(uint64_t)flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
-			rem.d, var_map, ctx.d, scale.d);
+		flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
+			rem.d, var_map, ctx.d, sort_vars, scale.d);
 	}
 	else {
-		(uint64_t)flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
-			div.d, var_map, ctx.d, scale.d);
+		flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
+			div.d, var_map, ctx.d, sort_vars, scale.d);
 	}
 
 	return res;
@@ -169,16 +173,20 @@ WORD* flint::divmod_poly(PHEAD const WORD *a, const WORD *b, const bool return_r
 	// The input won't have any symbols with negative powers, but there may be rational
 	// coefficients. Verify this:
 	if ( fmpz_poly_length(denpa.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::divmod_poly: error: denpa is non-constant");
+		MesPrint("!>flint::divmod_poly: error: denpa is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_poly_length(denpb.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::divmod_poly: error: denpb is non-constant");
+		MesPrint("!>flint::divmod_poly: error: denpb is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	flint::fmpz scale;
@@ -217,11 +225,11 @@ WORD* flint::divmod_poly(PHEAD const WORD *a, const WORD *b, const bool return_r
 	// Write out the result
 	write = true;
 	if ( return_rem ) {
-		(uint64_t)flint::to_argument_poly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
+		flint::to_argument_poly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
 			rem.d, var_map, scale.d);
 	}
 	else {
-		(uint64_t)flint::to_argument_poly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
+		flint::to_argument_poly(BHEAD res, with_arghead, must_fit_term, write, prev_size,
 			div.d, var_map, scale.d);
 	}
 
@@ -233,7 +241,7 @@ WORD* flint::divmod_poly(PHEAD const WORD *a, const WORD *b, const bool return_r
 	#[ flint::factorize_mpoly :
 */
 WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool with_arghead,
-	const bool is_fun_arg, const var_map_t &var_map) {
+	const bool is_fun_arg, const var_map_t &var_map, const bool sort_vars) {
 
 	flint::mpoly_ctx ctx(var_map.size());
 	flint::mpoly arg(ctx.d), den(ctx.d), base(ctx.d);
@@ -241,10 +249,12 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 	flint::from_argument_mpoly(arg.d, den.d, argin, with_arghead, var_map, ctx.d);
 	// The denominator must be 1:
 	if ( fmpz_mpoly_is_one(den.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::factorize_mpoly error: den != 1");
+		MesPrint("!>flint::factorize_mpoly error: den != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 
@@ -258,10 +268,12 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 	// FORM should always have taken the overall constant out in the content. Thus this overall
 	// constant factor should be +- 1 here. Verify this:
 	if ( ! ( fmpz_equal_si(overall_constant.d, 1) || fmpz_equal_si(overall_constant.d, -1) ) ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::factorize_mpoly error: overall constant factor != +-1");
+		MesPrint("!>flint::factorize_mpoly error: overall constant factor != +-1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	// Construct the output. If argout is not NULL, we write the result there.
@@ -276,8 +288,9 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 	uint64_t output_size = 1;
 
 	// For finding the highest symbol, in FORM's lexicographic ordering
-	var_map_t var_map_inv;
-	for ( auto x: var_map ) {
+	vector<uint32_t> var_map_inv;
+	var_map_inv.resize(var_map.size());
+	for ( auto x : var_map ) {
 		var_map_inv[x.second] = x.first;
 	}
 
@@ -301,10 +314,10 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 			fmpz_mpoly_get_term_exp_si((slong*)base_term_exponents.data(), base.d, (slong)j, ctx.d);
 
 			for ( size_t k = 0; k < var_map.size(); k++ ) {
-				if ( base_term_exponents[k] > 0 && ( var_map_inv.at(k) > max_var ||
-					( var_map_inv.at(k) == max_var && base_term_exponents[k] > max_pow ) ) ) {
+				if ( base_term_exponents[k] > 0 && ( var_map_inv[k] > max_var ||
+					( var_map_inv[k] == max_var && base_term_exponents[k] > max_pow ) ) ) {
 
-					max_var = var_map_inv.at(k);
+					max_var = var_map_inv[k];
 					max_pow = base_term_exponents[k];
 					base_sign[i] = fmpz_sgn(fmpz_mpoly_term_coeff_ref(base.d, j, ctx.d));
 				}
@@ -321,7 +334,7 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 			const bool write = false;
 			for ( int64_t j = 0; j < exponent; j++ ) {
 				output_size += (uint64_t)flint::to_argument_mpoly(BHEAD NULL, with_arghead,
-					is_fun_arg, write, 0, base.d, var_map, ctx.d);
+					is_fun_arg, write, 0, base.d, var_map, ctx.d, sort_vars);
 			}
 		}
 	}
@@ -368,7 +381,7 @@ WORD* flint::factorize_mpoly(PHEAD const WORD *argin, WORD *argout, const bool w
 		const bool write = true;
 		for ( int64_t j = 0; j < exponent; j++ ) {
 			argout += flint::to_argument_mpoly(BHEAD argout, with_arghead, is_fun_arg, write,
-				argout-old_argout, base.d, var_map, ctx.d);
+				argout-old_argout, base.d, var_map, ctx.d, sort_vars);
 		}
 	}
 	// Final trailing zero to denote the end of the factors.
@@ -388,10 +401,12 @@ WORD* flint::factorize_poly(PHEAD const WORD *argin, WORD *argout, const bool wi
 	flint::from_argument_poly(arg.d, den.d, argin, with_arghead);
 	// The denominator must be 1:
 	if ( fmpz_poly_is_one(den.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::factorize_poly error: den != 1");
+		MesPrint("!>flint::factorize_poly error: den != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 
@@ -413,6 +428,17 @@ WORD* flint::factorize_poly(PHEAD const WORD *argin, WORD *argout, const bool wi
 		// Initially 1, for the final trailing 0.
 		uint64_t output_size = 1;
 
+		// If the overall constant is not 1, make an fmpz_poly out of it and include it. Typically
+		// this does not happen: FORM takes out the overall factor. But we do sometimes have this
+		// case, for eg awkward interactions with "On highfirst;" and non-dirty arguments.
+		if ( ! fmpz_is_one(&(arg_fac.d)->c) ) {
+			flint::poly overall_factor;
+			fmpz_poly_set_fmpz(overall_factor.d, &(arg_fac.d)->c);
+			const bool write = false;
+			output_size += (uint64_t)flint::to_argument_poly(BHEAD NULL, with_arghead, is_fun_arg,
+				write, 0, overall_factor.d, var_map);
+		}
+
 		for ( long i = 0; i < num_factors; i++ ) {
 			fmpz_poly_struct* base = (arg_fac.d)->p + i;
 			
@@ -429,6 +455,17 @@ WORD* flint::factorize_poly(PHEAD const WORD *argin, WORD *argout, const bool wi
 	}
 
 	WORD* old_argout = argout;
+
+	// If the overall constant is not 1, make an fmpz_poly out of it and include it. Typically
+	// this does not happen: FORM takes out the overall factor. But we do sometimes have this
+	// case, for eg awkward interactions with "On highfirst;" and non-dirty arguments.
+	if ( ! fmpz_is_one(&(arg_fac.d)->c) ) {
+		flint::poly overall_factor;
+		fmpz_poly_set_fmpz(overall_factor.d, &(arg_fac.d)->c);
+		const bool write = true;
+		argout += (uint64_t)flint::to_argument_poly(BHEAD argout, with_arghead, is_fun_arg, write,
+			argout-old_argout, overall_factor.d, var_map);
+	}
 
 	for ( long i = 0; i < num_factors; i++ ) {
 		fmpz_poly_struct* base = (arg_fac.d)->p + i;
@@ -489,11 +526,13 @@ void flint::form_sort(PHEAD WORD *terms) {
 
 	// Check the final size
 	if ( in_size != out_size  ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::form_sort: error: unexpected sorted arg length change %d->%d", in_size,
+		MesPrint("!>flint::form_sort: error: unexpected sorted arg length change %d->%d", in_size,
 			out_size);
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	AR.SortType = oldsorttype;
@@ -548,6 +587,7 @@ uint64_t flint::from_argument_mpoly(fmpz_mpoly_t poly, fmpz_mpoly_t denpoly, con
 	// Search for numerical or symbol denominators to create "denpoly".
 	flint::fmpz den_coeff, tmp;
 	fmpz_set_si(den_coeff.d, 1);
+	vector<uint64_t> exponents(var_map.size(), 0);
 	vector<uint64_t> neg_exponents(var_map.size(), 0);
 
 	for ( const WORD* term = args; term < arg_stop; term += term[0] ) {
@@ -599,7 +639,7 @@ uint64_t flint::from_argument_mpoly(fmpz_mpoly_t poly, fmpz_mpoly_t denpoly, con
 		const WORD* symbol_stop = term_stop - ABS(coeff_size);
 		const WORD* t = term;
 
-		vector<uint64_t> exponents(var_map.size(), 0);
+		fill(exponents.begin(), exponents.end(), 0);
 
 		t++; // skip over the total size entry
 		if ( t == symbol_stop ) {
@@ -639,8 +679,10 @@ uint64_t flint::from_argument_mpoly(fmpz_mpoly_t poly, fmpz_mpoly_t denpoly, con
 		}
 
 	}
-	// And now sort the mpoly
-	fmpz_mpoly_sort_terms(poly, ctx);
+	// And now sort the mpoly if necessary:
+	if ( ! fmpz_mpoly_is_canonical(poly, ctx) ) {
+		fmpz_mpoly_sort_terms(poly, ctx);
+	}
 
 	return arg_size;
 }
@@ -913,7 +955,7 @@ void flint::fmpz_set_form(fmpz_t z, UWORD *a, WORD na) {
 // If must_fit_term, this should be a TermMalloc buffer. Otherwise Malloc1 the buffer.
 // For multi-variate cases.
 WORD* flint::gcd_mpoly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_term,
-	const var_map_t &var_map) {
+	const var_map_t &var_map, const bool sort_vars) {
 
 	flint::mpoly_ctx ctx(var_map.size());
 	flint::mpoly pa(ctx.d), pb(ctx.d), denpa(ctx.d), denpb(ctx.d), gcd(ctx.d);
@@ -923,16 +965,20 @@ WORD* flint::gcd_mpoly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_t
 
 	// denpa, denpb must be 1:
 	if ( fmpz_mpoly_is_one(denpa.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::gcd_mpoly: error: denpa != 1");
+		MesPrint("!>flint::gcd_mpoly: error: denpa != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_mpoly_is_one(denpb.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::gcd_mpoly: error: denpb != 1");
+		MesPrint("!>flint::gcd_mpoly: error: denpb != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	// poly returns pa if pa == pb, regardless of the lcoeff sign
@@ -947,17 +993,21 @@ WORD* flint::gcd_mpoly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_t
 		flint::mpoly tmp(ctx.d);
 		fmpz_mpoly_term_content(tmp.d, pa.d, ctx.d);
 		if ( fmpz_mpoly_is_one(tmp.d, ctx.d) != 1 ) {
+			// INTERNAL_ERROR_EXCL_START
 			MLOCK(ErrorMessageLock);
-			MesPrint("flint::gcd_mpoly: error: content of 1st arg != 1");
+			MesPrint("!>flint::gcd_mpoly: error: content of 1st arg != 1");
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
+			// INTERNAL_ERROR_EXCL_STOP
 		}
 		fmpz_mpoly_term_content(tmp.d, pb.d, ctx.d);
 		if ( fmpz_mpoly_is_one(tmp.d, ctx.d) != 1 ) {
+			// INTERNAL_ERROR_EXCL_START
 			MLOCK(ErrorMessageLock);
-			MesPrint("flint::gcd_mpoly: error: content of 2nd arg != 1");
+			MesPrint("!>flint::gcd_mpoly: error: content of 2nd arg != 1");
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
+			// INTERNAL_ERROR_EXCL_STOP
 		}
 
 		// The poly class now divides the content out of a,b so that they have a positive lcoeff.
@@ -988,7 +1038,7 @@ WORD* flint::gcd_mpoly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_t
 		const bool write = false;
 		const uint64_t prev_size = 0;
 		const uint64_t gcd_size = (uint64_t)flint::to_argument_mpoly(BHEAD NULL,
-			with_arghead, must_fit_term, write, prev_size, gcd.d, var_map, ctx.d);
+			with_arghead, must_fit_term, write, prev_size, gcd.d, var_map, ctx.d, sort_vars);
 		
 		res = (WORD *)Malloc1(sizeof(WORD)*gcd_size, "flint::gcd_mpoly");
 	}
@@ -997,7 +1047,7 @@ WORD* flint::gcd_mpoly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_t
 	const bool write = true;
 	const uint64_t prev_size = 0;
 	flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size, gcd.d,
-		var_map, ctx.d);
+		var_map, ctx.d, sort_vars);
 
 	return res;
 }
@@ -1018,16 +1068,20 @@ WORD* flint::gcd_poly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_te
 
 	// denpa, denpb must be 1:
 	if ( fmpz_poly_is_one(denpa.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::gcd_poly: error: denpa != 1");
+		MesPrint("!>flint::gcd_poly: error: denpa != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_poly_is_one(denpb.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::gcd_poly: error: denpb != 1");
+		MesPrint("!>flint::gcd_poly: error: denpb != 1");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	// poly returns pa if pa == pb, regardless of the lcoeff sign
@@ -1041,17 +1095,21 @@ WORD* flint::gcd_poly(PHEAD const WORD *a, const WORD *b, const WORD must_fit_te
 		flint::fmpz tmp;
 		fmpz_poly_content(tmp.d, pa.d);
 		if ( fmpz_is_one(tmp.d) != 1 ) {
+			// INTERNAL_ERROR_EXCL_START
 			MLOCK(ErrorMessageLock);
-			MesPrint("flint::gcd_poly: error: content of 1st arg != 1");
+			MesPrint("!>flint::gcd_poly: error: content of 1st arg != 1");
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
+			// INTERNAL_ERROR_EXCL_STOP
 		}
 		fmpz_poly_content(tmp.d, pb.d);
 		if ( fmpz_is_one(tmp.d) != 1 ) {
+			// INTERNAL_ERROR_EXCL_START
 			MLOCK(ErrorMessageLock);
-			MesPrint("flint::gcd_poly: error: content of 2nd arg != 1");
+			MesPrint("!>flint::gcd_poly: error: content of 2nd arg != 1");
 			MUNLOCK(ErrorMessageLock);
 			Terminate(-1);
+			// INTERNAL_ERROR_EXCL_STOP
 		}
 
 		fmpz_poly_gcd(gcd.d, pa.d, pb.d);
@@ -1125,20 +1183,25 @@ flint::var_map_t flint::get_variables(const vector <WORD *> &es, const bool with
 		else {
 			for ( WORD i = with_arghead ? ARGHEAD:0; with_arghead ? i < e[0]:e[i] != 0; i += e[i] ) {
 				num_terms++;
-				if ( i+1 < i+e[i]-ABS(e[i+e[i]-1]) && e[i+1] != SYMBOL ) {
+				const WORD coeff_size = e[i+e[i]-1];
+				const WORD symbols_size = e[i] - ABS(coeff_size);
+				if ( e[i+1] != SYMBOL && 1 < symbols_size ) {
 					MLOCK(ErrorMessageLock);
 					MesPrint("ERROR: polynomials and polyratfuns must contain symbols only");
 					MUNLOCK(ErrorMessageLock);
 					Terminate(1);
 				}
 
-				for ( WORD j = i+3; j<i+e[i]-ABS(e[i+e[i]-1]); j += 2 ) {
-					if ( !var_map.count(e[j]) ) {
-						var_map[e[j]] = num_vars++;
-						degrees.push_back(e[j+1]);
+				for ( WORD j = i+3; j < i+symbols_size; j += 2 ) {
+					const WORD symbol = e[j];
+					const WORD degree = e[j+1];
+					auto it = var_map.find(symbol);
+					if ( it == var_map.end() ) {
+						var_map[symbol] = num_vars++;
+						degrees.push_back(degree);
 					}
 					else {
-						degrees[var_map[e[j]]] = MaX(degrees[var_map[e[j]]], e[j+1]);
+						degrees[it->second] = MaX(degrees[it->second], degree);
 					}
 				}
 			}
@@ -1283,7 +1346,8 @@ WORD* flint::inverse_poly(PHEAD const WORD *a, const WORD *b, const var_map_t &v
 */
 // Return a pointer to a buffer containing the product of the 0-terminated term lists at a and b.
 // For multi-variate cases.
-WORD* flint::mul_mpoly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_map) {
+WORD* flint::mul_mpoly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_map,
+	const bool sort_vars) {
 
 	flint::mpoly_ctx ctx(var_map.size());
 	flint::mpoly pa(ctx.d), pb(ctx.d), denpa(ctx.d), denpb(ctx.d);
@@ -1293,16 +1357,20 @@ WORD* flint::mul_mpoly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_
 
 	// denpa, denpb must be integers. Negative symbol powers have been converted to extra symbols.
 	if ( fmpz_mpoly_is_fmpz(denpa.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::mul_mpoly: error: denpa is non-constant");
+		MesPrint("!>flint::mul_mpoly: error: denpa is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_mpoly_is_fmpz(denpb.d, ctx.d) != 1 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::mul_mpoly: error: denpb is non-constant");
+		MesPrint("!>flint::mul_mpoly: error: denpb is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	// Multiply numerators, store result in pa
@@ -1320,12 +1388,12 @@ WORD* flint::mul_mpoly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_
 	const bool must_fit_term = false;
 	const uint64_t prev_size = 0;
 	const uint64_t mul_size = (uint64_t)flint::to_argument_mpoly(BHEAD NULL,
-		with_arghead, must_fit_term, write, prev_size, pa.d, var_map, ctx.d, den.d);
+		with_arghead, must_fit_term, write, prev_size, pa.d, var_map, ctx.d, sort_vars, den.d);
 	res = (WORD*)Malloc1(sizeof(WORD)*mul_size, "flint::mul_mpoly");
 
 	write = true;
 	flint::to_argument_mpoly(BHEAD res, with_arghead, must_fit_term, write, prev_size, pa.d,
-		var_map, ctx.d, den.d);
+		var_map, ctx.d, sort_vars, den.d);
 
 	return res;
 }
@@ -1344,16 +1412,20 @@ WORD* flint::mul_poly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_m
 
 	// denpa, denpb must be integers. Negative symbol powers have been converted to extra symbols.
 	if ( fmpz_poly_degree(denpa.d) != 0 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::mul_poly: error: denpa is non-constant");
+		MesPrint("!>flint::mul_poly: error: denpa is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 	if ( fmpz_poly_degree(denpb.d) != 0 ) {
+		// INTERNAL_ERROR_EXCL_START
 		MLOCK(ErrorMessageLock);
-		MesPrint("flint::mul_poly: error: denpb is non-constant");
+		MesPrint("!>flint::mul_poly: error: denpb is non-constant");
 		MUNLOCK(ErrorMessageLock);
 		Terminate(-1);
+		// INTERNAL_ERROR_EXCL_STOP
 	}
 
 	// Multiply numerators, store result in pa
@@ -1387,7 +1459,7 @@ WORD* flint::mul_poly(PHEAD const WORD *a, const WORD *b, const var_map_t &var_m
 */
 // Add the multi-variate FORM rational polynomials at t1 and t2. The result is written at out.
 void flint::ratfun_add_mpoly(PHEAD const WORD *t1, const WORD *t2, WORD *out,
-	const var_map_t &var_map) {
+	const var_map_t &var_map, const bool sort_vars) {
 
 	flint::mpoly_ctx ctx(var_map.size());
 	flint::mpoly gcd(ctx.d), num1(ctx.d), den1(ctx.d), num2(ctx.d), den2(ctx.d);
@@ -1426,9 +1498,9 @@ void flint::ratfun_add_mpoly(PHEAD const WORD *t1, const WORD *t2, WORD *out,
 	const bool write = true;
 	// prev_size + 4, to account for final term size and coeff of "1/1"
 	out += flint::to_argument_mpoly(BHEAD out, with_arghead, must_fit_term, write, out-args_size+4,
-		num1.d, var_map, ctx.d);
+		num1.d, var_map, ctx.d, sort_vars);
 	out += flint::to_argument_mpoly(BHEAD out, with_arghead, must_fit_term, write, out-args_size+4,
-		den1.d, var_map, ctx.d);
+		den1.d, var_map, ctx.d, sort_vars);
 
 	*args_size = out - args_size + 1; // The +1 is to include the function ID
 	AT.WorkPointer = out;
@@ -1491,7 +1563,8 @@ void flint::ratfun_add_poly(PHEAD const WORD *t1, const WORD *t2, WORD *out,
 */
 // Multiply and simplify occurrences of the multi-variate FORM rational polynomials found in term.
 // The final term is written in place, with the rational polynomial at the end.
-void flint::ratfun_normalize_mpoly(PHEAD WORD *term, const var_map_t &var_map) {
+void flint::ratfun_normalize_mpoly(PHEAD WORD *term, const var_map_t &var_map,
+	const bool sort_vars) {
 
 	// The length of the coefficient
 	const WORD ncoeff = (term + *term)[-1];
@@ -1548,9 +1621,9 @@ void flint::ratfun_normalize_mpoly(PHEAD WORD *term, const var_map_t &var_map) {
 	const bool must_fit_term = true;
 	const bool write = true;
 	out += flint::to_argument_mpoly(BHEAD out, with_arghead, must_fit_term, write, out-term_size,
-		num1.d, var_map, ctx.d);
+		num1.d, var_map, ctx.d, sort_vars);
 	out += flint::to_argument_mpoly(BHEAD out, with_arghead, must_fit_term, write, out-term_size,
-		den1.d, var_map, ctx.d);
+		den1.d, var_map, ctx.d, sort_vars);
 
 	*args_size = out - args_size + 1; // The +1 is to include the function ID
 
@@ -1779,7 +1852,8 @@ void flint::ratfun_read_poly(const WORD *a, fmpz_poly_t num, fmpz_poly_t den) {
 #define IFW(x) { if ( write ) {x;} }
 uint64_t flint::to_argument_mpoly(PHEAD WORD *out, const bool with_arghead,
 	const bool must_fit_term, const bool write, const uint64_t prev_size, const fmpz_mpoly_t poly,
-	const var_map_t &var_map, const fmpz_mpoly_ctx_t ctx, const fmpz_t denscale) {
+	const var_map_t &var_map, const fmpz_mpoly_ctx_t ctx, const bool sort_vars,
+	const fmpz_t denscale) {
 
 	// out is modified later, keep the pointer at entry
 	const WORD* out_entry = out;
@@ -1797,8 +1871,9 @@ uint64_t flint::to_argument_mpoly(PHEAD WORD *out, const bool with_arghead,
 	}
 
 	// Create the inverse of var_map, so we don't have to search it for each symbol written
-	var_map_t var_map_inv;
-	for ( auto x: var_map ) {
+	vector<uint32_t> var_map_inv;
+	var_map_inv.resize(var_map.size());
+	for ( auto x : var_map ) {
 		var_map_inv[x.second] = x.first;
 	}
 
@@ -1956,8 +2031,10 @@ uint64_t flint::to_argument_mpoly(PHEAD WORD *out, const bool with_arghead,
 
 	if ( with_arghead ) {
 		IFW(*arg_size = out - arg_size);
-		if ( write ) {
-			// Sort into form highfirst ordering
+		if ( write && sort_vars ) {
+			// Sort into form highfirst ordering, if we have potentially re-ordered the variables by
+			// degree, in flint::get_variables. Otherwise, we can rely on FLINT's sorting with
+			// ORD_LEX and the variables ordered in FORM's lexicographic order.
 			flint::form_sort(BHEAD (WORD*)(out_entry));
 		}
 	}
@@ -1975,13 +2052,13 @@ uint64_t flint::to_argument_mpoly(PHEAD WORD *out, const bool with_arghead,
 // If no denscale argument is supplied, just set it to 1 and call the usual function
 uint64_t flint::to_argument_mpoly(PHEAD WORD *out, const bool with_arghead,
 	const bool must_fit_term, const bool write, const uint64_t prev_size, const fmpz_mpoly_t poly,
-	const var_map_t &var_map, const fmpz_mpoly_ctx_t ctx) {
+	const var_map_t &var_map, const fmpz_mpoly_ctx_t ctx, const bool sort_vars) {
 
 	flint::fmpz tmp;
 	fmpz_set_ui(tmp.d, 1);
 
 	uint64_t ret = flint::to_argument_mpoly(BHEAD out, with_arghead, must_fit_term, write,
-		prev_size, poly, var_map, ctx, tmp.d);
+		prev_size, poly, var_map, ctx, sort_vars, tmp.d);
 
 	return ret;
 }
@@ -2012,8 +2089,9 @@ uint64_t flint::to_argument_poly(PHEAD WORD *out, const bool with_arghead,
 	}
 
 	// Create the inverse of var_map, so we don't have to search it for each symbol written
-	var_map_t var_map_inv;
-	for ( auto x: var_map ) {
+	vector<uint32_t> var_map_inv;
+	var_map_inv.resize(var_map.size());
+	for ( auto x : var_map ) {
 		var_map_inv[x.second] = x.first;
 	}
 

@@ -23,8 +23,25 @@ brackets are all other objects. In the antibracket statement the variables
 in the list are the only objects that are not placed outside the brackets. 
 For the rest of the syntax, see the bracket statement (section 
 \ref{substabracket}).
-\vspace{10mm}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Antibracket_1)
+\noindent
+For example
+\begin{verbatim}
+   Symbols x, y;
+   Local F = (1+x+x^2)*(1+y+y^2);
+   AntiBracket y;
+   Print;
+   .end
 
+  F =
+      + x * ( 1 + y + y^2 )
+
+      + x^2 * ( 1 + y + y^2 )
+
+      + 1 + y + y^2;
+\end{verbatim}
+\vspace{10mm}
 %--#] abrackets : 
 %--#[ also :
  
@@ -45,9 +62,18 @@ pattern matching of the previous id statement (or also statement) and after
 possible matching patterns have been removed, but before the r.h.s. 
 expressions are inserted. It is identical to the idold statement (see 
 \ref{substaidold}). Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Also_1)
 \begin{verbatim}
-    id    x = cosphi*x-sinphi*y;
-    also  y = sinphi*x+cosphi*y;
+   Symbols x,y,cosphi,sinphi;
+   Local F = x+y;
+   id x = cosphi*x-sinphi*y;
+   also y = sinphi*x+cosphi*y;
+   Print;
+   .end
+
+   F =
+       - y*sinphi + y*cosphi + x*sinphi + x*cosphi;
 \end{verbatim}
 
 \noindent The options are explained in the section on the id statement (see 
@@ -73,7 +99,20 @@ antibracket\index{antibracket} information should adhere to the syntax of
 the bracket statement (\ref{substabracket}, \ref{substaabrackets}) and all 
 occurrences of all variables with the exception of the antibracket 
 variables will be put inside the function. The coefficient will also be put 
-inside the function.
+inside the function. Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Antiputinside_1)
+\begin{verbatim}
+   Symbols x, y, z;
+   Cfunction f;
+   Local F = 10 + x + y^2 + y*z;
+   Antiputinside f,x;
+   Print;
+   .end
+
+  F =
+     f(y*z) + f(y^2) + f(1)*x + f(10);
+\end{verbatim}
 \vspace{10mm}
 
 %--#] antiputinside : 
@@ -164,7 +203,20 @@ equivalent to the statement
 \begin{verbatim}
    repeat id Z(?a,0,x?!{0,0},?b) = Z(?a,x+sig_(x),?b);
 \end{verbatim}
-and takes one from the first notation to the second. The `ArgExplode,Z;' 
+and takes one from the first notation to the second. Example:
+\begin{verbatim}
+   CFunction Z;
+   Local F = Z(0,0,0,1,0,0,-1);
+   ArgImplode Z;
+   Print;
+   .end
+
+  F =
+     Z(4,-3);
+\end{verbatim}
+\vspace{4mm}
+
+\noindent The `ArgExplode,Z;' 
 statement\index{argexplode} is equivalent to the statement
 % THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
 % WELL! (Sta_ArgImplode_1)
@@ -173,7 +225,17 @@ statement\index{argexplode} is equivalent to the statement
 \end{verbatim}
 and takes one from the second notation to the first. The reason that these 
 statements have been built in lies in the fact that for many indices the 
-repeat statements started to become very time-consuming.
+repeat statements started to become very time-consuming. Example:
+\begin{verbatim}
+   CFunction Z;
+   Local F = Z(4,-3);
+   ArgExplode Z;
+   Print;
+   .end
+
+  F =
+     Z(0,0,0,1,0,0,-1);
+\end{verbatim}
 
 \noindent For the harmonic sums, the harmonic polylogarithms and the 
 multiple zeta values one can use the summer6 and the harmpol packages in 
@@ -213,7 +275,24 @@ The arguments that have been encountered before are replaced with the same
 extra symbols. 
 Unlike the \texttt{topolynomial} statement (\ref{substatopolynomial}), the 
 replacement occurs even for arguments consisting only of numbers and symbols 
-(including extra symbols). 
+(including extra symbols). Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Argtoextrasymbol_1)
+\begin{verbatim}
+   Symbols x, y;
+   Cfunction f;
+   Local F = f(x + 1);
+   Local F1 = f(y,x + 1);
+   Argtoextrasymbol;
+   Print;
+   .end
+
+  F =
+     f(Z1_);
+
+  F1 =
+     f(Z2_,Z1_);
+\end{verbatim}
 \vspace{4mm}
 
 \noindent
@@ -244,7 +323,24 @@ See also & endargument (\ref{substaendargument})
 
 \noindent This statement starts an argument\index{argument} 
 environment\index{environment!argument}. Such an environment is terminated 
-by an endargument statement (see \ref{substaendargument}). The statements 
+by an endargument statement (see \ref{substaendargument}). Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Argument_1)
+\begin{verbatim}
+   Symbols x, y, z;
+   CFunction f;
+   Local F = f(x + 2*y + z^2);
+   Argument;
+      Identify y = x;
+   Endargument;
+   Print;
+   .end
+
+  F =
+     f(z^2 + 3*x);
+\end{verbatim}
+\vspace{4mm}
+The statements 
 between the argument and the endargument\index{endargument} statements will 
 be applied only to the function arguments as specified by the remaining 
 information in the argument statement. This information is given by:
@@ -263,8 +359,20 @@ The combination of a function (or set) possibly followed by numbers of
 arguments, can occur as many times as needed. The generic numbers of 
 arguments that refer to all functions work in addition to the numbers 
 specified for individual functions. Example\vspace{1mm}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Argument_2)
 \begin{verbatim}
+   Symbols x,y;
+   CFunction f, f1, f2, f3;
+   Local F = f(x,x,x,x) + f1(x,x,x,x) + f2(x,x) + f3(x);
    Argument 2,f,1,{f,f1},3,4;
+      Identify x = y; 
+   Endargument;
+   Print;
+   .end
+
+  F =
+     f(y,y,y,y) + f1(x,y,y,y) + f2(x,y) + f3(x);
 \end{verbatim}
 This specifies the second argument of all functions. In addition the first 
 argument of \verb:f: will be taken and then also the third and fourth 
@@ -383,7 +491,9 @@ save (see \ref{substasave}) and load (see \ref{substaload}) statements. The
 bracket information can be used by the collect (see \ref{substacollect}) 
 and keep (see \ref{substakeep}) statements, as well in r.h.s.\ expressions 
 when the contents of individual brackets of an expression can be picked up 
-(see \ref{brackets}). \vspace{4mm}
+(see \ref{brackets}). The usage of brackets may also impact sorting
+performance due to the reordering of terms in the expression (see 
+chapter \ref{brackets}). \vspace{4mm}
 
 \noindent The list of names can contain names of symbols, vectors, 
 functions, tensors and sets. In addition it can contain dotproducts. There 
@@ -407,6 +517,22 @@ default might be changed in a future version of {\FORM} (in which {\FORM}
 might for instance try to determine by itself what seems best. This option 
 exists for case that the user would like to overrule such a mechanism). 
 \vspace{4mm}
+
+\noindent For example
+\begin{verbatim}
+   Symbols x, y;
+   Local F = (1+x+x^2)*(1+y+y^2);
+   Bracket y;
+   Print;
+   .end
+
+  F =
+      + y * ( 1 + x + x^2 )
+
+      + y^2 * ( 1 + x + x^2 )
+
+      + 1 + x + x^2;
+\end{verbatim}
 
 \noindent See also the antibracket statement in \ref{substaabrackets}.
 \vspace{10mm}
@@ -464,14 +590,27 @@ after the next case statement or default statement.
 \noindent \begin{tabular}{ll}
 Type & Declaration statement\\
 Syntax & c[functions] {\tt<}list of functions to be declared{\tt>}; \\
-See also & functions (\ref{substafunctions}), nfunctions (\ref{substanfunctions})
+See also & functions (\ref{substafunctions}, \ref{sect-functions}), nfunctions (\ref{substanfunctions})
 \end{tabular} \vspace{4mm}
 
 \noindent This statement declares commuting\index{commuting} 
 functions\index{functions!commuting}. The name of a 
 function can be followed by some information that specifies additional 
 properties of the preceding function, which are the same as
-those for functions (see \ref{substafunctions}). \vspace{10mm}
+those for functions (see \ref{substafunctions}). Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Commute_1)
+\begin{verbatim}
+   CFunction f,g;
+   Symbol x;
+   Local F = f(x)*g(x) + g(x)*f(x);
+   Print;
+   .end
+
+  F =
+     2*f(x)*g(x);
+\end{verbatim}
+\vspace{10mm}
 
 %--#] cfunctions : 
 %--#[ chainin :
@@ -490,7 +629,21 @@ Syntax & Chainin,name of function;
    repeat id f(?a)*f(?b) = f(?a,?b);
 \end{verbatim}
 if f is the name of the function specified. The chainin statement is just a 
-faster shortcut. \vspace{10mm}
+faster shortcut. Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Chainin_1)
+\begin{verbatim}
+   Function f;
+   Symbol x,y,z;
+   Local F = f(x)*f(y)*f(z);
+   ChainIn f;
+   Print;
+   .end
+
+  F =
+     f(x,y,z);
+\end{verbatim}
+\vspace{10mm}
 
 %--#] chainin : 
 %--#[ chainout :
@@ -509,7 +662,21 @@ Syntax & Chainout,name of function;
    repeat id f(x1?,x2?,?a) = f(x1)*f(x2,?a);
 \end{verbatim}
 if f is the name of the function specified. The chainout statement is just a 
-much faster shortcut. \vspace{10mm}
+much faster shortcut. Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Chainout_1)
+\begin{verbatim}
+   Function f;
+   Symbol x,y,z;
+   Local F = f(x,y,z);
+   ChainOut f;
+   Print;
+   .end
+
+  F =
+     f(x)*f(y)*f(z)
+\end{verbatim}
+\vspace{10mm}
 
 %--#] chainout : 
 %--#[ chisholm :
@@ -529,7 +696,6 @@ See also & trace4 (\ref{substatrace}) and the chapter on gamma algebra
     \gamma_a\gamma_\mu\gamma_b \Tr[\gamma_\mu S] & = &
          2\gamma_a( S + S^R ) \gamma_b  \nonumber
 \end{eqnarray}
-\setcounter{equation}{2}
 in order to contract traces. $S$ is here a string of
 gamma\index{gamma matrices} matrices and $S^R$ is the reverse string. This 
 identity is particularly useful when the matrices $\gamma_6 = 1+\gamma_5$ 
@@ -552,7 +718,7 @@ more details, see chapter \ref{gammaalgebra} on gamma\index{gamma algebra} algeb
 %--#] chisholm : 
 %--#[ chop :
 \section{chop}
-\label{substaevaluate}
+\label{substachop}
 
 \noindent \begin{tabular}{ll}
 Type & Executable statement\\
@@ -605,20 +771,21 @@ collected and put inside the argument of the named function. Hence if the
 expression \verb:F: is given by
 % THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
 % WELL! (Sta_Collect_1)
-% TODO: the term order has been changed.
 \begin{verbatim}
-   F =
-      a*(b^2+c)
-    + a^2*(b+6)
-    + b^3 + c*b + 12;
-\end{verbatim}
-the statement
-\begin{verbatim}
-   Collect cfun;
-\end{verbatim}
-will change \verb:F: into
-\begin{verbatim}
-   F = a*cfun(b^2+c)+a^2*cfun(b+6)+cfun(b^3+c*b+12);
+   S a,b,c;
+   CF cfun;
+   L  F =
+         a*(b^2+c)
+       + a^2*(b+6)
+       + b^3 + c*b + 12;
+   B a;
+   .sort
+  Collect cfun;
+  Print;
+  .end
+
+  F =
+     cfun(6 + b)*a^2 + cfun(12 + b*c + b^3) + cfun(c + b^2)*a;
 \end{verbatim}
 The major complication\index{complication} occurs if the content of a 
 bracket is so long that it will not fit inside a single term. The maximum 
@@ -722,7 +889,7 @@ to use the compress option of the on (see \ref{substaon}) or the off (see
 Type & Executable statement\\
 Syntax & contract [{\tt<}argument specifications{\tt>}];
 \end{tabular} \vspace{4mm}
-
+%TODO: add link to the example in form for pedestrians: Some FORM Examples/Levi-Civita
 \noindent Statement\index{contract} causes the contraction of pairs of 
 Levi-Civita\index{Levi-Civita} tensors\index{tensor!Levi-Civita} \verb:e_: 
 (see also \ref{functions}) into combinations of Kronecker\index{Kronecker} 
@@ -842,8 +1009,11 @@ See also & functions (\ref{substafunctions}), tensors
 \end{tabular} \vspace{4mm}
 
 \noindent This statement declares commuting\index{commuting} 
-tensors\index{tensor!commuting}. It is equal to the tensor statement (see 
+tensors\index{tensor!commuting}. It is equivalent to the tensor statement (see 
 \ref{substatensors}) which has the commuting property as its default. 
+
+\noindent The options that exist for properties of tensors are the same as 
+those for functions (see \ref{substafunctions}).
 \vspace{10mm}
 
 %--#] ctensors : 
@@ -976,9 +1146,17 @@ that is given in the statement. This function will work well together with
 the PolyRatFun statement in which we define a PolyFun with two arguments of 
 which the second acts as a denominator and the first as a numerator:
 \begin{verbatim}
-   PolyRatFun,rat;
-   Denominators,den;
-   id den(x?) = rat(1,x);
+   Symbols x, y;
+   Cfunction rat, den;
+   PolyRatFun rat;
+   Local F = 1/(x+y); 
+   Denominators den;
+   Identify den(x?) = rat(1,x);
+   Print;
+   .end
+
+  F =
+     rat(1,x + y);
 \end{verbatim}
 For more about this one should consult the part on the 
 PolyRatFun\index{polyratfun} statement 
@@ -1054,8 +1232,17 @@ Syntax & dis[card];
 
 \noindent This statement discards\index{discard} the current term. It can 
 be very useful in statements of the type
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Discard_1)
 \begin{verbatim}
+   Symbols x;
+   Local F = x^3 + x^4 + x^5 + x^6;
    if ( count(x,1) > 5 ) Discard;
+   Print;
+   .end
+
+  F =
+     x^3 + x^4 + x^5;
 \end{verbatim}
 which eliminates all terms that have more than five powers of x. 
 \vspace{10mm}
@@ -1103,10 +1290,32 @@ constructions.
 repeat~(\ref{substarepeat}), if~(\ref{substaif}) and the pattern matcher can 
 basically do everything the do-loop can do. Sometimes however the do-loop 
 is easier to program and gives more readable code as shown here:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Do_1)
+%TODO: this needs to be improved (also change in test file)
 \begin{verbatim}
-   do $i = 1,5;
-      id,only,x^$i = f(F[factor_^$i]);
-   enddo;
+   Symbol x,y;
+   CFunction f;
+   LocalFactorized F = (1+y)*(2+y)*(3+y)*(4+y)*(5+y);
+   .sort
+   #$nf = numfactors_(F);
+   Local G = <x^1>+...+<x^`$nf'>;
+   Do $i = 1,$nf;
+      Identify,only x^$i = f(F[factor_^$i]);
+   Enddo;
+   Print;
+   ModuleOption local $i;
+   .end
+
+   F =
+         ( 1 + y )
+       * ( 2 + y )
+       * ( 3 + y )
+       * ( 4 + y )
+       * ( 5 + y );
+
+   G =
+      f(1 + y) + f(2 + y) + f(3 + y) + f(4 + y) + f(5 + y);
 \end{verbatim}
 \noindent versus
 \begin{verbatim}
@@ -1155,7 +1364,21 @@ expressions that are to be dropped can still be used in the r.h.s.\ of other
 expressions inside the current module. Basically the expressions to be 
 dropped are not treated for execution and after the module has finished 
 completely they are removed. See also the ndrop 
-statement~\ref{substandrop}. \vspace{10mm}
+statement~\ref{substandrop}. Example:
+\begin{verbatim}
+   Local F1 = 1;
+   Local F2 = 2;
+   Local F3 = 3;
+   .sort
+   Drop;
+   Ndrop F1;
+   Print;
+   .end
+
+  F1 =
+     1;
+\end{verbatim}
+\vspace{10mm}
 
 %--#] drop : 
 %--#[ dropcoefficient :
@@ -1173,10 +1396,35 @@ one. In principle it has the same effect as
 \begin{verbatim}
    Multiply 1/coeff_;
 \end{verbatim}
-but there is always the philosophical issue what is the coefficient once 
-one enters function arguments. Inside an 
+Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_DropCoefficient_1)
+\begin{verbatim}
+   Symbols x;
+   Local F = 1 + 10*x + 20*x^2;
+   DropCoefficient;
+   Print;
+   .end
+
+  F =
+     1 + x + x^2;
+\end{verbatim}
+Inside an 
 Argument/EndArgument\index{argument}\index{endargument} environment this 
-statement would drop the coefficient of the terms inside the argument.
+statement would drop the coefficient of the terms inside the argument. Example:
+\begin{verbatim}
+   Symbols x;
+   Cfunction f;
+   Local F = f(1 + 5*x + 10*x^2);
+   Argument;
+      DropCoefficient;
+   Endargument;
+   Print;
+   .end
+
+  F =
+     f(1 + x + x^2);
+\end{verbatim}
 \vspace{10mm}
 
 %--#] dropcoefficient : 
@@ -1190,7 +1438,18 @@ Type & Executable statement\\
 Syntax & DropSymbols;
 \end{tabular} \vspace{4mm}
 
-\noindent This statement removes all symbols from a term. 
+\noindent This statement removes all symbols from a term. Example:
+\begin{verbatim}
+   Symbols x, y, z;
+   Local F = 1 + x + x^2 + z^3 + 2^2*y^4;
+   Dropsymbols;
+   Print;
+   .end
+
+  F =
+     8;
+\end{verbatim}
+\vspace{4mm}
 It has the same effect as
 \begin{verbatim}
    id,many,x?^n? = 1;
@@ -1620,7 +1879,21 @@ Type & Output control statement\\
 Syntax & factorize \verb:{:{\tt<}name of expression(s){\tt>}\verb:}:;
 \\ See also & the chapter on polynomials~\ref{polynomials}.
 \end{tabular} \vspace{4mm}
+\noindent Example
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Factorize_1)
+\begin{verbatim}
+   Symbols x;
+   Local F = x^3 + 3*x^2 + 3*x + 1;
+   Factorize;
+   Print;
+   .end
 
+  F =
+        ( 1 + x )
+      * ( 1 + x )
+      * ( 1 + x );
+\end{verbatim}
 \noindent If no expressions are mentioned all expressions will be affected 
 by the action of this statement. One may exclude certain expressions with 
 the nfactorize statement (see \ref{substanfactorize}). If one or more 
@@ -2962,7 +3235,11 @@ are loaded and possible other expressions are ignored. If a specified
 expression is not present, an error will result. If one does not know 
 exactly what expressions are present in a file one could load the file 
 without a list of expressions, because \FORM\ will list all expressions that 
-it encountered. \vspace{10mm}
+it encountered. When using multiple loaded expressions on the right-hand side
+of definitions or statements, which each depend on a subset of a larger set of
+definitions, the final variable ordering may not be what is expected. If the
+ordering is important, one should manually define all variables in the required
+order before using loaded expressions from the storage file. \vspace{10mm}
 
 %--#] load : 
 %--#[ local :
@@ -3165,30 +3442,36 @@ module.}
 \leftvitem{3.5cm}{local\index{moduleoption!local}}
 \rightvitem{13cm}{Should be followed by a list of \$-variables. Indicates 
 that the contents of the indicated \$-variables\index{\$-variable} are not 
-relevant once the module has been finished and neither is the term by term 
-order in which the \$-variables obtain their value. In practise each 
+relevant once the module has been finished, and neither is the term by term 
+order in which the \$-variables obtain their value. In practice each 
 processor\index{processor}/thread\index{thread} will work with its own copy 
 of this variable.}
 
 \leftvitem{3.5cm}{maximum\index{moduleoption!maximum}}
-\rightvitem{13cm}{Should be followed by a list of 
-\$-variables\index{\$-variable}. Indicates that of the contents of the 
-indicated \$-variables the maximum is the only thing that is relevant once 
-the module has been finished. The term by term order in which the 
-\$-variables obtain their value is not relevant.}
+\rightvitem{13cm}{Should be followed by a list of \$-variables\index{\$-variable}.
+Indicates that only the maximum value of the \$-variables is relevant once the
+module has finished. The term-by-term order in which the \$-variables obtain
+their value is not relevant. In practice each processor\index{processor}/thread
+\index{thread} will work with its own copy of the variable, and the
+maximal value is kept at the end of term processing. The variables should
+contain numbers only.}
 
 \leftvitem{3.5cm}{minimum\index{moduleoption!minimum}}
-\rightvitem{13cm}{Should be followed by a list of 
-\$-variables\index{\$-variable}. Indicates that of the contents of the 
-indicated \$-variables the minimum is the only thing that is relevant once 
-the module has been finished. The term by term order in which the 
-\$-variables obtain their value is not relevant.}
+\rightvitem{13cm}{Should be followed by a list of \$-variables\index{\$-variable}.
+Indicates that only the minimum value of the \$-variables is relevant once the
+module has finished. The term-by-term order in which the \$-variables obtain
+their value is not relevant. In practice each processor\index{processor}/thread
+\index{thread} will work with its own copy of the variable, and the
+minimal value is kept at the end of term processing. The variables should contain
+numbers only.}
 
 \leftvitem{3.5cm}{sum\index{moduleoption!sum}}
-\rightvitem{13cm}{Should be followed by a list of 
-\$-variables\index{\$-variable}. Indicates that the indicated \$-variables 
-are representing a sum. The term by term order in which the \$-variables 
-obtain their value is not relevant.}
+\rightvitem{13cm}{Should be followed by a list of \$-variables\index{\$-variable}.
+Indicates that the specified \$-variables represent a sum. The term-by-term
+order in which the \$-variables obtain their value is not relevant.
+In practice, this is a global dollar variable for which all parallel read and
+write accesses are protected by locks. The variables should contain numbers
+only.}
 
 \noindent The options `local', `maximum', `minimum' and `sum' are for 
 parallel versions of \FORM\@. The presence of \$-variables can be a problem 
@@ -3614,9 +3897,9 @@ See also & functions (\ref{substafunctions}), tensors
 \end{tabular} \vspace{4mm}
 
 \noindent This statement\index{ntensor} declares 
-noncommuting\index{noncommuting} tensors\index{tensor!noncommuting}. For 
-the rest it is equal to the tensor\index{tensor} statement (see 
-\ref{substatensors}) which has the commuting property as its default.
+noncommuting\index{noncommuting} tensors\index{tensor!noncommuting}.
+Note that it is not equivalent to the tensors statement (see \ref{substatensors})
+which has the commuting property as its default.
 
 \noindent The options that exist for properties of tensors are the same as 
 those for functions (see \ref{substafunctions}). \vspace{10mm}
@@ -3635,16 +3918,16 @@ Syntax & nunfactorize \verb:{:{\tt<}name of expression(s){\tt>}\verb:}:;
 \end{tabular} \vspace{4mm}
 
 \noindent When one uses an UnFactorize (see \ref{substaunfactorize}) 
-statement without arguments all expressions will be marked for being 
-unfactorized. If one would like to exclude a few expressions this can be 
+statement without arguments all expressions will be marked for 
+unfactorization. If one would like to exclude a few expressions this can be 
 done with the NUnFactorize statement. There should be at least one expression 
-mentioned as in:
+specified, as in:
 \begin{verbatim}
    UnFactorize;
    NUnFactorize expr12,expr29;
 \end{verbatim}
 One can also use the UnFactorize statement with a number of expressions after 
-which the NUnFactorize statement can remove some from the list again as in:
+which the NUnFactorize statement can remove some from the list again, as in:
 \begin{verbatim}
    UnFactorize expr1,...,expr100;
    NUnFactorize expr12,expr29;
@@ -3826,6 +4109,9 @@ characters can be restored by turning this variable off. See also page
 statement~\ref{substafactarg}\index{factarg} to the new mode of version 4 or 
 later in which expressions in the argument of the mentioned function are 
 completely factored over the rationals. The default is off.}
+
+\leftvitem{3.5cm}{oldprfsign\index{off!oldprfsign}}
+\rightvitem{13cm}{\label{staoffoldprfsign} See \ref{staonoldprfsign}.}
  
 \leftvitem{3.5cm}{parallel\index{off!parallel}}
 \rightvitem{13cm}{Disallows the running of the program in parallel mode 
@@ -3868,6 +4154,10 @@ three lines of text and one blank line.}
 \leftvitem{3.5cm}{sortreallocate\index{off!sortreallocate}}
 \rightvitem{13cm}{Turns off the reallocation of the small and large buffer
 at the end of each module.}
+
+\leftvitem{3.5cm}{sortverbose\index{off!sortverbose}}
+\rightvitem{13cm}{Turns off the printing of additional information in the
+sorting statistics.}
  
 \leftvitem{3.5cm}{threadloadbalancing\index{off!threadloadbalancing}}
 \rightvitem{13cm}{\vspace{1.5ex}Disables the loadbalancing mechanism of 
@@ -4041,6 +4331,12 @@ statement~\ref{substafactarg}\index{factarg} to the old mode from before
 version 4. This is a compatibility mode to allow oldprograms that rely on a 
 specific working of the FactArg statement to still run. The default is 
 off.}
+
+\leftvitem{3.5cm}{oldprfsign\index{on!oldprfsign}}
+\rightvitem{13cm}{\label{staonoldprfsign} Forces the numerator/denominator
+sign convention of PolyRatFun~\ref{substapolyratfun} of \FORM\ versions prior
+to 5.1, when using FLINT for polynomial arithmetic. Enabling this leads to a
+loss of performance in multivariate cases.}
  
 \leftvitem{3.5cm}{parallel\index{on!parallel}}
 \rightvitem{13cm}{Allows the running of the program in parallel mode unless 
@@ -4090,6 +4386,10 @@ threads) at the end of every module. In some cases this can significantly reduce
 consist of a large number of very quickly-running modules, this can incur a
 noticable performance penalty. See also \#sortreallocate (\ref{presortreallocate})
 for a single-module version of this feature.}
+
+\leftvitem{3.5cm}{sortverbose\index{on!sortverbose}}
+\rightvitem{13cm}{Turns on the printing of additional information in the
+sorting statistics. See \ref{sorting} for more information.}
 
 \leftvitem{3.5cm}{statistics\index{on!statistics}}
 \rightvitem{13cm}{Turns the writing of runtime statistics on. This is the 
@@ -4346,7 +4646,23 @@ Syntax & pophide;
 
 \noindent Undoes\index{pophide} the action of the most recent 
 pushhide\index{pushhide} statement (see \ref{substapushhide}). If there is 
-no matching pushhide statement an error will result. \vspace{10mm}
+no matching pushhide statement an error will result:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_PushPopHide_2)
+\begin{verbatim}
+    Local F1 = 1;
+    .sort
+    PushHide;
+    Multiply 2;
+    .sort
+    PopHide;
+    .sort
+    PopHide;
+    .end
+pushpophide-2.frm Line 9 --> PopHide statement without corresponding PushHide s
+tatement
+\end{verbatim}
+\vspace{10mm}
 
 %--#] pophide : 
 %--#[ print :
@@ -4631,9 +4947,44 @@ Syntax & pushhide;
               pophide (\ref{substapophide})
 \end{tabular} \vspace{4mm}
 
-\noindent Hides\index{hide} all currently\index{pushhide} active 
+\noindent Hides\index{hide} all currently\index{pushhide}-active 
 expressions (see \ref{substahide}). The pophide\index{pophide} statement 
-(see \ref{substapophide}) can bring them back to active status again. 
+(see \ref{substapophide}) can be used to to un-hide the expressions hidden
+by the most recent pushhide statement. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_PushPopHide_1)
+\begin{verbatim}
+    Local F1 = 1;
+    .sort
+    PushHide;
+    Local F2 = 1;
+    * This statement does not affect F1:
+    Multiply 2;
+    .sort
+    PushHide;
+    Local F3 = 1;
+    * This statement does not affect F1,F2:
+    Multiply 2;
+    .sort
+    PopHide;
+    * This statement does not affect F1:
+    Multiply 2;
+    .sort
+    PopHide;
+    * This statement affects all expressions:
+    Multiply 2;
+    Print;
+    .end
+
+   F1 =
+      2;
+
+   F2 =
+      8;
+
+   F3 =
+      8;
+\end{verbatim}
 \vspace{10mm}
 
 %--#] pushhide : 
@@ -4654,7 +5005,20 @@ or table which are special types of functions). If there is
 bracket\index{bracket} information, this information should adhere to the 
 syntax of the bracket statement (\ref{substaantiputinside}) and only 
 occurrences of the bracket variables will be put inside the function. The 
-coefficient will also be put inside the function.
+coefficient will also be put inside the function. Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Putinside_1)
+\begin{verbatim}
+   Symbols x, y, z;
+   Cfunction f;
+   Local F = 1 + x + 2*x + y^2+ z^3;
+   Putinside f,x;
+   Print;
+   .end
+
+  F =
+     f(2*x) + f(x) + f(1) + f(1)*z^3 + f(1)*y^2;
+\end{verbatim}
 \vspace{10mm}
 
 %--#] putinside : 
@@ -4688,7 +5052,6 @@ will assume that $c = b-a$ and then make the substitutions
             c^ib^{n-m-i}
             \ \ \ \ \ \ \ \hfill m<n \nonumber
 \end{eqnarray}
-\setcounter{equation}{3}
 Of course, such substitutions can be made also by the user in a more 
 flexible way. This statement has however the advantage of the best speed.
 \vspace{4mm}
@@ -4859,6 +5222,23 @@ is equivalent to
 \begin{verbatim}
    repeat single statement;
 \end{verbatim}
+\noindent Example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Repeat_1)
+\begin{verbatim}
+   Symbols x, y, z;
+   CFunction f, g;
+   Local F = f(x)*g(y)*g(z);
+   Repeat;
+      Identify f(?a)*g(?b) = f(?a,?b);
+   Endrepeat;
+   Print;
+   .end
+
+  F =
+     f(x,y,z);
+\end{verbatim}
+\vspace{4mm}
 Particular attention should be given to avoid infinite\index{infinite loop} 
 loops\index{loop!infinite} as in
 \begin{verbatim}
@@ -5067,7 +5447,8 @@ is just a shorthand notation for
 
 \noindent \begin{tabular}{ll}
 Type & Declaration statement\\
-Syntax & set {\tt<}set to be declared{\tt>}[(option)]:{\tt<}element{\tt>} [{\tt<}more elements{\tt>}];
+Syntax & set {\tt<}set to be declared{\tt>}[(option)]:{\tt<}element{\tt>} [{\tt<}more elements{\tt>}];\\
+See also & Sets (\ref{sect-sets})
 \end{tabular} \vspace{4mm}
 
 \noindent Declares a single set\index{set} and specifies its 
@@ -5108,7 +5489,33 @@ Syntax & setexitflag;
 
 \noindent Causes\index{setexitflag} termination\index{termination} of the 
 program after execution\index{execution} of the current module has 
-finished. \vspace{10mm}
+finished. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Setexitflag_1)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = <f(1)>+...+<f(6)>;
+    Identify f(x?even_) = x;
+    If (Match(f(x?)));
+       Print "Error: unreplaced f: %t";
+       SetExitFlag;
+    EndIf;
+    .sort
+Error: unreplaced f:  + f(1)
+Error: unreplaced f:  + f(3)
+Error: unreplaced f:  + f(5)
+    Print;
+    .end
+\end{verbatim}
+Here, suppose we would like to replace all cfunctions f with some pre-computed
+results. It might be useful to terminate the program if any f remains
+unreplaced, and print a list of all of them. If the exit statement
+(see \ref{substaexit}) were used instead, only the first remaining f is printed
+and the program would terminate immediately. The setexitflag statement is more
+useful in such a scenario.
+
+\vspace{10mm}
 
 %--#] setexitflag : 
 %--#[ shuffle :
@@ -5240,35 +5647,71 @@ Syntax & splitarg options \verb:{:{\tt<}name of function/set{\tt>}
              factarg (\ref{substafactarg})
 \end{tabular}\vspace{4mm}
 
-\noindent Takes\index{splitarg} the indicated argument\index{argument} of a 
+\noindent Takes\index{splitarg} the indicated arguments\index{argument} of a 
 function and if such an argument is a subexpression that consists on more 
-than one term, all terms become single arguments of the function as in
+than one term, each term becomes a separate argument of the function. For
+example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Splitarg_1)
 \begin{verbatim}
-   f(a+b-5*c*d) --> f(a,b,-5*c*d)
-\end{verbatim}
-The way arguments are indicated is rather similar to the way this is done 
-in the argument\index{argument statement} statement (see 
-\ref{substaargument}). One can however indicate only a single group of 
-functions in one statement. Additionally there are other options. All 
-options are in the order that they should be specified:
+    CFunction f;
+    Symbol a,b,c,d;
+    Local test = f(a + b - 5*c*d);
+    SplitArg f;
+    Print;
+    .end
 
+   test =
+      f( - 5*c*d,b,a);
+\end{verbatim}
+The format for the argument specifications is similar to the argument statement
+\index{argument} (see \ref{substaargument}), except here only one function or
+set of functions may be given. The splitarg action is only applied to the
+specified arguments of the given functions. If no (sets of) functions or no
+arguments are specified, the action is applied to all functions (including
+built-in functions) or all arguments.
+
+\noindent In addition, the following options modify the behaviour of splitarg:
+
+\vspace{3mm}
 \leftvitem{5cm}{(term)}
 \rightvitem{11cm}{Only terms that are a numerical multiple of the given 
-term are split off. The terms that are split off will trail the remainder.}
+term are split off. The terms that are split off will trail the remainder.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Splitarg_2)
+\begin{verbatim}
+    CFunction f,g;
+    Symbol x;
+    Local test = f(2 + 3*x + 4*x^2) + g(2 + 3*x + 4*x^2) + h(x + x*y + x^2*y);
+    SplitArg (x) f;
+    SplitArg (x^2) g;
+    SplitArg (x*y) h;
+    Print;
+    .end
 
+   test =
+      f(2 + 4*x^2,3*x) + g(2 + 3*x,4*x^2) + h(x + x^2*y,x*y);
+\end{verbatim}
+
+\vspace{3mm}
 \leftvitem{5cm}{((term))}
 \rightvitem{11cm}{Only terms that contain the given term will be split off. 
-The terms that are split off will trail the remainder.}
+The terms that are split off will trail the remainder. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Splitarg_3)
+\begin{verbatim}
+    CFunction f;
+    Symbol x,y;
+    Local test = f(2 + 3*x + 4*x^2 + 5*x*y + 6*y);
+    SplitArg ((x)) f;
+    Print;
+    .end
 
-\noindent The statement is terminated with a sequence of functions or 
-sets\index{set} of functions. The splitting action will apply only to the 
-specified functions or to members of the set(s). If no functions or sets of 
-functions are specified all functions will be treated, including the built 
-in functions.
- 
-\noindent The argument specifications consist of a list of numbers, 
-indicating the arguments that should be treated. If no arguments are 
-specified, all arguments will be treated. \vspace{10mm}
+  test =
+     f(2 + 6*y,3*x,5*x*y,4*x^2);
+\end{verbatim}
+\vspace{10mm}
 
 %--#] splitarg : 
 %--#[ splitfirstarg :
@@ -5284,20 +5727,26 @@ Syntax & splitfirstarg \verb:{:{\tt<}name of function/set{\tt>}
              splitlastarg (\ref{substasplitlastarg})
 \end{tabular}\vspace{4mm}
 
-\noindent A little\index{splitfirstarg} bit like the 
+\noindent Similar to \index{splitfirstarg} the 
 SplitArg\index{splitarg} statement (see \ref{substasplitarg}). Splits the 
-given argument(s) into its first term and a remainder. Then replaces the 
-argument by the remainder\index{remainder}, followed by the first term.
+given argument(s) into their first term and a remainder. The arguments are
+replaced by the remainder\index{remainder}, followed by the first term. The
+argument specifications are as for SplitArg. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Splitfirstarg_1)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = f(1 + x + x^2 + x^3);
+    SplitFirstArg f;
+    Print;
+    .end
 
-\noindent The statement is terminated with a sequence of functions or sets 
-of functions. The splitting action will apply only to the specified 
-functions or to members of the set(s). If no functions or sets\index{set} 
-of functions are specified all functions will be treated, including the 
-built in functions.
- 
-\noindent The argument specifications consist of a list of numbers, 
-indicating the arguments that should be treated. If no arguments are 
-specified all arguments will be treated. \vspace{10mm}
+  test =
+     f(x + x^2 + x^3,1);
+\end{verbatim}
+
+\vspace{10mm}
 
 %--#] splitfirstarg : 
 %--#[ splitlastarg :
@@ -5313,25 +5762,31 @@ Syntax & splitlastarg \verb:{:{\tt<}name of function/set{\tt>}
              splitfirstarg (\ref{substasplitfirstarg})
 \end{tabular}\vspace{4mm}
 
-\noindent A little\index{splitlastarg} bit like the 
+\noindent Similar to \index{splitlastarg} the
 SplitArg\index{splitarg} statement (see \ref{substasplitarg}). Splits the 
-given argument(s) into its last term and a remainder. Then replaces the 
-argument by the remainder, followed by the last term.
+given argument(s) into their last term and a remainder. The arguments are
+replaced by the remainder\index{remainder}, followed by the last term. The
+argument specifications are as for SplitArg. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Splitlastarg_1)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = f(1 + x + x^2 + x^3);
+    SplitLastArg f;
+    Print;
+    .end
 
-\noindent The statement is terminated with a sequence of functions or sets 
-of functions. The splitting action will apply only to the specified 
-functions or to members of the set(s). If no functions or sets\index{set} 
-of functions are specified all functions will be treated, including the 
-built in functions.
+  test =
+     f(1 + x + x^2,x^3);
+\end{verbatim}
  
-\noindent The argument specifications consist of a list of numbers, 
-indicating the arguments that should be treated. If no arguments are 
-specified all arguments will be treated. \vspace{10mm}
+\vspace{10mm}
 
 %--#] splitlastarg : 
 %--#[ strictrounding :
 \section{strictrounding}
-\label{substaevaluate}
+\label{substastrictrounding}
 
 \noindent \begin{tabular}{ll}
 Type & Executable statement\\
@@ -5364,16 +5819,14 @@ sign, the definition is
 \begin{eqnarray}
     \sum_{i=1}^N \sum_{i=1}^N & = & \sum_{i=1}^N \sum_{j=1}^{i-1}
         + \sum_{j=1}^N \sum_{i=1}^{j-1}
-        + \sum_{i=j=1}^N
+        + \sum_{i=j=1}^N \nonumber
 \end{eqnarray}
-\setcounter{equation}{4}
 while in the case of the minus the definition is
 \begin{eqnarray}
     \sum_{i=1}^N \sum_{i=1}^N & = & \sum_{i=1}^N \sum_{j=1}^{i}
         + \sum_{j=1}^N \sum_{i=1}^{j}
-        - \sum_{i=j=1}^N
+        - \sum_{i=j=1}^N \nonumber
 \end{eqnarray}
-\setcounter{equation}{5}
 It is assumed that we have harmonic sums\index{harmonic sum} (see the 
 summer library in the \FORM\ distribution). For such sums we expect 
 functions with lists of nonzero integer arguments. Example:
@@ -5437,27 +5890,82 @@ Syntax & sum {\tt<}list of indices{\tt>};
 \\ See also & renumber (\ref{substarenumber})
 \end{tabular}\vspace{4mm}
 
-\noindent The given indices will be summed\index{sum} over. There are two 
-varieties. In the first the index is followed by a sequence of nonnegative 
-short integers. In that case the summation means that for each of the 
-integers a new instance of the term is created in which the index is 
-replaced by that integer. In the second variety the index is either the 
-last object in the statement or followed by another index. In that case the 
+\noindent The specified list of indices will be summed\index{sum} over. There are two 
+varieties: in the first, an index should be followed by a sequence of non-negative 
+short integers. In this case, the summation means that for each of the 
+integers, a new instance of the term is created in which the index is 
+replaced by that integer. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Sum_1)
+\begin{verbatim}
+    CFunction f;
+    Index mu,nu;
+    Local test1 = f(mu,mu);
+    Local test2 = f(mu,nu);
+    Local test3 = f(mu,nu)*f(mu,nu);
+    Sum mu,0,1,2, nu,0,1,2;
+    Print;
+    .end
+
+   test1 =
+      f(0,0) + f(1,1) + f(2,2);
+
+   test2 =
+      f(0,0) + f(0,1) + f(0,2) + f(1,0) + f(1,1) + f(1,2) + f(2,0) + f(2,1)
+      + f(2,2);
+
+   test3 =
+      f(0,0)^2 + f(0,1)^2 + f(0,2)^2 + f(1,0)^2 + f(1,1)^2 + f(1,2)^2
+      + f(2,0)^2 + f(2,1)^2 + f(2,2)^2;
+\end{verbatim}
+
+In the second variety the index should be either the 
+last object in the statement or followed by another index. In this case the 
 index is replaced by an internal dummy\index{dummy} 
 index\index{index!dummy} of the type \verb:N1_?: (or with another number 
-instead of the 1). Such indices have the current
+instead of `1'). Such indices have the current
 default\index{default dimension} dimension\index{dimension!default} and can 
-be renamed at will by \FORM\ to bring terms into standard notation. For 
+be renamed at will by \FORM\ in order to bring terms into standard notation. For 
 example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Sum_2)
 \begin{verbatim}
-   f(N2_?,N1_?)*g(N2_?,N1_?)
+    CFunction f,g;
+    Index mu,nu;
+    Local test1 = f(mu,nu)*g(mu,nu);
+    Local test2 = f(N2_?,N1_?)*g(N2_?,N1_?);
+    Sum mu,nu;
+    Print;
+    .end
+
+   test1 =
+      f(N1_?,N2_?)*g(N1_?,N2_?);
+
+   test2 =
+      f(N1_?,N2_?)*g(N1_?,N2_?);
 \end{verbatim}
-will be changed into
+Note that in the `test2' expression here, \FORM\ has re-arranged the dummy
+indices into the canonical form.
+
+The two types of sum statement may be mixed, as in:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Sum_3)
 \begin{verbatim}
-   f(N1_?,N2_?)*g(N1_?,N2_?).
+    CFunction f,g;
+    Index mu,nu;
+    Local test = f(mu,nu)*g(mu,nu);
+    Sum mu, nu,0,1,2;
+    Print;
+    .end
+
+  test =
+     f(N1_?,0)*g(N1_?,0) + f(N1_?,1)*g(N1_?,1) + f(N1_?,2)*g(N1_?,2);
 \end{verbatim}
+
 The user can use these dummy indices in the left hand side of 
-id\index{id} statements.
+identify\index{id}\index{identify} statements, but should recognise that they
+do not represent wildcards for the pattern matcher. Attempting to use them as
+wildcards as in `{\tt N1\_??}' is also not valid.
 \vspace{10mm}
 
 %--#] sum : 
@@ -5806,6 +6314,9 @@ index. Tensors come in two varieties: commuting\index{commuting} and
 noncommuting\index{noncommuting}. The tensor statement declares a tensor to 
 be commuting. In order to declare a tensor to be noncommuting one should 
 use the ntensor\index{ntensor} statement (see \ref{substantensors}).
+Thus `tensor' is equivalent to `ctensor'; note that this differs from the
+convention of functions, where `function' is equivalent to `nfunction'
+and not to `cfunction'.
 
 \noindent The options that exist for properties of tensors are the same as 
 those for functions (see \ref{substafunctions}). \vspace{10mm}
@@ -5822,18 +6333,39 @@ Syntax & term;
 \\ See also & endterm (\ref{substaendterm}), sort (\ref{substasort})
 \end{tabular} \vspace{4mm}
 
-\noindent Begins the term\index{term} environment\index{environment!term}. 
-This environment is terminated with the endterm\index{endterm} statement 
-(see \ref{substaendterm}). The action is that temporarily the current term 
-is seen as a little expression by itself. The statements inside the 
-environment are applied to it and one can even sort the results with the 
-sort\index{sort} statement (see \ref{substasort}) which should not be 
-confused with the .sort\index{.sort} instruction that terminates a module. 
-Inside the term environment one can have only executable statements and 
-possibly term-wise print statements (see \ref{substaprint}). When the end 
-of the term environment is reached, the results are sorted (as would be 
-done with an expression at the end of a module) and execution continues 
-with the resulting terms. This environment can be nested\index{nested}. 
+\noindent This statement begins a term\index{term} environment
+\index{environment!term}, which is terminated with the endterm\index{endterm}
+statement (see \ref{substaendterm}). It causes the current term to be processed
+as if it were a small expression; the statements inside the environment are
+applied to it and one can sort the results with the sort\index{sort}
+statement (see \ref{substasort}) (not to be confused with the .sort
+\index{.sort} instruction, which terminates a module).
+Inside the term environment, one may only use executable statements or
+term-wise print statements (see \ref{substaprint}). When the end of the
+term environment is reached, the resulting terms are sorted and then the
+module execution proceeds with the resulting terms. This environment can
+be nested\index{nested}. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Term_1)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = f(10);
+    Term;
+       Repeat Identify f(x?{>1}) = f(x-1) + f(x-2);
+    EndTerm;
+    Print;
+    .end
+
+Time =       0.00 sec    Generated terms =          2
+            test         Terms in output =          2
+                         Bytes used      =         64
+
+   test =
+      34*f(0) + 55*f(1);
+\end{verbatim}
+Here, one can see in the sorting statistics that only 2 terms are generated
+at the lowest level, rather than the full $34+55=89$.
 \vspace{10mm}
 
 %--#] term : 
@@ -5959,45 +6491,49 @@ Syntax & totensor [nosquare] [functions] [!{\tt<}vector or set{\tt>}] {\tt<}vect
 \end{tabular} \vspace{4mm}
 
 \noindent Looks for multiple\index{totensor} occurrences of the given 
-vector, either inside dotproducts, contracted with a tensor, as argument of 
-a function or as a loose vector with an index. In all occurrences in 
-which the vector has been contracted a dummy index is introduced to make 
-the contraction apparent. Then all these vectors with their indices are 
-replaced by the specified tensor with all the indices of these vectors. To 
-make this clearer:
+vector, either inside dotproducts, contracted with a tensor, as an argument of 
+a function or as a loose vector with an index. In each occurrence in 
+which the vector has been contracted, a dummy index is introduced to make 
+the contraction apparent. Then all of these vectors and their indices are 
+replaced by the specified tensor with all the indices, as in: 
 \begin{eqnarray}
-    p^{\mu_1}p^{\mu_2}p^{\mu_3} \rightarrow t^{\mu_1\mu_2\mu_3} \nonumber
+    p^{\mu_1}p^{\mu_2}p^{\mu_3} & \rightarrow & t^{\mu_1\mu_2\mu_3} \nonumber
 \end{eqnarray}
-\setcounter{equation}{6}
-and hence
+For example:
 % THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
 % WELL! (Sta_ToTensor_1)
-% TODO: the functions option needed?
 \begin{verbatim}
-   p.p1^2*f(p,p1)*p(mu)*tt(p1,p,p2,p)
+    Vector p,p1,p2;
+    Function f;
+    Index mu;
+    Tensor tt,t;
+    Local F = p.p1^2 * f(p,p1) * p(mu) * tt(p1,p,p2,p);
+    ToTensor functions, p,t;
+    Print;
+    .end
+
+  F =
+     f(N1_?,p1)*tt(p1,N2_?,p2,N3_?)*t(p1,p1,mu,N1_?,N2_?,N3_?);
 \end{verbatim}
-gives after \verb:totensor p,t;:
-\begin{verbatim}
-   f(N1_?,p1)*tt(p1,N2_?,p2,N3_?)*t(p1,p1,mu,N1_?,N2_?,N3_?)
-\end{verbatim}\vspace{4mm}
+\vspace{4mm}
 
 \noindent The options are
 
 \leftvitem{3.5cm}{nosquare\index{totensor!nosquare}}
-\rightvitem{13cm}{Dotproducts with twice the specified vector (square of 
-the vector) are not taken into account.}
+\rightvitem{13cm}{Dotproducts with twice the specified vector (the square of 
+the vector) are not considered.}
 
 \leftvitem{3.5cm}{functions\index{totensor!functions}}
 \rightvitem{13cm}{Vectors that are arguments of regular functions will also 
-be considered. By default this is not done.}
+be considered. By default, these are not considered.}
 
 \leftvitem{3.5cm}{!vector\index{totensor!"!vector}}
 \rightvitem{13cm}{Dotproducts involving the specified vector are not 
-treated.}
+considered.}
 
 \leftvitem{3.5cm}{!set\index{totensor!"!set}}
 \rightvitem{13cm}{The set should be a set of vectors. All dotproducts 
-involving a vector of the set are not treated.}\vspace{10mm}
+involving a vector in the set are not considered.}\vspace{10mm}
 
 %--#] totensor : 
 %--#[ tovector :
@@ -6016,9 +6552,25 @@ Syntax & tovector {\tt<}tensor{\tt>} {\tt<}vector{\tt>}; \\
 statement. The tensor is replaced by a product of the given vectors, each 
 with one of the indices of the tensor as in:
 \begin{eqnarray}
-    t^{\mu_1\mu_2\mu_3} \rightarrow p^{\mu_1}p^{\mu_2}p^{\mu_3} \nonumber
-\end{eqnarray}\vspace{10mm}
-\setcounter{equation}{7}
+    t^{\mu_1\mu_2\mu_3} & \rightarrow & p^{\mu_1}p^{\mu_2}p^{\mu_3} \nonumber
+\end{eqnarray}
+For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_ToVector_1)
+\begin{verbatim}
+    Tensor t1,t2;
+    Vector v1,v2;
+    Index mu1,mu2,mu3;
+    Local test = t1(mu1,mu2,mu3) + t2(mu1,mu2,mu3);
+    ToVector t1,v1;
+    ToVector v2,t2;
+    Print;
+    .end
+
+   test =
+      v1(mu1)*v1(mu2)*v1(mu3) + v2(mu1)*v2(mu2)*v2(mu3);
+\end{verbatim}
+\vspace{10mm}
 
 %--#] tovector : 
 %--#[ trace4 :
@@ -6116,27 +6668,31 @@ Type & Executable statement\\
 Syntax & transform,function(s),{\tt<}one or more transformations{\tt>};
 \end{tabular} \vspace{4mm}
 
-\noindent Statement\index{Transform} to manipulation function arguments and 
-fields of arguments. Allows speedy transformations without the need of 
+\noindent The transform statement\index{Transform} manipulates function
+arguments and 
+fields of arguments. It allows speedy transformations without the need for 
 multiple statements or repeat loops.
 
-The function(s) is/are indicated as individual, comma or blank space 
-separated, functions or sets of functions.
+The function(s) on which the statement will act are indicated as individual,
+comma or blank-space separated functions or sets of functions.
 
 If there is more than one transformation, the transformations are separated 
-by comma's (or blanks, unless the blank space would not induce a comma).
+by commas (or blanks, unless the blank space would not induce a comma).
 
 Each transformation consists of its keyword, indicating its type, followed 
-by a range of arguments that is enclosed by parentheses. After that 
-specific information may follow. The range\index{last}\index{range} is as 
-in
+by a range of arguments that is enclosed by parentheses. After that, 
+transformation-specific information may follow.
+The range\index{range} is specified as two comma-separated
+indicators, as in:
 \begin{verbatim}
 	(1,4)
 	(3,last)
 	(last-6,last-2)
 \end{verbatim}
-hence two indicators, separated by a comma. If the first number is bigger 
-than the second the arguments will be processed in reverse order whenever 
+The special keyword \verb:last:\index{last} refers to the last argument of the
+function, and \verb:last-1: refers to the next-to-last argument, etc.
+If the first number is bigger 
+than the second, the arguments will be processed in reverse order whenever 
 this is relevant. In the descriptions below we will indicate the range by 
 (r1,r2). The numbers in the above examples may be also dollar variables, 
 provided they evaluate into numbers at the time of execution. Hence
@@ -6146,129 +6702,348 @@ provided they evaluate into numbers at the time of execution. Hence
 	(last-$x,last-2)
 \end{verbatim}
 are potentially legal ranges. One may not use \verb:$x+2: or other 
-expressions that still need evaluation.
+expression which still needs evaluation.
 
 The transformations that are allowed currently are:
  
-\leftvitem{3.2cm}{replace\index{transform!replace}\index{replace}}
-\rightvitem{13cm}{replace(r1,r2)=(from1,to1,from2,to2,...,fromn,ton) in 
-which the from-to pairs are as in the replace\_ function. Here however 
-there are more options than in the replace\_ function as we can specify 
-(small) numbers as well as in \\
-replace(1,last)=(0,1,1,0) which would replace arguments that are zero by 
-one and arguments that are one by zero. Generic arguments are indicated by 
-the new variables xarg\_, iarg\_, parg\_ and farg\_ as in \\
-replace(1,last)=(xarg\_,2\*xarg\_+1,p) which would replace f(2,a) by f(5,
-2\*a+1,p) if a is a symbol and p a vector. To catch p one would need to use 
-parg\_.}
+\leftvitem{3.2cm}{\bf replace\index{transform!replace}\index{replace}}
+\rightvitem{13cm}{replace(r1,r2)=(from1,to1,from2,to2,...,fromn,ton), in 
+which the ``from,to'' pairs are as for the replace\_ function
+(see \ref{funreplace}).
+Here, however, there is more flexibility than in the replace\_ function:
+one may replace (small) numbers, as in {\tt replace(1,last)=(0,1,1,0)},
+which would replace arguments that are zero by one, and arguments that
+are one by zero. Some ``generic argument'' objects have been introduced,
+given by xarg\_, iarg\_, parg\_ and farg\_, which match symbols, indices,
+vectors and functions respectively.
+These allow one to use the replaced argument in a non-trivial expression.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_3)
+\begin{verbatim}
+    Symbol a;
+    Vector p;
+    CFunction f1,f2;
+    Local test = f1(0,1) + f2(2,a) + f2(2,p);
+    Transform f1 replace(1,last)=(0,1,1,0);
+    * This will not affect f2(2,p) because xarg_ does not match vectors:
+    Transform f2 replace(1,last)=(xarg_,2*xarg_+1);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{encode\index{transform!encode}\index{encode}}
-\rightvitem{13cm}{encode(r1,r2):base=number will interpret the arguments as 
-the digits in a base 2 number system, compute the complete number and 
-replace the arguments by a single argument that is that number. The number 
-must fit inside a single \FORM{} word and so must each of the original 
-arguments. They should actually be smaller than the number of the base.}
+   test =
+      f1(1,0) + f2(5,1 + 2*a) + f2(5,p);
+\end{verbatim}
 
-\leftvitem{3.2cm}{decode\index{transform!decode}\index{decode}}
-\rightvitem{13cm}{decode(r1,r2):base=number will do the opposite of encode. 
-It will take a single argument (the smallest of the two given) and expand 
-it into digits in a number system given by the base. It will create the 
-specified number of digits and replace the original number by the given 
-number of arguments representing these digits. If r2 is less than r1 the 
-digits will be in reverse order.}
 
-\leftvitem{3.2cm}{tosumnotation\index{transform!tosumnotation}\index{tosumnotation}
+\leftvitem{3.2cm}{\bf encode\index{transform!encode}\index{encode}}
+\rightvitem{13cm}{encode(r1,r2):base=n will interpret the arguments as 
+the digits in a base-n number system, and replace the digits with a
+single argument containing the number in base 10. The base and resulting
+number must fit within a single \FORM{} word, and the input digits
+must be less than the specified base. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_4)
+\begin{verbatim}
+    CFunction f2,f3;
+    Local test = f2(1,1,0,1) + f3(1,1,0,1);
+    Transform f2 encode(1,last):base=2;
+    Transform f3 encode(1,last):base=3;
+    Print;
+    .end
+
+   test =
+      f2(13) + f3(37);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf decode\index{transform!decode}\index{decode}}
+\rightvitem{13cm}{decode(r1,r2):base=n will do the opposite of encode. 
+It will take a single argument, the smallest of r1 and r2, and expand 
+it into digits in a base-n number system. It outputs a number of digits
+corresponding to the largest of r1 and r2, which replace the original
+argument. If this number is not sufficiently large to convert the
+argument, no change is made. If r2 is less than r1, the digits are
+produced in reverse order. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_5)
+\begin{verbatim}
+    CFunction f2,f3,F2,F3;
+    Local test = f2(13) + f2(100) + f3(37) + F2(13) + F3(37);
+    Transform f2 decode(1,5):base=2;
+    Transform f3 decode(1,5):base=3;
+    Transform F2 decode(5,1):base=2;
+    Transform F3 decode(5,1):base=3;
+    Print;
+    .end
+
+   test =
+      f2(0,1,1,0,1) + f2(100) + f3(0,1,1,0,1) + F2(1,0,1,1,0) + F3(1,0,1,1,0);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf tosumnotation\index{transform!tosumnotation}\index{tosumnotation}
 \index{transform!implode}\index{implode}}
 \rightvitem{13cm}{tosumnotation(r1,r2) or implode(r1,r2) realizes an 
 encoding in which zeroes are absorbed as extra values in the first nonzero 
-argument that is following. This is used when dealing with harmonic sums 
-and harmonic polylogarithms. An example is that (0,0,1,0,a,0,0,0,-1) (which 
-is in integral notation) goes into (3,2*a,-4) (which is in sum notation). 
-Currently only a single symbol is allowed and the numbers should be (small) 
-integers because otherwise the reverse operation (explode) would generate 
-too many arguments. Instead of ``tosumnotation'' one may also use the word 
-``implode'' in accordance with the argimplode statement.}
+argument that follows. This is used when dealing with harmonic sums 
+and harmonic polylogarithms. This is similar to the {\tt ArgImplode}
+statement (see \ref{substaargimplode}), with the difference that here a single
+symbol is allowed as an argument which generically represents +/-1. For
+example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_6)
+\begin{verbatim}
+    CFunction f;
+    Symbol a;
+    Local test = f(0,0,1,0,a,0,0,0,-1);
+    Transform f implode(1,last);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{tointegralnotation\index{transform!tointegralnotation}
+   test =
+      f(3,2*a,-4);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf tointegralnotation\index{transform!tointegralnotation}
 \index{tointegralnotation}\index{transform!explode}\index{explode}}
 \rightvitem{13cm}{tointegralnotation(r1,r2) or explode(r1,r2) undoes what 
-implode might have done. Hence each integer with an absolute value $n$ 
-generates $n-1$ zeroes and leaves something with absolute value one. 
-Instead of ``tointegralnotation'' one may also use the word 
-``explode'' in accordance with the argexplode statement.}
+tosumnotation/implode might have done, similar to the {\tt ArgExplode}
+statement (see \ref{substaargexplode}).
+Hence each integer with an absolute value $n$ 
+generates $n-1$ zeroes followed by the sign of the original integer.
+As for tosumnotation, a single symbol (which generically represents +/-1)
+is allowed, possibly multipled by a (small) integral coefficient.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_7)
+\begin{verbatim}
+    CFunction f;
+    Symbol a;
+    Local test = f(3,2*a,-4);
+    Transform f explode(1,last);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{permute\index{transform!permute}\index{permute}}
-\rightvitem{13cm}{permute(1,3,5)(2,6) will permute the arguments 
-according to the cycles indicated. The cycles are executed in order and may 
-overlap. Their number is not restricted. In the above example
-f(a1,a2,a3,a4,a5,a6,a7) $\rightarrow$ f(a3,a6,a5,a4,a1,a2,a7).
-It is allowed to use \$-variables in the cycles, including \$-variables 
-that are obtained by matching argument field wildcards.}
+   test =
+      f(0,0,1,0,a,0,0,0,-1);
+\end{verbatim}
 
-\leftvitem{3.2cm}{reverse\index{transform!reverse}\index{reverse}}
+\leftvitem{3.2cm}{\bf permute\index{transform!permute}\index{permute}}
+\rightvitem{13cm}{permute(n1,...,ni),(m1,...,mj),...~will permute the function
+arguments according to the specified cycles. The cycles are executed in the
+order in which they are given, and may overlap. There is no restriction on
+how many cycles may be provided. Dollar variables may be used to provide the
+cycles, including dollar variables containing argument fields obtained from
+argument field wildcards. Unlike the other transformations, the keyword
+{\tt last} can not be used here.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_8)
+\begin{verbatim}
+    CFunction f,cyc;
+    Symbol a1,...,a7;
+    Local test = f(a1,a2,a3,a4,a5,a6,a7)*cyc(2,6);
+    Identify cyc(?a$cyc) = 1;
+    Transform f permute(1,3,5)($cyc);
+    ModuleOption local $cyc;
+    Print;
+    .end
+
+   test =
+      f(a3,a6,a5,a4,a1,a2,a7);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf reverse\index{transform!reverse}\index{reverse}}
 \rightvitem{13cm}{reverse(r1,r2) reverses the order of the arguments in 
-specified range.}
+specified range. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_9)
+\begin{verbatim}
+    CFunction f;
+    Local test = f(1,...,10);
+    Transform f reverse(3,7);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{dedup\index{transform!dedup}\index{dedup}}
-\rightvitem{13cm}{dedup(r1,r2) removes duplicates from the arguments in the range, keeping the first.}
+   test =
+      f(1,2,7,6,5,4,3,8,9,10);
+\end{verbatim}
 
-\leftvitem{3.2cm}{cycle\index{transform!cycle}\index{cycle}}
+\leftvitem{3.2cm}{\bf dedup\index{transform!dedup}\index{dedup}}
+\rightvitem{13cm}{dedup(r1,r2) removes duplicates from the arguments in the range, keeping the first. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_10)
+\begin{verbatim}
+    CFunction f,g;
+    Function h,i;
+    Symbol x;
+    Vector p;
+    Index mu;
+    Local test = f(100,g(1),g(2)^2,x,x^2,mu,p,p.p,1/p.p,h*i,i*h);
+    Identify f(?a) = f(?a,?a);
+    Transform f dedup(1,last);
+    Print;
+    .end
+
+  test =
+     f(100,g(1),g(2)^2,x,x^2,mu,p,p.p,p.p^-1,h*i,i*h);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf cycle\index{transform!cycle}\index{cycle}}
 \rightvitem{13cm}{cycle(r1,r2)=+/-number will perform a cyclic permutation 
 of the indicated range of arguments. If the number is preceded by a - the 
 cycling is to the left. If there is a plus sign the cycling is to the 
 right. Note that either the plus or the minus sign is mandatory. The number 
-following the +/- sign is also allowed to be a dollar variable provided it 
-evaluates to a legal number during execution.}
+following the +/- sign is also allowed to be a dollar variable, provided it 
+evaluates to a legal number during execution. The case cycle(r1,rn)=-1
+is equivalent to permute(r1,...,rn) where r1,...,rn are consecutive integers.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_11)
+\begin{verbatim}
+    CFunction f,g,h;
+    Local test = f(1,...,9) + g(1,...,9) + h(1,...,9);
+    Transform f cycle(3,7)=-1;
+    Transform g permute(3,...,7);
+    Transform h cycle(3,7)=+2;
+    Print;
+    .end
 
-\leftvitem{3.2cm}{islyndon\index{transform!islyndon}\index{islyndon}}
+   test = f(1,2,4,5,6,7,3,8,9) + g(1,2,4,5,6,7,3,8,9) + h(1,2,6,7,3,4,5,8,9);
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf islyndon\index{transform!islyndon}\index{islyndon}}
 \rightvitem{13cm}{islyndon(r1,r2)=(yes,no) will test whether the indicated 
 range of arguments forms a Lyndon word\index{Lyndon word} according to the 
 ordering of arguments in \FORM\@. The yes and no arguments are what the main 
-term will be multiplied by when the range forms a Lyndon word or does not 
+term will be multiplied by when the range forms a Lyndon word or does not, 
 respectively. Because the definition of a Lyndon word is the unique minimal 
 cyclic permutation of the arguments, and because often we may need the 
-unique maximal cyclic permutation there are varieties: for the minimum one 
-may also use islyndon$<$(r1,r2)=(yes,no) or islyndon-(r1,r2)=(yes,no), 
+unique maximal cyclic permutation, there are varieties: for the minimum one 
+may also explicitly specify islyndon$<$(r1,r2)=(yes,no) or
+islyndon-(r1,r2)=(yes,no), 
 while for the maximum one may use islyndon$>$(r1,r2)=(yes,no) or 
-islyndon+(r1,r2)=(yes,no).}
+islyndon+(r1,r2)=(yes,no). For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_12)
+\begin{verbatim}
+    CFunction f;
+    Symbol y,n;
+    Local test = f(0) + f(1) + f(0,1) + f(0,0,1) + f(0,1,1)
+       + f(0,0) + f(1,0) + f(1,1) + f(1,0,0) + f(0,1,0) + f(1,0,1);
+    Transform f islyndon(1,last)=(y,n);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{tolyndon\index{transform!tolyndon}\index{tolyndon}}
+   test =
+      f(0)*y + f(0,0)*n + f(0,0,1)*y + f(0,1)*y + f(0,1,0)*n + f(0,1,1)*y
+      + f(1)*y + f(1,0)*n + f(1,0,0)*n + f(1,0,1)*n + f(1,1)*n;
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf tolyndon\index{transform!tolyndon}\index{tolyndon}}
 \rightvitem{13cm}{tolyndon(r1,r2)=(yes,no) will permute the given range in 
-a cyclic manner till it is (if possible) a Lyndon word\index{Lyndon word} 
+a cyclic manner until it is (if possible) a Lyndon word\index{Lyndon word} 
 according to the ordering of arguments in \FORM\@. The yes and no arguments 
 are what the main term will be multiplied by when afterwards the range 
-forms a Lyndon word or does not respectively. Because the definition of a 
-Lyndon word is the unique minimal cyclic permutation of the arguments, and 
-because often we may need the unique maximal cyclic permutation there are 
-varieties: for the minimum one may also use tolyndon$<$(r1,r2)=(yes,no) or 
-tolyndon-(r1,r2)=(yes,no), while for the maximum one may use 
-tolyndon$>$(r1,r2)=(yes,no) or tolyndon+(r1,r2)=(yes,no). If the output is 
-not a Lyndon word, this will be due to that it is a minimum or maximum that 
-is not unique.}
+forms a Lyndon word or does not, respectively. As for islyndon, one may
+specifically work with minimal or maximal cyclic permutations by specifying
+$<$/- or $>$/+ markers, respectively. If the result is not a Lyndon word,
+it will be a minimal or maximal cyclic permutation that is not unique.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_13)
+\begin{verbatim}
+    CFunction f;
+    Symbol y,n;
+    Local test = f(0) + f(1) + f(0,1) + f(0,0,1) + f(0,1,1)
+       + f(0,0) + f(1,0) + f(1,1) + f(1,0,0) + f(0,1,0) + f(1,0,1);
+    Transform f tolyndon(1,last)=(y,n);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{addargs\index{transform!addargs}\index{addargs}}
+   test =
+      f(0)*y + f(0,0)*n + 3*f(0,0,1)*y + 2*f(0,1)*y + 2*f(0,1,1)*y + f(1)*y
+      + f(1,1)*n;
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf addargs\index{transform!addargs}\index{addargs}}
 \rightvitem{13cm}{addargs(r1,r2) replaces the indicated range of arguments 
-by their sum. This is effectively the inverse of the SplitArg statement.}
+by their sum. This is effectively the inverse of the SplitArg statement
+(see \ref{substasplitarg}). For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_14)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = f(<x^5>,...,<x^1>);
+    Transform f addargs(1,last);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{mulargs\index{transform!mulargs}\index{mulargs}}
+   test =
+      f(x + x^2 + x^3 + x^4 + x^5);
+\end{verbatim}
+
+
+\leftvitem{3.2cm}{\bf mulargs\index{transform!mulargs}\index{mulargs}}
 \rightvitem{13cm}{mulargs(r1,r2) replaces the indicated range of arguments 
-by their product. This is effectively the inverse of the FactArg statement.}
+by their product. This is effectively the inverse of the FactArg statement
+(see \ref{substafactarg}). For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_15)
+\begin{verbatim}
+    CFunction f;
+    Symbol x;
+    Local test = f(<x^5>,...,<x^1>);
+    Transform f mulargs(1,last);
+    Print;
+    .end
 
-\leftvitem{3.2cm}{dropargs\index{transform!dropargs}\index{dropargs}}
-\rightvitem{13cm}{dropargs(r1,r2) removes the indicated range of arguments.}
+   test =
+      f(x^15);
+\end{verbatim}
 
-\leftvitem{3.2cm}{selectargs\index{transform!selectargs}\index{selectargs}}
+\leftvitem{3.2cm}{\bf dropargs\index{transform!dropargs}\index{dropargs}}
+\rightvitem{13cm}{dropargs(r1,r2) removes the indicated range of arguments.
+For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_16)
+\begin{verbatim}
+    CFunction f,g
+    Local test = f(1,...,5) + g(1,...,5);
+    Transform f dropargs(2,4);
+    Transform g dropargs(1,last);
+    Print;
+    .end
+
+   test =
+      f(1,5) + g;
+\end{verbatim}
+
+\leftvitem{3.2cm}{\bf selectargs\index{transform!selectargs}\index{selectargs}}
 \rightvitem{13cm}{selectargs(r1,r2) removes all arguments with the exception 
-of the indicated range of arguments.}
+of the indicated range of arguments. For example:}
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_17)
+\begin{verbatim}
+    CFunction f,g
+    Local test = f(1,...,5) + g(1,...,5);
+    Transform f selectargs(2,4);
+    Transform g selectargs(1,last);
+    Print;
+    .end
 
-Some Examples. Assume that we have some Multiple Zeta Values\index{Multiple 
+   test =
+      f(2,3,4) + g(1,2,3,4);
+\end{verbatim}
+
+As a final example, assume that we have some Multiple Zeta Values\index{Multiple 
 Zeta Value}\index{MZV} (see the papers on harmonic sums\index{harmonic 
 sums}, harmonic polylogarithms\index{harmonic polylogarithm} and the MZV 
 data mine\index{MZV data mine}) in the sum notation, but for calculational 
-reason we want to use a binary encoding (as used in the MZV programs). We 
+reasons we would like to use a binary encoding (as used in the MZV programs). We 
 could have
 % THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
-% WELL! (Sta_Transform_1)
+% WELL! (Sta_Transform_2)
 \begin{verbatim}
     Symbol x,x1,x2;
     CF  H,H1;
@@ -6297,7 +7072,10 @@ could have
    F =
       H(907202);
 \end{verbatim}
-The new version of the same program would be
+The same program written using the transform statement is greatly simplified
+and runs faster:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_Transform_1)
 \begin{verbatim}
     Symbol x,x1,x2;
     CF  H,H1;
@@ -6312,8 +7090,6 @@ The new version of the same program would be
    F =
       H(907202);
 \end{verbatim}
-It should be clear that this is simpler and faster. On a 64-bits computer 
-it is faster by more than a factor 100.
 
 \vspace{10mm}
 
@@ -6329,12 +7105,29 @@ Syntax & tryreplace \verb:{:{\tt<}name{\tt>} {\tt<}replacement{\tt>}\verb:}:;
 \\ See also & the replace\_ function (\ref{funreplace})
 \end{tabular} \vspace{4mm}
 
-\noindent The list\index{tryreplace} of potential replacements should be 
-similar to the arguments of the replace\_\index{replace\_} 
-function\index{function!replace\_} (see \ref{funreplace}). {\FORM} will 
-make a copy of the current term, try the replacement and if the replacement 
-results in a term which, by the internal ordering of {\FORM}, comes before 
-the current term, the current term is replaced by the new variety. 
+The tryreplace\index{tryreplace} statement takes a list of potential
+replacements with a syntax similar to the arguments of the
+replace\_\index{replace\_} function\index{function!replace\_} (see
+\ref{funreplace}). {\FORM} will make a copy of the current term and make the
+listed replacements. If the resulting term comes before the current term in
+the sort-ordering of {\FORM} (which depends, for example, on the declaration
+order of the objects in the term), the current term is replaced by the new
+term. Otherwise, the current term is unchanged. For example:
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_TryReplace_1)
+\begin{verbatim}
+    Symbol x,y,z;
+    Local test = x+z;
+    * These will replace x by y but not z by y, because z
+    * comes before y in the default sort ordering:
+    TryReplace x,y;
+    TryReplace z,y;
+    Print;
+    .end
+
+   test =
+      z + y;
+\end{verbatim}
 \vspace{10mm}
 
 %--#] tryreplace : 
@@ -6363,12 +7156,12 @@ step there will be a sort operation. This means that when statistics are
 printed, there may be several statistics for this step.
 
 \noindent When the statement has arguments, these arguments should be names 
-of expressions. In that case the unfactorization is applied only to the 
+of expressions; in this case the unfactorization is applied only to the 
 expressions that are specified.
 
-\noindent If one likes to unfactorized all expressions except for a few 
-ones, one can use the unfactorize statement without arguments and then 
-exclude the few expressions that should not be treated with the 
+\noindent If one wants to unfactorize all expressions except for a few,
+one can use the unfactorize statement without arguments and then 
+exclude specific expressions which should not be treated with the 
 nunfactorize statement (see \ref{substanunfactorize}).
 \vspace{10mm} 
 
@@ -6390,19 +7183,19 @@ Syntax & unhide; \\
 \end{tabular} \vspace{4mm}
 
 \noindent In its\index{unhide} first variety this statement causes all 
-statements in the hide\index{hide} file\index{file!hide} to become 
+expressions in the hide\index{hide} file\index{file!hide} to become 
 active\index{active} expressions again. In its second variety only the 
 specified expressions are taken from the hide system and become active 
 again. An expression that is made active again can be manipulated again in 
 the module in which the unhide statement occurs. For more information one 
 should look at the hide statement in \ref{substahide}. \vspace{4mm}
 
-\noindent Note that if only a number of expressions is taken from the hide 
+\noindent Note that if only a number of expressions are taken from the hide 
 system, the hide file may be left with `holes', i.e.\ space between the 
-remaining expressions that contain no relevant information any longer. 
-{\FORM} contains no mechanism to use the space in these holes. Hence if 
-space is at a premium and many holes develop one should unhide all 
-expressions (this causes the hide system to be started from zero size 
+remaining expressions that no longer contain relevant information. 
+{\FORM} has no mechanism to use the space in these holes. Hence if 
+space is at a premium and many holes develop, one should unhide all 
+expressions (which causes the hide system to be started from zero size 
 again) and then send the relevant expressions back to the hide system. 
 \vspace{10mm}
 
@@ -6457,37 +7250,60 @@ Syntax & while ( condition );
             if (\ref{substaif})
 \end{tabular} \vspace{4mm}
 
-\noindent This statement\index{while} starts the while 
+\noindent This statement\index{while} starts a while 
 environment\index{environment!while}. It should be paired with an 
 endwhile\index{endwhile} statement (see \ref{substaendwhile}) which 
 terminates the while environment. The statements between the while and the 
 endwhile statements will be executed as long as the condition is met. For 
-the description of the condition one should consult the if\index{if} 
+a description of the condition syntax one should consult the if\index{if} 
 statement (see \ref{substaif}). The while/endwhile combination is 
-equivalent to the construction
-\begin{verbatim}
-   repeat;
-      if ( condition );
+equivalent to a nested repeat and if environment.
+If only a single statement is inside the environment, one can also use
+{\tt while ( condition ) statement;}. For example:
 
-
-      endif;
-   endrepeat;
-\end{verbatim}
-If only a single statement is inside the environment one can also use
+% THIS EXAMPLE IS PART OF THE TESTSUITE. CHANGES HERE SHOULD BE APPLIED THERE AS
+% WELL! (Sta_While_1)
 \begin{verbatim}
-   while ( condition ) statement;
+    Symbol x,y,z;
+    Local Fx = (1+x)^6;
+    Local Fy = (1+y)^6;
+    Local Fz = (1+z)^6;
+
+    While (Count(x,1) > 3);
+       Multiply 1/x;
+    EndWhile;
+
+    Repeat;
+       If (Count(y,1) > 3);
+          Multiply 1/y;
+       EndIf;
+    EndRepeat;
+
+    While (Count(z,1) > 3) Multiply 1/z;
+
+    Print;
+    .end
+
+   Fx =
+      1 + 6*x + 15*x^2 + 42*x^3;
+
+   Fy =
+      1 + 6*y + 15*y^2 + 42*y^3;
+
+   Fz =
+      1 + 6*z + 15*z^2 + 42*z^3;
 \end{verbatim}
+
 Of course one should try to avoid infinite\index{infinite loop} 
 loops\index{loops!infinite}. In order to maximize the speed of {\FORM} not 
 all internal stacks are protected and hence the result may be that {\FORM} 
-may crash. It is also possible that {\FORM} may detect a shortage of buffer 
+crashes. It is also possible that {\FORM} may detect a shortage of buffer 
 space and quit with an error message. \vspace{4mm}
 
 \noindent For each term for which execution reaches the endwhile statement, 
-control is brought back to the while statement. For each term that reaches 
-the while statement the condition is checked and if it is met, the 
-statements inside the environment are executed again on this term. If the 
-condition is not met, execution continues after the endwhile statement. 
+control jumps back to the while statement. The condition is checked, and if
+it is met the statements within the while environment are executed again on
+the term. Otherwise, execution continues after the endwhile statement.
 \vspace{10mm}
 
 %--#] while : 
