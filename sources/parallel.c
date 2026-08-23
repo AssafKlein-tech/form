@@ -2990,7 +2990,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			MesPrint("[%d] working on expression %s in module %l",PF.me,EXPRNAME(i),AC.CModule);
 		if ( GetTerm(BHEAD term) <= 0 ) {
 			MesPrint("[%d] Expression %d has problems in scratchfile",PF.me,i);
-			return(-1);
+			SETERROR(-1)
 		}
 		term[3] = i;
 		if ( AC.sMRflag != NO_MAPREDUCE )
@@ -2998,12 +2998,12 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if ( AR.outtohide ) {
 			SeekScratch(AR.hidefile,&position);
 			e->onfile = position;
-			if ( PutOut(BHEAD term,&position,AR.hidefile,0) < 0 ) return(-1);
+			if ( PutOut(BHEAD term,&position,AR.hidefile,0) < 0 ) SETERROR(-1)
 		}
 		else {
 			SeekScratch(AR.outfile,&position);
 			e->onfile = position;
-			if ( PutOut(BHEAD term,&position,AR.outfile,0) < 0 ) return(-1);
+			if ( PutOut(BHEAD term,&position,AR.outfile,0) < 0 ) SETERROR(-1)
 		}
 		AR.DeferFlag = 0;  /* The master leave the brackets!!! */
 		AR.Eside = RHSIDE;
@@ -3023,7 +3023,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			to the right places in the sortbuffers.
 */
 		NewSort(BHEAD0);   /* we need AT.SS to be set for this!!! */
-		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error Master PF_Processor"); return -1;}
+		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error Master PF_Processor"); SETERROR(-1)}
 
 		PF_BUFFER *sb = PF.sbufs[0] ;
 /*
@@ -3040,7 +3040,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		 */
 		PF_TIMER_BEGIN(MAS_DISTRIBUTE);
 		if ( pf_distribute_terms(sb, 0, (FILEHANDLE *)0, e->counter, PF.nummappers - 1) < 0 )
-			return(-1);
+			SETERROR(-1)
 		PF_TIMER_END(MAS_DISTRIBUTE);
 /*
 			#] loop for all terms in infile: 
@@ -3070,7 +3070,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		     streams to the global scratch -> MAS_GATHER.
 		   - classic non-MR module: the real loser-tree merge -> MAS_FINAL_SORT. */
 		PF_TIMER_BEGIN_RT(mas_es);
-		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) return(-1);
+		if ( EndSort(BHEAD AM.S0->sBuffer,0) < 0 ) SETERROR(-1)
 		PF_TIMER_END_RT(mas_es, pf_output_partitioned() ? PF_PHASE_MAS_MERGERDONE
 		                        : ( AC.sMRflag == MAPREDUCE_LAST
 		                            ? PF_PHASE_MAS_GATHER : PF_PHASE_MAS_FINAL_SORT ));
@@ -3209,13 +3209,13 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			FILEHANDLE *fi = AC.RhsExprInModuleFlag && PF.rhsInParallel ? &PF.slavebuf : AR.infile;
 			fi->POfull = fi->POfill = fi->PObuffer;
 		}
-		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); return -1;}
+		if ( (size = PF_allocateSbuf()) == 0 ) {MesPrint("Error in endsort"); SETERROR(-1)}
 
 		if ( AC.sMRflag != NO_MAPREDUCE && PF.me < PF.nummappers ) /* if we in mapreduce and this is a mapper */
 		{
 			for ( int k = PF.nummappers; k < PF.numtasks; k++ ) { /* allocating the buffers in the destined reducers indices */
 				if ( PF.sbufs[k] == NULL ) {
-					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) return -1;
+					if ( (PF.sbufs[k] = PF_AllocBuf(PF.numsbufs, size*sizeof(WORD), 0)) == NULL ) SETERROR(-1)
 /* MesPrint("[%d] PF_EndSort: Allocating send buffer %d size %d", PF.me, k, size); */
 				}
 				else{
@@ -3252,7 +3252,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		   instead of generating. The (empty) mapper EndSort that follows still
 		   emits ENDSHUFFLE to every reducer so their Waitany accounting completes
 		   (mpi.c:666). */
-			if ( PF_MergerDistribute() < 0 ) return -1;
+			if ( PF_MergerDistribute() < 0 ) SETERROR(-1)
 		}
 		else {
 		PF_TIMER_BEGIN(MAP_GENERATOR);
@@ -3310,7 +3310,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 			LONG  oldsize = fout->POsize;
 /* MesPrint("[%d] PF_Processor: starting endsort", PF.me); */
 			PF_TIMER_BEGIN(MAP_ENDSORT_TOTAL);
-			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) return -1;
+			if ( EndSort(BHEAD AM.S0->sBuffer, 0) < 0 ) SETERROR(-1)
 			PF_TIMER_END(MAP_ENDSORT_TOTAL);
 /* MesPrint("[%d] PF_Processor: finished endsort", PF.me); */
 			fout->PObuffer = oldbuff;
@@ -3331,7 +3331,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		if ( PF.is_merger ) {
 			if ( PF_MergerLoop() < 0 ) {
 				MesPrint("[%d] PF_Processor: PF_MergerLoop failed", PF.me);
-				return -1;
+				SETERROR(-1)
 			}
 		}
 		AR.BracketOn = oldBracketOn;
@@ -3408,7 +3408,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		int err = PF_ReducerInit();
 		if ( err ) {
 			MesPrint("PF_ReducerInit error");
-			return err;
+			SETERROR(-1)
 		}
 /*
  		#] the receive buffers : 
@@ -3417,7 +3417,7 @@ int PF_Processor(EXPRESSIONS e, WORD i, WORD LastExpression)
 		LONG ret = PF_ForwardTermsToMaster();
 		if ( ret < 0 ) {
 			MesPrint("PF_forwardTermsToMaster error");
-			return ret;
+			SETERROR(-1)
 		}
 /*
 		#[ Reducer Loop & EndSort :
