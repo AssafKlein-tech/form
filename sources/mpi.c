@@ -620,7 +620,6 @@ int PF_WaitRbuf(PF_BUFFER *r, int bn, LONG *size)
 		int drain_active = (PF.me == MASTER && AC.sMRflag != NO_MAPREDUCE && PF.nummergers > 0);
 		while ( r->request[bn] != MPI_REQUEST_NULL ) {
 			if ( drain_active ) {
-				int flag;
 				ret = MPI_Testsome(r->numbufs,r->request,&rsize,r->index,r->retstat);
 				if ( ret != MPI_SUCCESS ) { if ( ret > 0 ) ret *= -1; return(ret); }
 				if ( rsize == MPI_UNDEFINED ) rsize = 0;
