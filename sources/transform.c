@@ -2206,11 +2206,11 @@ int RunPermute(PHEAD WORD *fun, WORD *args, WORD *info)
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}
@@ -2232,7 +2232,7 @@ int RunPermute(PHEAD WORD *fun, WORD *args, WORD *info)
 				}
 				else {
 IllType:
-                    MLOCK(ErrorMessageLock);
+					MLOCK(ErrorMessageLock);
 					MesPrint("Illegal type of $-variable in RunPermute");
 					MUNLOCK(ErrorMessageLock);
 					Terminate(-1);
@@ -2258,11 +2258,11 @@ IllType:
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}

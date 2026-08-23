@@ -977,9 +977,6 @@ typedef int (*TFUN1)(UBYTE *,int);
 #define BUCKETTERMINATED 3
 #define BUCKETRELEASED 4
 
-#define NUMBEROFBLOCKSINSORT 10
-#define MINIMUMNUMBEROFTERMS 10
-
 #define BUCKETDOINGTERM 1
 #define BUCKETASSIGNED -1
 #define BUCKETTOBERELEASED -2
@@ -987,6 +984,26 @@ typedef int (*TFUN1)(UBYTE *,int);
 
 #define BUCKETDOINGTERMS 0
 #define BUCKETDOINGBRACKET 1
+
+/*
+	Sortblock config
+*/
+// The number of blocks in the ring-buffer for data transfer between
+// workers or sortbots and the master thread or other sortbots. With
+// sortbots, each thread has half of this number.
+// The merging algorithm requires at least 4 blocks, so this must be
+// at least 8, with sortbots.
+#define NUMBEROFBLOCKSINSORT 8
+// The minimum number of terms which must fit in a block, i.e. they
+// must be at least this number times MaxTermSize.
+#define MINIMUMNUMBEROFTERMS 1
+// The minimum number of terms which will be written in a block,
+// before potentially yielding the block to a waiting reading thread.
+#define MINWRITENUMBEROFTERMS 1
+
+// The minimum number of terms which should fit in a bucket
+#define BUCKETMINTERMS 1
+
 #endif
 
 /*

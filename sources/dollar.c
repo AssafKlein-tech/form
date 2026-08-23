@@ -35,8 +35,6 @@
 
 #include "form3.h"
 
-/* EXTERNLOCK(dummylock) */
-
 static UBYTE underscore[2] = {'_',0};
 
 /*
@@ -236,7 +234,7 @@ int AssignDollar(PHEAD WORD *term, WORD level)
 			Terminate(-1);
 		}
 		dtype = ModOptdollars[nummodopt].type;
-		if ( dtype == MODLOCAL ) {
+		if ( DollarLocalCopy(dtype) ) {
 			d = ModOptdollars[nummodopt].dstruct+AT.identity;
 		}
 	}
@@ -252,8 +250,7 @@ int AssignDollar(PHEAD WORD *term, WORD level)
 */
 #ifdef WITHPTHREADS
 		if ( dtype > 0 ) {
-/*			LOCK(d->pthreadslockwrite); */
-			LOCK(d->pthreadslockread);
+			if ( ! DollarLocalCopy(dtype) ) { LOCK(d->pthreadslock); }
 NewValIsZero:;
 			switch ( d->type ) {
 				case DOLZERO: goto NoChangeZero;
@@ -278,8 +275,7 @@ NewValIsZero:;
 			cbuf[AM.dbufnum].NumTerms[numdollar] = 0;
 NoChangeZero:;
 			CleanDollarFactors(d);
-/*			UNLOCK(d->pthreadslockwrite); */
-			UNLOCK(d->pthreadslockread);
+			if ( ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 			AN.ncmod = oldncmod;
 			return(0);
 		}
@@ -301,8 +297,7 @@ NoChangeZero:;
 */
 #ifdef WITHPTHREADS
 		if ( dtype > 0 ) {
-/*			LOCK(d->pthreadslockwrite); */
-			LOCK(d->pthreadslockread);
+			if ( ! DollarLocalCopy(dtype) ) { LOCK(d->pthreadslock); }
 			if ( d->size < MINALLOC ) {
 				WORD oldsize, *oldwhere, i;
 				oldsize = d->size; oldwhere = d->where;
@@ -365,8 +360,7 @@ HandleDolZero:;
 			cbuf[AM.dbufnum].NumTerms[numdollar] = 1;
 NoChangeOne:;
 			CleanDollarFactors(d);
-/*			UNLOCK(d->pthreadslockwrite); */
-			UNLOCK(d->pthreadslockread);
+			if ( ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 			AN.ncmod = oldncmod;
 			return(0);
 		}
@@ -394,14 +388,11 @@ NoChangeOne:;
 	}
 /*
 	Now the real evaluation.
-	In the case of threads and MODSUM this requires an immediate lock.
-	Otherwise the lock could be placed later.
+	We need to lock here before we work out the RHS, in case the RHS itself
+	depends on the dollar variable.
 */
 #ifdef WITHPTHREADS
-	if ( dtype == MODSUM ) {
-/*		LOCK(d->pthreadslockwrite); */
-		LOCK(d->pthreadslockread);
-	}
+	if ( ! DollarLocalCopy(dtype) ) { LOCK(d->pthreadslock); }
 #endif
 	CleanDollarFactors(d);
 /*
@@ -445,12 +436,7 @@ NoChangeOne:;
 		}
 		numterms = 0; t = ss; while ( *t ) { numterms++; t += *t; }
 	}
-#ifdef WITHPTHREADS
-	if ( dtype != MODSUM ) {
-/*		LOCK(d->pthreadslockwrite); */
-		LOCK(d->pthreadslockread);
-	}
-#endif
+
 	if ( numterms == 0 ) {
 /*
 		the new value evaluates to zero
@@ -574,8 +560,7 @@ HandleDolZero1:;
 	}
 #ifdef WITHPTHREADS
 NoChange:;
-/*	UNLOCK(d->pthreadslockwrite); */
-	UNLOCK(d->pthreadslockread);
+	if ( ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	AN.ncmod = oldncmod;
 	return(0);
@@ -932,7 +917,7 @@ void WildDollars(PHEAD WORD *term)
 				}
 				if ( nummodopt < NumModOptdollars ) {
 					dtype = ModOptdollars[nummodopt].type;
-					if ( dtype == MODLOCAL ) {
+					if ( DollarLocalCopy(dtype) ) {
 						d = ModOptdollars[nummodopt].dstruct+AT.identity;
 					}
 					else {
@@ -1092,11 +1077,11 @@ WORD DolToTensor(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1130,7 +1115,7 @@ WORD DolToTensor(PHEAD WORD numdollar)
 		retval = 0;
 	}
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(retval);
 }
@@ -1153,11 +1138,11 @@ WORD DolToFunction(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1187,7 +1172,7 @@ WORD DolToFunction(PHEAD WORD numdollar)
 		retval = 0;
 	}
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(retval);
 }
@@ -1210,11 +1195,11 @@ WORD DolToVector(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1251,7 +1236,7 @@ WORD DolToVector(PHEAD WORD numdollar)
 		retval = 0;
 	}
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(retval);
 }
@@ -1273,7 +1258,7 @@ WORD DolToNumber(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 		}
@@ -1333,11 +1318,11 @@ WORD DolToSymbol(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1364,7 +1349,7 @@ WORD DolToSymbol(PHEAD WORD numdollar)
 		retval = -1;
 	}
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(retval);
 }
@@ -1387,11 +1372,11 @@ WORD DolToIndex(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1440,7 +1425,7 @@ WORD DolToIndex(PHEAD WORD numdollar)
 		retval = 0;
 	}
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(retval);
 }
@@ -1469,7 +1454,7 @@ DOLLARS DolToTerms(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 		}
@@ -1579,8 +1564,7 @@ ShortArgument:
 	newd->size = size;
 	newd->numdummies = d->numdummies;
 #ifdef WITHPTHREADS
-	newd->pthreadslockread  = dummylock;
-	newd->pthreadslockwrite = dummylock;
+	INIRECLOCK(newd->pthreadslock);
 #endif
 	size++;
 	NCOPY(t,w,size);
@@ -1616,7 +1600,7 @@ LONG DolToLong(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 		}
@@ -1767,12 +1751,11 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 			}
 			if ( nummodopt < NumModOptdollars ) {
 				dtype = ModOptdollars[nummodopt].type;
-				if ( dtype == MODLOCAL ) {
+				if ( DollarLocalCopy(dtype) ) {
 					d = ModOptdollars[nummodopt].dstruct+AT.identity;
 				}
 				else {
-/*					LOCK(d->pthreadslockwrite); */
-					LOCK(d->pthreadslockread);
+					LOCK(d->pthreadslock);
 				}
 			}
 		}
@@ -1824,10 +1807,7 @@ int InsideDollar(PHEAD WORD *ll, WORD level)
 		Now we have a little cleaning up to do
 */
 #ifdef WITHPTHREADS
-		if ( dtype > 0 && dtype != MODLOCAL ) {
-/*			UNLOCK(d->pthreadslockwrite); */
-			UNLOCK(d->pthreadslockread);
-		}
+		if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 		if ( newd->factors ) M_free(newd->factors,"Dollar factors");
 		M_free(newd,"Copy of dollar variable");
@@ -1878,11 +1858,11 @@ LONG TermsInDollar(WORD num)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1903,7 +1883,7 @@ LONG TermsInDollar(WORD num)
 	else if ( d->type == DOLZERO ) n = 0;
 	else n = 1;
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(n);
 }
@@ -1927,11 +1907,11 @@ LONG SizeOfDollar(WORD num)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
@@ -1955,7 +1935,7 @@ LONG SizeOfDollar(WORD num)
 	else if ( d->type == DOLZERO ) n = 0;
 	else n = 1;
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(n);
 }
@@ -2664,7 +2644,7 @@ WORD EvalDoLoopArg(PHEAD WORD *arg, WORD par)
 			}
 			if ( nummodopt < NumModOptdollars ) {
 				dtype = ModOptdollars[nummodopt].type;
-				if ( dtype == MODLOCAL ) {
+				if ( DollarLocalCopy(dtype) ) {
 					d = ModOptdollars[nummodopt].dstruct+AT.identity;
 				}
 			}
@@ -2792,7 +2772,7 @@ WORD TestDoLoop(PHEAD WORD *lhsbuf, WORD level)
 			}
 			if ( nummodopt < NumModOptdollars ) {
 				dtype = ModOptdollars[nummodopt].type;
-				if ( dtype == MODLOCAL ) {
+				if ( DollarLocalCopy(dtype) ) {
 					d = ModOptdollars[nummodopt].dstruct+AT.identity;
 				}
 			}
@@ -2870,7 +2850,7 @@ WORD TestEndDoLoop(PHEAD WORD *lhsbuf, WORD level)
 			}
 			if ( nummodopt < NumModOptdollars ) {
 				dtype = ModOptdollars[nummodopt].type;
-				if ( dtype == MODLOCAL ) {
+				if ( DollarLocalCopy(dtype) ) {
 					d = ModOptdollars[nummodopt].dstruct+AT.identity;
 				}
 			}
@@ -2978,18 +2958,18 @@ int DollarFactorize(PHEAD WORD numdollar)
 		}
 		if ( nummodopt < NumModOptdollars ) {
 			dtype = ModOptdollars[nummodopt].type;
-			if ( dtype == MODLOCAL ) {
+			if ( DollarLocalCopy(dtype) ) {
 				d = ModOptdollars[nummodopt].dstruct+AT.identity;
 			}
 			else {
-				LOCK(d->pthreadslockread);
+				LOCK(d->pthreadslock);
 			}
 		}
 	}
 #endif
 	CleanDollarFactors(d);
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	if ( d->type != DOLTERMS ) {	/* only one term */
 		if ( d->type != DOLZERO ) d->nfactors = 1;
@@ -3239,13 +3219,13 @@ getout:
 		        Be careful: there should be more than one factor now.
 */
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { LOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { LOCK(d->pthreadslock); }
 #endif
 	if ( nfactors ==  1 && extrafactor == 0 ) {	/* we can use the buf1 contents */
 		if ( factorsincontent == 0 ) {
 			d->nfactors = 1;
 #ifdef WITHPTHREADS
-			if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+			if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 /*
 			We used here (before 3-sep-2015) the original and did not make
@@ -3297,7 +3277,7 @@ getout2:			AR.SortType = oldsorttype;
 					M_free(d->factors,"factors in dollar");
 					d->factors = 0;
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					M_free(buf3,"DollarFactorize-4");
 					if ( buf2 != buf1 && buf2 ) M_free(buf2,"DollarFactorize-4");
@@ -3541,7 +3521,7 @@ nextj:;
  		#] Step 8: 
 */
 #ifdef WITHPTHREADS
-	if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+	if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 	return(0);
 }
@@ -3860,7 +3840,7 @@ int GetDolNum(PHEAD WORD *t, WORD *tstop)
 				}
 				if ( nummodopt < NumModOptdollars ) {
 					dtype = ModOptdollars[nummodopt].type;
-					if ( dtype == MODLOCAL ) {
+					if ( DollarLocalCopy(dtype) ) {
 						d = ModOptdollars[nummodopt].dstruct+AT.identity;
 					}
 					else {
@@ -3914,7 +3894,7 @@ int GetDolNum(PHEAD WORD *t, WORD *tstop)
 				}
 				if ( nummodopt < NumModOptdollars ) {
 					dtype = ModOptdollars[nummodopt].type;
-					if ( dtype == MODLOCAL ) {
+					if ( DollarLocalCopy(dtype) ) {
 						d = ModOptdollars[nummodopt].dstruct+AT.identity;
 					}
 					else {

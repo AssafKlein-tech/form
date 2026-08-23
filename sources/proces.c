@@ -120,6 +120,9 @@ int Processor(void)
 	AN.PolyFunTodo = 0;
 #ifdef HIDEDEBUG
 	MesPrint("Status at the start of Processor (HideLevel = %d)",AC.HideLevel);
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.infile->name   ,AR.infile->POfill  -AR.infile->PObuffer  ,AR.infile->POfull  -AR.infile->PObuffer  ,AR.infile->POsize/sizeof(WORD)  );
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.outfile->name  ,AR.outfile->POfill -AR.outfile->PObuffer ,AR.outfile->POfull -AR.outfile->PObuffer ,AR.outfile->POsize/sizeof(WORD) );
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.hidefile->name ,AR.hidefile->POfill-AR.hidefile->PObuffer,AR.hidefile->POfull-AR.hidefile->PObuffer,AR.hidefile->POsize/sizeof(WORD));
 	for ( i = 0; i < NumExpressions; i++ ) {
 		e = Expressions+i;
 		ExprStatus(e);
@@ -178,10 +181,14 @@ int Processor(void)
 #ifdef WITHMPI
 	if ( PF.me == MASTER )
 	{
-		if (AC.sMRflag == NO_MAPREDUCE){MesPrint("\nMAPREDUCE NOT ACTIVE\n");}
-		else if (AC.sMRflag == MAPREDUCE_FIRST){MesPrint("\nMAPREDUCE_FIRST ACTIVE\n");}
-		else if (AC.sMRflag == MAPREDUCE_LAST){MesPrint("\nMAPREDUCE_LAST ACTIVE\n");}
-		else{MesPrint("\nMAPREDUCE ACTIVE\n");}
+/*
+		Announce the MR state only when MR is actually active. A line on every
+		non-MR module pollutes the stdout that check.rb compares, which is what
+		broke test_Issue577_1 exact_pattern matching.
+*/
+		if ( AC.sMRflag == MAPREDUCE_FIRST ) { MesPrint("\nMAPREDUCE_FIRST ACTIVE\n"); }
+		else if ( AC.sMRflag == MAPREDUCE_LAST ) { MesPrint("\nMAPREDUCE_LAST ACTIVE\n"); }
+		else if ( AC.sMRflag != NO_MAPREDUCE ) { MesPrint("\nMAPREDUCE ACTIVE\n"); }
 	}
  	if ( AC.RhsExprInModuleFlag && PF.rhsInParallel && (AC.mparallelflag == PARALLELFLAG || AC.partodoflag) ) {
 		if ( PF_BroadcastRHS() ) {
@@ -670,6 +677,9 @@ commonread:;
 	AT.WorkPointer = term;
 #ifdef HIDEDEBUG
 	MesPrint("Status at the end of Processor (HideLevel = %d)",AC.HideLevel);
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.infile->name   ,AR.infile->POfill  -AR.infile->PObuffer  ,AR.infile->POfull  -AR.infile->PObuffer  ,AR.infile->POsize/sizeof(WORD)  );
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.outfile->name  ,AR.outfile->POfill -AR.outfile->PObuffer ,AR.outfile->POfull -AR.outfile->PObuffer ,AR.outfile->POsize/sizeof(WORD) );
+	MesPrint("File %s POfill %l POfull %l POsize %l", AR.hidefile->name ,AR.hidefile->POfill-AR.hidefile->PObuffer,AR.hidefile->POfull-AR.hidefile->PObuffer,AR.hidefile->POsize/sizeof(WORD));
 	for ( i = 0; i < NumExpressions; i++ ) {
 		e = Expressions+i;
 		ExprStatus(e);
@@ -2246,11 +2256,10 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 					AR.DeferFlag = 0;
 					v = t + *t;
 					t += ARGHEAD;		/* First term */
-					w = 0;	/* to appease the compilers warning devices */
-					while ( from < t ) {
-						if ( from == u ) w = m;
-						*m++ = *from++;
-					}
+					LONG copy = t - from;
+					const LONG size = t - u;
+					NCOPY(m, from, copy);
+					w = m - size;
 					to = m;
 					NewSort(BHEAD0);
 					if ( *u == AR.PolyFun && AR.PolyFunType == 2 ) {
@@ -2325,11 +2334,11 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}
@@ -2340,11 +2349,10 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 						&& ( *u != AR.PolyFun ) ) { AN.ncmod = 0; }
 					AR.DeferFlag = 0;
 					v = t + 2;
-					w = 0;	/* to appease the compilers warning devices */
-					while ( from < t ) {
-						if ( from == u ) w = m;
-						*m++ = *from++;
-					}
+					LONG copy = t - from;
+					const LONG size = t - u;
+					NCOPY(m, from, copy);
+					w = m - size;
 					to = m;
 					switch ( d->type ) {
 						case DOLINDEX:
@@ -2475,12 +2483,12 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 							AC.dollarnames->namebuffer+d->name);
 							MUNLOCK(ErrorMessageLock);
 #ifdef WITHPTHREADS
-							if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							Terminate(-1);
 					}
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					r = term + *term;
 					t = v;
@@ -2507,11 +2515,10 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 					u points at the start of the function
 					t points at the start of the argument
 */
-					w = 0;
-					while ( from < t ) {
-						if ( from == u ) w = m;
-						*m++ = *from++;
-					}
+					LONG copy = t - from;
+					const LONG size = t - u;
+					NCOPY(m, from, copy);
+					w = m - size;
 					if ( ( numterms & MAXPOSITIVE ) == numterms ) {
 						*m++ = -SNUMBER; *m++ =  numterms & MAXPOSITIVE;
 						w[1] += 1;
@@ -2561,11 +2568,11 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}
@@ -2574,11 +2581,11 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 					if ( ( AN.ncmod != 0 )
 						&& ( ( AC.modmode & ALSOFUNARGS ) == 0 )
 						&& ( *u != AR.PolyFun ) ) { AN.ncmod = 0; }
-					m = termout; w = 0;
-					while ( from < t ) {
-						if ( from == u ) w = m;
-						*m++ = *from++;
-					}
+					m = termout;
+					LONG copy = t - from;
+					const LONG size = t - u;
+					NCOPY(m, from, copy);
+					w = m - size;
 					to = m;
 					switch ( d->type ) {
 						case DOLINDEX:
@@ -2595,7 +2602,7 @@ int InFunction(PHEAD WORD *term, WORD *termout)
 							else {
 wrongtype:;
 #ifdef WITHPTHREADS
-								if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 								MLOCK(ErrorMessageLock);
 								MesPrint("$%s has wrong type for tensor substitution",
@@ -2661,7 +2668,7 @@ wrongtype:;
 							break;
 						case DOLUNDEFINED:
 #ifdef WITHPTHREADS
-							if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							MLOCK(ErrorMessageLock);
 							MesPrint("$%s is undefined in tensor substitution",
@@ -2671,7 +2678,7 @@ wrongtype:;
 							return(-1);
 					}
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					w[1] = w[1] - 2 + (m-to);
 					from += 2;
@@ -3536,11 +3543,11 @@ SkipCount:	level++;
 								}
 								if ( nummodopt < NumModOptdollars ) {
 									ddtype = ModOptdollars[nummodopt].type;
-									if ( ddtype == MODLOCAL ) {
+									if ( DollarLocalCopy(ddtype) ) {
 										d = ModOptdollars[nummodopt].dstruct+AT.identity;
 									}
 									else {
-										LOCK(d->pthreadslockread);
+										LOCK(d->pthreadslock);
 									}
 								}
 							}
@@ -3564,13 +3571,13 @@ SkipCount:	level++;
 								,AC.dollarnames->namebuffer+d->name);
 								MUNLOCK(ErrorMessageLock);
 #ifdef WITHPTHREADS
-							if ( ddtype > 0 && ddtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( ddtype > 0 && ! DollarLocalCopy(ddtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 								goto GenCall;
 							}
 							theindex = d->index;
 #ifdef WITHPTHREADS
-							if ( ddtype > 0 && ddtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( ddtype > 0 && ! DollarLocalCopy(ddtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 						}
 						cp[1] = SUBEXPSIZE+4;
@@ -3631,11 +3638,11 @@ SkipCount:	level++;
 									}
 									if ( nummodopt < NumModOptdollars ) {
 										ddtype = ModOptdollars[nummodopt].type;
-										if ( ddtype == MODLOCAL ) {
+										if ( DollarLocalCopy(ddtype) ) {
 											d = ModOptdollars[nummodopt].dstruct+AT.identity;
 										}
 										else {
-											LOCK(d->pthreadslockread);
+											LOCK(d->pthreadslock);
 										}
 									}
 								}
@@ -3658,13 +3665,13 @@ SkipCount:	level++;
 									,AC.dollarnames->namebuffer+d->name);
 									MUNLOCK(ErrorMessageLock);
 #ifdef WITHPTHREADS
-									if ( ddtype > 0 && ddtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+									if ( ddtype > 0 && ! DollarLocalCopy(ddtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 									goto GenCall;
 								}
 								theindex = d->index;
 #ifdef WITHPTHREADS
-								if ( ddtype > 0 && ddtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( ddtype > 0 && ! DollarLocalCopy(ddtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							}
 							*cp++ = INDTOIND;
@@ -4219,7 +4226,7 @@ AutoGen:	i = *AT.TMout;
 								}
 								if ( nummodopt < NumModOptdollars ) {
 									dtype = ModOptdollars[nummodopt].type;
-									if ( dtype == MODLOCAL ) {
+									if ( DollarLocalCopy(dtype) ) {
 										dd = ModOptdollars[nummodopt].dstruct+AT.identity;
 									}
 								}
@@ -4283,14 +4290,16 @@ AutoGen:	i = *AT.TMout;
 				}
 				if ( nummodopt < NumModOptdollars ) {
 					dtype = ModOptdollars[nummodopt].type;
-					if ( dtype != MODLOCAL && dtype != MODSUM ) {
+					if ( dtype == MODMAX || dtype == MODMIN ) {
 						if ( StartBuf[0] && StartBuf[StartBuf[0]] ) {
 							MLOCK(ErrorMessageLock);
 							MesPrint("A dollar variable with modoption max or min can have only one term");
 							MUNLOCK(ErrorMessageLock);
 							goto GenCall;
 						}
-						LOCK(d->pthreadslockread);
+					}
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+						LOCK(d->pthreadslock);
 					}
 				}
 			}
@@ -4325,17 +4334,19 @@ AutoGen:	i = *AT.TMout;
 				}
 */
 #ifdef WITHPTHREADS
-				if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); }
+				if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 				if ( ( AS.Balancing && CC->numrhs == 0 ) && StartBuf[posisub] ) {
+/* UNFINISHED_FEATURE_EXCL_START */
 					if ( ( id = ConditionalGetAvailableThread() ) >= 0 ) {
 						if ( BalanceRunThread(BHEAD id,termout,level) < 0 ) goto GenCall;
 					}
+/* UNFINISHED_FEATURE_EXCL_STOP */
 				}
 				else
 #endif
 				if ( Generator(BHEAD termout,level) < 0 ) goto GenCall;
 #ifdef WITHPTHREADS
-				if ( dtype > 0 && dtype != MODLOCAL ) { dtype = 0; break; }
+				if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { dtype = 0; break; }
 #endif
 				if ( iscopy == 0 && ( extractbuff != AM.dbufnum ) ) {
 /*
@@ -4352,7 +4363,7 @@ AutoGen:	i = *AT.TMout;
 				Ce->Pointer = Ce->rhs[Ce->numrhs--];
 			}
 #ifdef WITHPTHREADS
-			if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); dtype = 0; }
+			if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); dtype = 0; }
 #endif
 			if ( iscopy ) {
 				if ( d->nfactors > 1 ) {
@@ -4410,16 +4421,18 @@ AutoGen:	i = *AT.TMout;
 					*AN.RepPoint = 1;
 					AR.expchanged = 1;
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
+/* UNFINISHED_FEATURE_EXCL_START */
 					if ( ( AS.Balancing && CC->numrhs == 0 ) && ( i > 0 )
 					&& ( id = ConditionalGetAvailableThread() ) >= 0 ) {
 						if ( BalanceRunThread(BHEAD id,termout,level) < 0 ) goto GenCall;
 					}
+/* UNFINISHED_FEATURE_EXCL_STOP */
 					else
 #endif
 					if ( Generator(BHEAD termout,level) ) goto GenCall;
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { dtype = 0; break; }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { dtype = 0; break; }
 #endif
 					if ( iscopy == 0 && ( extractbuff != AM.dbufnum ) )
 							StartBuf = cbuf[extractbuff].Buffer;
@@ -4427,7 +4440,7 @@ AutoGen:	i = *AT.TMout;
 				}
 			} while ( i > 0 );
 #ifdef WITHPTHREADS
-			if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); dtype = 0; }
+			if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); dtype = 0; }
 #endif
 			if ( iscopy ) {
 				if ( d->nfactors > 1 ) {
@@ -4474,15 +4487,17 @@ AutoGen:	i = *AT.TMout;
 					*AN.RepPoint = 1;
 					AR.expchanged = 1;
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 					if ( ( AS.Balancing && CC->numrhs == 0 ) && ( i > 0 ) && ( id = ConditionalGetAvailableThread() ) >= 0 ) {
+/* UNFINISHED_FEATURE_EXCL_START */
 						if ( BalanceRunThread(BHEAD id,termout,level) < 0 ) goto GenCall;
+/* UNFINISHED_FEATURE_EXCL_STOP */
 					}
 					else
 #endif
 					if ( Generator(BHEAD termout,level) ) goto GenCall;
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { dtype = 0; break; }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { dtype = 0; break; }
 #endif
 					if ( iscopy == 0 && ( extractbuff != AM.dbufnum ) )
 							StartBuf = cbuf[extractbuff].Buffer;
@@ -4490,7 +4505,7 @@ AutoGen:	i = *AT.TMout;
 				}
 			}
 #ifdef WITHPTHREADS
-			if ( dtype > 0 && dtype != MODLOCAL && dtype != MODSUM ) { UNLOCK(d->pthreadslockread); dtype = 0; }
+			if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); dtype = 0; }
 #endif
 			if ( iscopy ) {
 				if ( d->nfactors > 1 ) {
@@ -4595,8 +4610,9 @@ skippedfirst:
 						AR.expchanged = 1;
 #ifdef WITHPTHREADS
 						if ( ( AS.Balancing && CC->numrhs == 0 ) && ( i > 0 ) && ( id = ConditionalGetAvailableThread() ) >= 0 ) {
+/* UNFINISHED_FEATURE_EXCL_START */
 							if ( BalanceRunThread(BHEAD id,termout,level) < 0 ) goto GenCall;
-
+/* UNFINISHED_FEATURE_EXCL_STOP */
 						}
 						else
 #endif

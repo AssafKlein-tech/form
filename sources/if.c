@@ -316,7 +316,7 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 						}
@@ -407,6 +407,7 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 				for ( i = 0; i < j; i++ ) coef2[i] = cc[i];
 				break;
 #ifdef WITHFLOAT
+/* UNFINISHED_FEATURE_EXCL_START */
 			case IFFLOATNUMBER:
 /*
 				The sloppy solution is: Convert to rational.
@@ -414,6 +415,7 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 */
 				ncoef2 = FloatFunToRat(BHEAD coef2,ifp);
 				break;
+/* UNFINISHED_FEATURE_EXCL_STOP */
 #endif
 			case MATCH:
 			case TYPEIF:
@@ -471,11 +473,11 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}
@@ -532,7 +534,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 						case DOLUNDEFINED:
 							if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-								if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { 
+									UNLOCK(d->pthreadslock);
+								}
 #endif
 								MLOCK(ErrorMessageLock);
 								MesPrint("$%s is undefined",AC.dollarnames->namebuffer+d->name);
@@ -549,7 +553,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 							|| d->where[2] < 0 || d->where[2] >= AM.OffsetIndex ) {
 								if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-									if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+									if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { 
+										UNLOCK(d->pthreadslock);
+									}
 #endif
 									MLOCK(ErrorMessageLock);
 									MesPrint("$%s is of wrong type",AC.dollarnames->namebuffer+d->name);
@@ -570,7 +576,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 							}
 							else if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-								if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+									UNLOCK(d->pthreadslock);
+								}
 #endif
 								MLOCK(ErrorMessageLock);
 								MesPrint("$%s is of wrong type",AC.dollarnames->namebuffer+d->name);
@@ -586,7 +594,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 							) {
 								if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-									if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+									if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+										UNLOCK(d->pthreadslock);
+									}
 #endif
 									MLOCK(ErrorMessageLock);
 									MesPrint("$%s is of wrong type",AC.dollarnames->namebuffer+d->name);
@@ -635,7 +645,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 							else {
 								if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-									if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+									if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+										UNLOCK(d->pthreadslock);
+									}
 #endif
 									MLOCK(ErrorMessageLock);
 									MesPrint("$%s is of wrong type",AC.dollarnames->namebuffer+d->name);
@@ -661,7 +673,9 @@ int DoIfStatement(PHEAD WORD *ifcode, WORD *term)
 generic:;
 							if ( AC.UnsureDollarMode == 0 ) {
 #ifdef WITHPTHREADS
-								if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+									UNLOCK(d->pthreadslock);
+								}
 #endif
 								MLOCK(ErrorMessageLock);
 								MesPrint("$%s is of wrong type",AC.dollarnames->namebuffer+d->name);
@@ -673,7 +687,9 @@ generic:;
 					  }
 					}
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) {
+						UNLOCK(d->pthreadslock);
+					}
 #endif
 				}
 				break;

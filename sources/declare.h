@@ -69,11 +69,18 @@
 
 /* (n) is necessary here, since the macro is sometimes passed dereferenced pointers for n */
 #define NCOPY(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
-/*#define NCOPY(s,t,n) { memcpy(s,t,n*sizeof(WORD)); s+=n; t+=n; n = -1; }*/
 #define NCOPYI(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
 #define NCOPYB(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
 #define NCOPYI32(s,t,n) { while ( (n)-- > 0 ) { *s++ = *t++; } }
 #define WCOPY(s,t,n) { int nn=n; WORD *ss=(WORD *)s, *tt=(WORD *)t; while ( (nn)-- > 0 ) { *ss++ = *tt++; } }
+
+/* Use memmove not memcpy: we can't guarantee that s, t do not overlap */
+/* Using memmove produces no measurable performance improvement or regression. */
+/*#define NCOPY(s,t,n) { memmove(s,t,(n)*sizeof(*s)); s+=n; t+=n; n=0; }
+#define NCOPYI(s,t,n) { NCOPY(s,t,n); }
+#define NCOPYB(s,t,n) { NCOPY(s,t,n); }
+#define NCOPYI32(s,t,n) { NCOPY(s,t,n); }
+#define WCOPY(s,t,n) { int nn=n; WORD *ss=(WORD *)s, *tt=(WORD *)t; NCOPY(ss,tt,nn); }*/
 
 #define NeedNumber(x,s,err) { int sgn = 1;                               \
 		while ( *s == ' ' || *s == '\t' || *s == '-' || *s == '+' ) {      \
@@ -455,6 +462,12 @@ static inline LONG ULongToLong(ULONG x)
 #define INILOCK(x)    pthread_mutex_t x = PTHREAD_MUTEX_INITIALIZER;
 #define EXTERNRWLOCK(x) extern pthread_rwlock_t x;
 #define INIRWLOCK(x)    pthread_rwlock_t x = PTHREAD_RWLOCK_INITIALIZER;
+#define INIRECLOCK(x) do { pthread_mutexattr_t attrib; \
+	pthread_mutexattr_init(&attrib); \
+	pthread_mutexattr_settype(&attrib, PTHREAD_MUTEX_RECURSIVE); \
+	pthread_mutex_init(&(x), &attrib); \
+	pthread_mutexattr_destroy(&attrib); \
+	} while(0)
 #ifdef DEBUGGINGLOCKS
 #include <asm/errno.h>
 #define LOCK(x)       while ( pthread_mutex_trylock(&(x)) == EBUSY ) {}
@@ -1275,6 +1288,14 @@ extern WORD   *MakeDollarInteger(PHEAD WORD *,WORD **);
 extern WORD   *MakeDollarMod(PHEAD WORD *,WORD **);
 extern int    GetDolNum(PHEAD WORD *, WORD *);
 extern void   AddPotModdollar(WORD);
+// Returns 1 if the ModOptdollar type implies a thread-local copy when running
+// in TFORM (WITHPTHREADS), and 0 otherwise.
+static inline int DollarLocalCopy(WORD type) {
+	if ( type == MODLOCAL ) { return 1; }
+	if ( type == MODMIN   ) { return 1; }
+	if ( type == MODMAX   ) { return 1; }
+	return 0;
+}
  
 extern int    Optimize(WORD, int);
 extern int    ClearOptimize(void);
@@ -1305,6 +1326,7 @@ extern void   SubsInAll(PHEAD0);
 extern void   TransferBuffer(int,int,int);
 extern int    TakeIDfunction(PHEAD WORD *);
 extern int    MakeSetupAllocs(void);
+extern NORMDATA *AllocNormData(void);
 extern int    TryFileSetups(void);
 extern void   ExchangeExpressions(int,int);
 extern void   ExchangeDollars(int,int);

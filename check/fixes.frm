@@ -389,8 +389,6 @@ PolyRatFun rat;
 L F = rat(a.a,1);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue39 : 
 *--#[ Issue41 :
@@ -1004,7 +1002,6 @@ L F6 = f(1000*g5_);
 L F7 = f(10000*g5_);
 .end
 # Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue94 : 
 *--#[ Issue95 :
@@ -1298,6 +1295,8 @@ assert succeeded?
 assert result("F") =~ expr("1")
 *--#] Issue126 : 
 *--#[ Issue128 :
+* The result check here requires the old prf sign convention:
+On oldprfsign;
 * Rational arithmetic giving pi_
 CF rat;
 PolyRatFun rat;
@@ -1809,8 +1808,6 @@ L F = f(<x1+x2+x3+x4>,...,<x6+x7+x8+x9>);
 transform f,mulargs(1,last);  * silent crash
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("Term too complex during normalization")
 *--#] Issue183 :
 *--#[ Issue185 :
@@ -2144,8 +2141,6 @@ Print;
 # For now it fails because
 #   "Currently Stage 4 sorts are not allowed for function arguments or $ variables."
 assert runtime_error?
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 #assert succeeded?
 #assert result("test1") =~ expr("0")
 #assert result("test2") =~ expr("g(0)")
@@ -2385,16 +2380,12 @@ assert result("F40") =~ expr("0")
 L F11 = div_(1,0);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_2 : 
 *--#[ Issue261_3 :
 L F23 = rem_(0,0);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_3 : 
 *--#[ Issue261_4 :
@@ -2404,8 +2395,6 @@ S x;
 L F34 = inverse_($x,$z);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_4 : 
 *--#[ Issue261_5 :
@@ -2413,8 +2402,6 @@ assert runtime_error?
 L F16 = div_($z,$z);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_5 : 
 *--#[ Issue261_6 :
@@ -2423,8 +2410,6 @@ S x;
 L F27 = rem_($x,0);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_6 : 
 *--#[ Issue261_7 :
@@ -2432,8 +2417,6 @@ assert runtime_error?
 L F39 = inverse_(1,$z);
 P;
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?
 *--#] Issue261_7 : 
 *--#[ Issue267 :
@@ -2476,6 +2459,48 @@ P;
 assert succeeded?
 assert result("F") =~ expr("9999")
 *--#] Issue268_2 :
+*--#[ Issue271 : 
+#-
+#define N "16"
+Symbol x,n;
+Local test = -{`N'*(`N'+1)/2} + <x^1>+...+<x^`N'>;
+.sort
+#$split = 0;
+Identify x^n?pos_ = n;
+$split = $split + term_;
+ModuleOption sum $split;
+.sort
+#message split = `$split'
+Print;
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<EOF)
+~~~split = 0
+EOF
+assert result("test") =~ expr("0")
+*--#] Issue271 : 
+*--#[ Issue271b : 
+#-
+#define N "16"
+Symbol x,n;
+Local test = -{`N'*(`N'+1)/2} + <x^1>+...+<x^`N'>;
+.sort
+#$split = 0;
+$split = $split + term_;
+ModuleOption sum $split;
+.sort
+#message split = `$split'
+Print;
+.end
+# This symbolic sum doesn't work in TFORM, but does work in ParFORM:
+#pend_if threaded?
+assert succeeded?
+assert stdout =~ exact_pattern(<<EOF)
+~~~split = -136+x+x^2+x^3+x^4+x^5+x^6+x^7+x^8+x^9+x^10+x^11+x^12+x^13+x^14+x^15
++x^16
+EOF
+assert result("test") =~ expr("- 136 + x + x^2 + x^3 + x^4 + x^5 + x^6 + x^7 + x^8 + x^9 + x^10 + x^11 + x^12 + x^13 + x^14 + x^15 + x^16")
+*--#] Issue271b : 
 *--#[ Issue277 :
 * A question about addargs
 CFunction f,g,h;
@@ -3068,7 +3093,7 @@ Identify f(x?) = prf(n-x,n+x);
 .end
 # Fails due to polynomial size on 32bit builds
 #require wordsize >= 4
-# Runtime errors may freeze ParFORM.
+# This set of buffer sizes does not cause the error in ParFORM.
 #pend_if mpi?
 assert runtime_error?("Please increase SmallExtension setup parameter.")
 *--#] Issue512_1 :
@@ -3097,8 +3122,6 @@ EndTerm;
 .end
 # Fails due to polynomial size on 32bit builds
 #require wordsize >= 4
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("Please increase SubSmallExtension setup parameter.")
 *--#] Issue512_2 :
 *--#[ Issue512_3 :
@@ -3709,8 +3732,6 @@ Vector v;
 PolyRatFun rat;
 Local F = rat(v,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_1 :
 *--#[ Issue567_2 :
@@ -3719,8 +3740,6 @@ Index i;
 PolyRatFun rat;
 Local F = rat(i,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_2 :
 *--#[ Issue567_3a :
@@ -3729,8 +3748,6 @@ Function f;
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3a :
 *--#[ Issue567_3b :
@@ -3739,8 +3756,6 @@ CFunction f;
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3b :
 *--#[ Issue567_3c :
@@ -3749,8 +3764,6 @@ Table f(1);
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3c :
 *--#[ Issue567_3d :
@@ -3759,8 +3772,6 @@ CTable f(1);
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3d :
 *--#[ Issue567_3e :
@@ -3769,8 +3780,6 @@ Tensor f;
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3e :
 *--#[ Issue567_3f :
@@ -3779,8 +3788,6 @@ CTensor f;
 PolyRatFun rat;
 Local F = rat(f,1);
 .end
-# Runtime errors may freeze ParFORM.
-#pend_if mpi?
 assert runtime_error?("ERROR: polynomials and polyratfuns must contain symbols only")
 *--#] Issue567_3f :
 *--#[ Issue577_1 :
@@ -3829,7 +3836,7 @@ Multiply 2;
 print;
 .end
 # ParFORM has valgrind errors with this. See discussion in PR 586.
-#pend_if mpi?
+#pend_if valgrind? && mpi?
 assert succeeded?
 assert result("test2") =~ expr("4")
 assert result("test3") =~ expr("6")
@@ -3858,7 +3865,7 @@ Local test3 = 3;
 #endif
 .end
 # ParFORM has valgrind errors with this. See discussion in PR 586.
-#pend_if mpi?
+#pend_if valgrind? && mpi?
 assert runtime_error?("isnumerical: expression is not yet defined!")
 *--#] Issue577_2 :
 *--#[ Issue599 :
@@ -4165,7 +4172,6 @@ ModuleOption inparallel;
 
 Print;
 .end
-#pend_if mpi?
 assert succeeded?
 assert result("diff1") =~ expr("0")
 assert result("diff2") =~ expr("0")
@@ -4437,6 +4443,15 @@ assert result("testCF1") =~ expr("putfirst_(f,2,mu1)*putfirst_(e,2,mu1)*putfirst
 assert result("testCF2") =~ expr("d(mu2,mu1)*e(mu2,mu1)*f(mu2,mu1)")
 assert result("testCF3") =~ expr("d(mu2,mu1,mu3)*e(mu2,mu1,mu3)*f(mu2,mu1,mu3)")
 *--#] Issue750 :
+*--#[ Issue760 : 
+ModuleOption foo1;
+ModuleOption parallel,foo2;
+ModuleOption foo3,parallel;
+.end
+assert preprocess_error?("Unrecognized module option: foo1")
+assert preprocess_error?("Unrecognized module option: foo2")
+assert preprocess_error?("Unrecognized module option: foo3")
+*--#] Issue760 : 
 *--#[ Issue766 :
 * Unintended "&" in some warning messages
 CF f(s,s);
@@ -4448,6 +4463,304 @@ assert warning?("Excess information in symmetric properties")
 assert warning?("Illegal information in number of arguments properties")
 assert warning?("Undefined $-variable")
 *--#] Issue766 : 
+*--#[ Issue782 : 
+S $s;
+V $v;
+I $i;
+F $f;
+Set $ss;
+Local $test = 1;
+.end
+assert compile_error?("Illegally formed name in symbol statement")
+assert compile_error?("Illegally formed name in vector statement")
+assert compile_error?("Illegally formed name in index statement")
+assert compile_error?("Illegally formed function/tensor name")
+assert compile_error?("Illegal name for set")
+assert compile_error?("Illegal name for expression")
+*--#] Issue782 : 
+*--#[ Issue790 :
+#-
+CFunction cfx,cfy,cfz;
+Function fx,fy;
+Index ix,iy,iz;
+Index jx,jy,jz;
+Vector vx,vy,vz;
+Symbol sx,sy,sz;
+Local Fcf  = gcd_(cfx+cfx*cfy, cfx-cfx*cfy);
+Local Fcf2 = gcd_(cfx*cfz+cfx*cfy*cfz, cfx*cfz-cfx*cfy*cfz);
+Local Ff   = gcd_(fx+fx*fy, fx-fx*fy);
+Local Fi   = gcd_(ix+ix*iy, ix-ix*iy);
+Local Fi2  = gcd_(ix*iz+ix*iy*iz, ix*iz-ix*iy*iz);
+Local Fv   = gcd_(vx+vx*vy, vx-vx*vy);
+Local Fv2  = gcd_(vx*vz+vx*vy*vz, vx*vz-vx*vy*vz);
+Local Fvi  = gcd_(vx(ix)+vx(ix)*vy(iy), vx(ix)-vx(ix)*vy(iy));
+Local Fvi2 = gcd_(vx(ix)*vz(iz)+vx(ix)*vy(iy)*vz(iz), vx(ix)*vz(iz)-vx(ix)*vy(iy)*vz(iz));
+Local Fdp  = gcd_(vx.vx+vx.vx*vy.vy, vx.vx-vx.vx*vy.vy);
+Local Fdp2 = gcd_(vx.vx*vz.vz+vx.vx*vy.vy*vz.vz, vx.vx*vz.vz-vx.vx*vy.vy*vz.vz);
+Local Fdp3 = gcd_(vx.vx^3*vz.vz^3+vx.vx^2*vy.vy*vz.vz^2, vx.vx^3*vz.vz^3-vx.vx^2*vy.vy*vz.vz^2);
+Local Fs   = gcd_(sx+sx*sy, sx-sx*sy);
+Local Fs2  = gcd_(sx*sz+sx*sy*sz, sx*sz-sx*sy*sz);
+* For now, this fails in PutExtraSymbols, though TakeContent works
+*Local Fdel = gcd_(d_(ix,jx)+d_(ix,jx)*d_(iy,jy), d_(ix,jx)-d_(ix,jx)*d_(iy,jy));
+Print;
+.end
+assert succeeded?
+assert result("Fcf") =~ expr("cfx")
+assert result("Fcf2") =~ expr("cfx*cfz")
+assert result("Ff") =~ expr("fx")
+assert result("Fi") =~ expr("ix")
+assert result("Fi2") =~ expr("ix*iz")
+assert result("Fv") =~ expr("vx")
+assert result("Fv2") =~ expr("vx*vz")
+assert result("Fvi") =~ expr("vx(ix)")
+assert result("Fvi2") =~ expr("vx(ix)*vz(iz)")
+assert result("Fdp") =~ expr("vx.vx")
+assert result("Fdp2") =~ expr("vx.vx*vz.vz")
+assert result("Fdp3") =~ expr("vx.vx^2*vz.vz^2")
+assert result("Fs") =~ expr("sx")
+assert result("Fs2") =~ expr("sx*sz")
+*--#] Issue790 : 
+*--#[ Issue790b :
+#-
+Function fx,fy,fz;
+Local Ff = gcd_(fx*fz+fx*fy, fx*fz-fx*fy);
+Print;
+.end
+assert runtime_error?("GCD or factorization of more than one noncommuting object not allowed")
+*--#] Issue790b : 
+*--#[ Issue796 : 
+* Regression: the fix for 796 deadlocks here:
+Symbol x;
+Local test = <x^1>+...+<x^128>;
+#$maxpow = 0;
+$maxpow = max_($maxpow,count_(x,1));
+ModuleOption maximum $maxpow;
+.sort
+#message maxpow: `$maxpow'
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+maxpow: 128
+EOF
+*--#] Issue796 : 
+*--#[ Issue796b : 
+* Regression: the fix for 796 deadlocks here:
+Symbol x;
+Local test = <x^1>+...+<x^128>;
+#$minpow = 129;
+$minpow = min_($minpow,count_(x,1));
+ModuleOption minimum $minpow;
+.sort
+#message minpow: `$minpow'
+.end
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+minpow: 1
+EOF
+*--#] Issue796b : 
+*--#[ Issue796c : 
+* This case has always deadlocked:
+Symbol x;
+Local test = <x^1>+...+<x^128>;
+#$sumpow = 129;
+$sumpow = max_($sumpow,count_(x,1));
+ModuleOption sum $sumpow;
+.sort
+#message sumpow: `$sumpow'
+.end
+# ParFORM does not pass this test
+#pend_if mpi?
+assert succeeded?
+assert stdout =~ exact_pattern(<<'EOF')
+sumpow: 129
+EOF
+*--#] Issue796c : 
+*--#[ Issue833_1 : 
+#-
+#: TermsInSmall 1024
+On fewerstats 256;
+On humanstats;
+Symbol x;
+Local abcdefghijklmno   = <x^1>+...+<x^15>;
+Local abcdefghijklmnop  = <x^1>+...+<x^16>;
+Local abcdefghijklmnopq = <x^1>+...+<x^17>;
+Local abcdefghijklmnopqrstuvwx = <x^1>+...+<x^24>;
+Local abcdefghijklmnopqrstuvwxy = <x^1>+...+<x^25>;
+Local abcdefghijklmnopqrstuvwxyz = <x^1>+...+<x^26>;
+Local abcdefghijklmnopqrstuvwxyz = <x^1>+...+<x^26>;
+Local abcdefghijklmnopqrstuvwxyzaaaaaaaa = <x^1>+...+<x^34>;
+Local abcdefghijklmnopqrstuvwxyzaaaaaaab = <x^1>+...+<x^340>;
+Local abcdefghijklmnopqrstuvwxyzaaaa = <x^1>+...+<x^262144>;
+Local abcdefghijklmnopqr = <x^1>+...+<x^262144>;
+.sort
+.end
+#require wordsize == 4
+#pend_if mpi? || threaded?
+assert succeeded?
+assert stdout =~ exact_pattern(" abcdefghijklmno         Terms in output =         15  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnop         Terms in output =         16  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopq        Terms in output =         17  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwx Terms in output =         24  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxy Terms in output=         25  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyz Terms in output=        26  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaaaaaa Terms in output=34  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaaaaab Terms in output=340  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaa Terms in output=262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqr       Terms in output =     262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaa 1 Terms left=   262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaa 262144 Terms left=262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqr     1 Terms left      =     262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqr 262144 Terms left     =     262144  (262 K  )")
+*--#] Issue833_1 : 
+*--#[ Issue833_2 : 
+#-
+#: TermsInSmall 1024
+On fewerstats 256;
+On humanstats;
+Symbol x;
+Local abcdefghijklmno   = <x^1>+...+<x^15>;
+Local abcdefghijklmnop  = <x^1>+...+<x^16>;
+Local abcdefghijklmnopq = <x^1>+...+<x^17>;
+Local abcdefghijklmnopqrstuvwx = <x^1>+...+<x^24>;
+Local abcdefghijklmnopqrstuvwxy = <x^1>+...+<x^25>;
+Local abcdefghijklmnopqrstuvwxyz = <x^1>+...+<x^26>;
+Local abcdefghijklmnopqrstuvwxyz = <x^1>+...+<x^26>;
+Local abcdefghijklmnopqrstuvwxyzaaaaaaaa = <x^1>+...+<x^34>;
+Local abcdefghijklmnopqrstuvwxyzaaaaaaab = <x^1>+...+<x^340>;
+Local abcdefghijklmnopqrstuvwxyzaaaa = <x^1>+...+<x^262144>;
+Local abcdefghijklmnopqr = <x^1>+...+<x^262144>;
+.sort
+.end
+#require threaded? && wordsize == 4
+assert succeeded?
+assert stdout =~ exact_pattern(" abcdefghijklmno         Terms in output =         15  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnop         Terms in output =         16  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopq        Terms in output =         17  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwx Terms in output =         24  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxy Terms in output=         25  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyz Terms in output=        26  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaaaaaa Terms in output=34  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaaaaab Terms in output=340  ( <1 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqrstuvwxyzaaaa Terms in output=262144  (262 K  )")
+assert stdout =~ exact_pattern("abcdefghijklmnopqr       Terms in output =     262144  (262 K  )")
+*--#] Issue833_2 : 
+*--#[ Issue856 : 
+#-
+Off Statistics;
+CFunction f,g,h;
+
+#define MODE "1"
+#define MAX "4"
+
+* Each expression is a different size:
+#do i = 1,`MAX'
+	Local test`i' = f(`i')^`i';
+	Local htest`i' = g(`i')^{`i'+`MAX'};
+	Local ihtest`i' = h(`i')^{`i'+2*`MAX'};
+#enddo
+.sort
+
+* Start with "htest" expr hidden
+Hide htest1,...,htest`MAX';
+.sort
+
+#do i = 1,`MAX'
+	UnHide htest`i';
+	.sort
+	IntoHide ihtest`i';
+	#if `MODE' == 1
+		InParallel;
+	#endif
+	Multiply 2;
+	.sort
+	Hide htest`i';
+#enddo
+.sort
+
+* UnHide all, mixture of InParallel and regular:
+InParallel htest1,...,htest`MAX';
+UnHide;
+.sort
+
+
+* Reset
+Hide htest1,...,htest`MAX';
+.sort
+
+* Same again, with UnHide in the inparallel module
+#do i = 1,`MAX'
+	UnHide htest`i';
+	IntoHide ihtest`i';
+	#if `MODE' == 1
+		InParallel;
+	#endif
+	Multiply 2;
+	.sort
+	Hide htest`i';
+#enddo
+.sort
+
+UnHide;
+.sort
+
+
+* Reset
+Hide htest1,...,htest`MAX';
+.sort
+
+* Same again, leave the first expression in the Hide file
+#do i = 2,`MAX'
+	UnHide htest`i';
+	.sort
+	IntoHide ihtest`i';
+	#if `MODE' == 1
+		InParallel;
+	#endif
+	Multiply 2;
+	.sort
+	Hide htest`i';
+#enddo
+.sort
+
+UnHide;
+.sort
+
+
+* Reset
+Hide htest1,...,htest`MAX';
+.sort
+
+* Same again, leave the first expression in the Hide file, but take from the end
+#do i = `MAX',2,-1
+	UnHide htest`i';
+	.sort
+	IntoHide ihtest`i';
+	#if `MODE' == 1
+		InParallel;
+	#endif
+	Multiply 2;
+	.sort
+	Hide htest`i';
+#enddo
+.sort
+
+UnHide;
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("16384*f(1)")
+assert result("htest1") =~ expr("4*g(1)^5")
+assert result("ihtest1") =~ expr("256*h(1)^9")
+assert result("test2") =~ expr("16384*f(2)^2")
+assert result("htest2") =~ expr("16*g(2)^6")
+assert result("ihtest2") =~ expr("256*h(2)^10")
+assert result("test3") =~ expr("16384*f(3)^3")
+assert result("htest3") =~ expr("16*g(3)^7")
+assert result("ihtest3") =~ expr("1024*h(3)^11")
+assert result("test4") =~ expr("16384*f(4)^4")
+assert result("htest4") =~ expr("16*g(4)^8")
+assert result("ihtest4") =~ expr("4096*h(4)^12")
+*--#] Issue856 : 
 *--#[ PullReq535 :
 * This test requires more than the specified 50K workspace.
 #:maxtermsize 200
@@ -4474,7 +4787,7 @@ Local expr = 1;
 .sort
 $a = 1;
 .end
-#require threaded?
+#require threaded? || mpi?
 assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
 *--#] PullReq649_1 :
 *--#[ PullReq649_2 :
@@ -4483,7 +4796,7 @@ Local expr = 1;
 .sort
 $n1MdWu6rNU1d29yW3ukhzV7YuY = 1;
 .end
-#require threaded?
+#require threaded? || mpi?
 assert warning?("This module is forced to run in sequential mode due to $-variable: $n1MdWu6rNU1d29yW3ukhzV7YuY")
 *--#] PullReq649_2 :
 *--#[ PullReq649_3 :
@@ -4501,7 +4814,7 @@ Local expr = 1;
 Symbol x;
 id x?$a = x;
 .end
-#require threaded?
+#require threaded? || mpi?
 assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
 *--#] PullReq649_4 :
 *--#[ PullReq649_5 :
@@ -4545,7 +4858,7 @@ Local expr = 1;
 $a = 1;
 moduleoption local $b;
 .end
-#require threaded?
+#require threaded? || mpi?
 assert warning?("This module is forced to run in sequential mode due to $-variable: $a")
 *--#] PullReq649_9 :
 *--#[ PullReq652 :
@@ -4581,3 +4894,250 @@ Symbol x;
 .end
 assert succeeded?
 *--#] PullReq691 :
+*--#[ PullReq807_1 :
+CF f;
+S x;
+L F = (<f(1)>+...+<f(10)>)^4;
+dropcoefficient;
+.sort
+#do i=1,10
+  if (match(f(`i')));
+    $x = `i';
+  endif;
+#enddo
+id f(x?) = x;
+ModuleOption maximum $x;
+.sort
+P;
+.sort
+#message $x: `$x'
+.end
+assert succeeded?
+assert result("F") =~ expr("752752")
+assert stdout =~ exact_pattern(<<'EOF')
+~~~$x: 10
+EOF
+*--#] PullReq807_1 :
+*--#[ PullReq807_2 :
+L F = 1;
+if (1) $x = 0;
+ModuleOption minimum $x;
+.sort
+P;  * AM.exitflag is corrupted
+.end
+assert succeeded?
+assert result("F") =~ expr("1")
+*--#] PullReq807_2 :
+*--#[ PullReq843_1 :
+#-
+
+#: TermsInSmall 16
+#: LargePatches 10
+#: FilePatches 16
+
+#: SubTermsInSmall 16
+#: SubLargePatches 10
+#: SubFilePatches 10
+
+Off statistics;
+Off threadstats;
+
+CFunction f,sum;
+Symbol i,j,x;
+
+#define N "{2*1776+1}"
+#define BLOWUP "{160+1}"
+
+* Generate enough terms to cause a stage sort:
+Local test = {`N'*(`N'+1)/2}
+	#do i = 1,`N'
+		- f(x^`i')
+	#enddo
+	;
+.sort
+
+* Generate enough terms in a sub-buffer sort to create a sort file:
+Argument f;
+	Identify x^i?pos_ = sum_(j,1,`BLOWUP',x^i*i/`BLOWUP');
+EndArgument;
+
+* Cancel everything:
+Identify f(x?) = x;
+Identify x^i? = 1;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("0")
+*--#] PullReq843_1 :
+*--#[ PullReq843_2 :
+#-
+
+#: TermsInSmall 16
+#: LargePatches 10
+#: FilePatches 16
+
+#: SubTermsInSmall 16
+#: SubLargePatches 10
+#: SubFilePatches 10
+
+Off statistics;
+Off threadstats;
+
+CFunction f,sum;
+Symbol i,j,x;
+
+#define N "{2*1776+1}"
+#define BLOWUP "{160+1}"
+
+* Generate enough terms to cause a stage sort:
+Local test = {`N'*(`N'+1)/2}
+	#do i = 1,`N'
+		- x^`i'
+	#enddo
+	;
+.sort
+
+* Generate enough terms in a sub-buffer sort to create a sort file:
+Term;
+	Identify x^i?pos_ = sum_(j,1,`BLOWUP',x^i*i/`BLOWUP');
+EndTerm;
+
+* Cancel everything:
+Identify x^i? = 1;
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("0")
+*--#] PullReq843_2 :
+*--#[ PullReq843_3 :
+#-
+
+#: TermsInSmall 16
+#: LargePatches 10
+#: FilePatches 16
+
+#: SubTermsInSmall 16
+#: SubLargePatches 10
+#: SubFilePatches 10
+
+Off statistics;
+Off threadstats;
+
+CFunction f,sum;
+Symbol i,j,x;
+
+#define N "{2*1776+1}"
+#define BLOWUP "{160+1}"
+
+* Generate enough terms to cause a stage sort:
+Local test = {`N'*(`N'+1)/2}
+	#do i = 1,`N'
+		- f(x^`i')
+	#enddo
+	;
+.sort
+
+#$dol = 1;
+* Generate enough terms in a sub-buffer sort to create a sort file:
+Identify f(x?$dol) = 1;
+Inside $dol;
+	Identify x^i?pos_ = sum_(j,1,`BLOWUP',x^i*i/`BLOWUP');
+EndInside;
+Multiply $dol;
+
+* Cancel everything:
+Identify x^i? = 1;
+Print;
+ModuleOption local $dol;
+.end
+assert succeeded?
+assert result("test") =~ expr("0")
+*--#] PullReq843_3 :
+*--#[ PullReq860_1 :
+#-
+
+CFunction f;
+Symbol x;
+
+Local test1 = f(-x+2);
+Local test2 = f(-2*x+2);
+Local test3 = f(x-2);
+Local test4 = f(2*x-2);
+.sort
+
+On highfirst;
+FactArg f;
+
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("f(-1,x - 2)")
+assert result("test2") =~ expr("f(-2,x - 1)")
+assert result("test3") =~ expr("f(x - 2)")
+assert result("test4") =~ expr("f(2,x - 1)")
+*--#] PullReq860_1 :
+*--#[ PullReq860_2 :
+#-
+
+CFunction f;
+Symbol x;
+
+Local test1 = f(-x+2);
+Local test2 = f(-2*x+2);
+Local test3 = f(x-2);
+Local test4 = f(2*x-2);
+.sort
+
+*On highfirst;
+FactArg f;
+
+Print;
+.end
+assert succeeded?
+assert result("test1") =~ expr("f(-1, - 2 + x)")
+assert result("test2") =~ expr("f(-2, - 1 + x)")
+assert result("test3") =~ expr("f( - 2 + x)")
+assert result("test4") =~ expr("f(2, - 1 + x)")
+*--#] PullReq860_2 :
+*--#[ PullReq860_3 :
+#-
+
+CFunction f,g,tag;
+Symbol x;
+
+Local test =
+	#do i = -3,3
+	#do j = -3,3
+		+ f(`i'*x+`j')*tag(`i',`j')
+		- g(`i'*x+`j')*tag(`i',`j')
+	#enddo
+	#enddo
+	;
+.sort
+
+On highfirst;
+FactArg f;
+Transform f mulargs(1,last);
+
+* Trigger re-sort of g into highfirst order
+Argument g;
+EndArgument;
+Identify g(x?) = f(x);
+
+Print;
+.end
+assert succeeded?
+assert result("test") =~ expr("0")
+*--#] PullReq860_3 :
+*--#[ Issue808 :
+#do i=0,9
+Global E`i' = `i';
+#enddo
+.store
+#do i=1,80
+Global F1 = E{`i' % 10}*E2*E3*E4;
+#enddo
+.sort
+.end
+assert succeeded?
+*--#] Issue808 :

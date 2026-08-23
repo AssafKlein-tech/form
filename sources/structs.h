@@ -542,8 +542,7 @@ typedef struct DoLlArS {
 	WORD	*where;				/* A pointer(!) to the object */
 	FACDOLLAR *factors;			/* an array of factors. nfactors elements */
 #ifdef WITHPTHREADS
-	pthread_mutex_t	pthreadslockread;
-	pthread_mutex_t	pthreadslockwrite;
+	pthread_mutex_t	pthreadslock;
 #endif
 	LONG	size;				/* The number of words */
 	LONG	name;
@@ -561,7 +560,7 @@ typedef struct DoLlArS {
 
 typedef struct MoDoPtDoLlArS {
 #ifdef WITHPTHREADS
-	DOLLARS	dstruct;	/* If local dollar: list of DOLLARS for each thread */
+	DOLLARS	dstruct;	/* If local,min,max dollar: list of DOLLARS for each thread */
 #endif
 	WORD	number;
 	WORD	type;
@@ -1115,6 +1114,8 @@ typedef struct PaRtI {
 typedef struct sOrT {
     FILEHANDLE file;            /* The own sort file */
     POSITION SizeInFile[3];     /* Sizes in the various files */
+    POSITION OldPosIn;          /* Sort file fill positions */
+    POSITION OldPosOut;
     WORD *lBuffer;              /* The large buffer */
     WORD *lTop;                 /* End of the large buffer */
     WORD *lFill;                /* The filling point of the large buffer */
@@ -1156,6 +1157,13 @@ typedef struct sOrT {
     LONG SpaceLeft;             /* Space needed for still existing terms */
     LONG putinsize;             /* Size of buffer in putin */
     LONG ninterms;              /* Which input term ? */
+    LONG verbComparisons;       /* Counters for "On SortVerbose;" statistics */
+    LONG verbSBsortTerms;
+    LONG verbSBsortCap;
+    LONG verbLBsortPatches;
+    LONG verbLBsortCap;
+    LONG verbUnsortedSize;
+    LONG verbMaxTermSize;
     int MaxPatches;             /* Maximum number of patches in large buffer */
     int MaxFpatches;            /* Maximum number of patches in one filesort */
     int type;                   /* Main, function or sub(routine) */
@@ -1185,6 +1193,7 @@ typedef struct SoRtBlOcK {
     WORD    **MasterStart;
     WORD    **MasterFill;
     WORD    **MasterStop;
+    LONG    *BlockTerms;
     int     MasterNumBlocks;
     int     MasterBlock;
     int     FillBlock;
@@ -1212,6 +1221,7 @@ typedef struct ThReAdBuCkEt {
     WORD *threadbuffer;         /* Here are the (primary) terms */
     WORD *compressbuffer;       /* For keep brackets we need the compressbuffer */
     LONG threadbuffersize;      /* Number of words in threadbuffer */
+    LONG compressbuffersize;    /* Number of words in compressbuffer */
     LONG ddterms;               /* Number of primary+secondary terms represented */
     LONG firstterm;             /* The number of the first term in the bucket */
     LONG firstbracket;          /* When doing complete brackets */
@@ -1372,6 +1382,26 @@ typedef struct {
 	WORD numextern;
 	WORD flags;
 } TERMINFO;
+
+/*
+	Struct to hold temporary data in Normalize, so that it is not allocated
+	on the stack each function call. The sizes of these arrays introduces a
+	maximum complexity of terms which can be normalized. Each array is
+	allocated dynamically, by AllocNormData, such that valgrind can detect
+	errors if they are over-run.
+*/
+typedef struct NoRmDaTa {
+	WORD  *psym;
+	WORD  *pvec;
+	WORD  *pdot;
+	WORD  *pdel;
+	WORD  *pind;
+	WORD **peps;
+	WORD **pden;
+	WORD **pcom;
+	WORD **pnco;
+	WORD **pcon;
+} NORMDATA;
 
 /*
   	#] Varia : 
@@ -1643,6 +1673,7 @@ struct P_const {
     int     PreAssignLevel;        /* For nesting #$name = ...; assignments */
     int     MaxPreAssignLevel;     /* For nesting #$name = ...; assignments */
     int     fullnamesize;          /* size of the fullname buffer */
+    int     FoundFileSetupCount;   /* The number of "file setup" (#:) lines */
     WORD    DebugFlag;             /* (P) For debugging purposes */
     WORD    preError;              /* (P) Blocks certain types of execution */
     UBYTE   ComChar;               /* (P) Commentary character */
@@ -1838,6 +1869,7 @@ struct C_const {
     int     OldFactArgFlag;
     int     MemDebugFlag;          /* Only used when MALLOCDEBUG in tools.c */
     int     OldGCDflag;
+    int     OldPRFSignFlag;
     int     WTimeStatsFlag;
     int     SortReallocateFlag;    /* Controls reallocation of large+small buffer at module end.
                                         0 : Off
@@ -1847,6 +1879,7 @@ struct C_const {
     int    FlintPolyFlag;          /* Use Flint for polynomial arithmetic */
     int     HumanStatsFlag;        /* Print human-readable stats in the stats print? */
     int     GrccVerbose;           /* Enable extra print statements in grcc? */
+    int     SortVerbose;           /* Enable extra sort stats information? */
 	int     doloopstacksize;
 	int     dolooplevel;
     int     CheckpointFlag;        /**< Tells preprocessor whether checkpoint code must executed.
@@ -2112,6 +2145,9 @@ struct T_const {
     void    *aux_;
     void    *auxr_;
 #endif
+    NORMDATA **NormData;
+    LONG    NormDataSize;
+    LONG    NormDepth;
     PARTI   partitions;
     LONG    sBer;                  /* (T) Size of the Bernoullis buffer */
     LONG    pWorkPointer;          /* (R) Offset-pointer in pWorkSpace */
@@ -2199,8 +2235,6 @@ struct T_const {
  */
 
 struct N_const {
-    POSITION OldPosIn;             /* (R) Used in sort. */
-    POSITION OldPosOut;            /* (R) Used in sort */
 	POSITION theposition;          /* () Used in index.c */
     WORD    *EndNest;              /* (R) Nesting of function levels etc. */
     WORD    *Frozen;               /* (R) Bracket info */

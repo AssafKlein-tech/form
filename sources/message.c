@@ -124,6 +124,7 @@ NORETURN void MesWork(void)
 	#   " ==> "
 	@   " ==> "   Preprocessor error
 	&   ' --> '   Regular compiler error
+	!>  ' ~~> '   Internal error
 	Each call is terminated with a new line.
 	Put a % at the end of the string to suppress the new line.
 
@@ -172,7 +173,7 @@ int MesPrint(const char *fmt, ... )
 	t = Out;
 	stopper = Out + AC.LineLength;
 	while ( *s ) {
-		if ( ( ( *s == '&' && AO.ErrorBlock == 0 ) || *s == '@' || *s == '#' ) && AC.CurrentStream != 0 ) {
+		if ( ( *s == '&' || *s == '@' || *s == '#' || ( *s == '!' && s[1] == '>' ) ) && AO.ErrorBlock == 0 && AC.CurrentStream != 0 ) {
 			u = (char *)AC.CurrentStream->name;
 			while ( *u ) {
 				*t++ = *u++;
@@ -199,8 +200,23 @@ int MesPrint(const char *fmt, ... )
 		if ( ( *s == '&' && AO.ErrorBlock == 0 ) ) {
 			*t++ = ' '; *t++ = '-'; *t++ = '-'; *t++ = '>'; *t++ = ' '; s++;
 		}
-		else if ( *s == '@' || *s == '#' ) {
+		else if ( ( *s == '@' || *s == '#' ) && AO.ErrorBlock == 0 ) {
 			*t++ = ' '; *t++ = '='; *t++ = '='; *t++ = '>'; *t++ = ' '; s++;
+		}
+		else if ( *s == '!' && s[1] == '>' && AO.ErrorBlock == 0 ) {
+			const char *m = " ~~> Internal error, please report with the following message:";
+			while ( *m ) {
+				*t++ = *m++;
+				if ( t >= stopper ) {
+					num = t - Out;
+					WriteString(ERROROUT,(UBYTE *)Out,num);
+					num = 0; t = Out;
+				}
+			}
+			num = t - Out;
+			WriteString(ERROROUT,(UBYTE *)Out,num);
+			num = 0; t = Out;
+			s += 2;
 		}
 /*
 		else if ( *s == '&' && AO.ErrorBlock == 1 ) {
@@ -421,11 +437,11 @@ int MesPrint(const char *fmt, ... )
 						}
 						if ( nummodopt < NumModOptdollars ) {
 							dtype = ModOptdollars[nummodopt].type;
-							if ( dtype == MODLOCAL ) {
+							if ( DollarLocalCopy(dtype) ) {
 								d = ModOptdollars[nummodopt].dstruct+AT.identity;
 							}
 							else {
-								LOCK(d->pthreadslockread);
+								LOCK(d->pthreadslock);
 							}
 						}
 					}
@@ -480,7 +496,7 @@ printterms:				first = 1;
 							AddToLine((UBYTE *)Out);
 							if ( WriteInnerTerm(term,first) ) {
 #ifdef WITHPTHREADS
-								if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+								if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 								Terminate(-1);
 							}
@@ -511,7 +527,7 @@ dosubterm:				if ( AC.LineLength > MAXLINELENGTH ) AC.LineLength = MAXLINELENGTH
 						AddToLine((UBYTE *)Out);
 						if ( WriteSubTerm(tt,1) ) {
 #ifdef WITHPTHREADS
-							if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+							if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 							Terminate(-1);
 						}
@@ -615,7 +631,7 @@ dollarzero:				*t++ = '0'; *t = 0;
 						}
 					}
 #ifdef WITHPTHREADS
-					if ( dtype > 0 && dtype != MODLOCAL ) { UNLOCK(d->pthreadslockread); }
+					if ( dtype > 0 && ! DollarLocalCopy(dtype) ) { UNLOCK(d->pthreadslock); }
 #endif
 					AN.listinprint += 2;
 					while ( AN.listinprint[0] == DOLLAREXPR2 ) AN.listinprint += 2;

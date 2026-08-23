@@ -77,16 +77,20 @@ end
 # Get the total size of the physical memory available on the host machine.
 def total_physical_memory
   platform = RbConfig::CONFIG["host_os"].downcase
-  if platform.include?("linux")
-    mem_info = `free -b | grep Mem`
-    mem_info.split[1].to_i
-  elsif platform.include?("darwin")
-    mem_info = `sysctl -n hw.memsize`
-    mem_info.to_i
-  elsif platform.include?("mingw") || platform.include?("mswin")
-    mem_info = `wmic ComputerSystem get TotalPhysicalMemory`
-    mem_info.split[1].to_i
+
+  case
+  when platform.include?("linux")
+    File.foreach("/proc/meminfo") do |line|
+      m = line.match(/\bMemTotal\b\D+(\d+)/)
+      return m[1].to_i * 1024 if m
+    end
+  when platform.include?("darwin")
+    return `sysctl -n hw.memsize`.to_i
+  when platform.include?("mingw") || platform.include?("mswin")
+    return `powershell -NoProfile -Command "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory"`.to_i
   end
+
+  nil
 end
 
 # The default prefix for the root temporary directory. See TempDir.root.
@@ -306,6 +310,10 @@ module FormTest
     FormTest.cfg.mpi?
   end
 
+  def flint?
+    FormTest.cfg.flint?
+  end
+
   def valgrind?
     if FormTest.cfg.fake_valgrind.nil?
       !FormTest.cfg.valgrind.nil?
@@ -358,6 +366,9 @@ module FormTest
           @@cached_total_memory = -1
         else
           @@cached_total_memory = result
+        end
+        if result.nil? || result <= 0
+          warn("failed to determine total physical memory")
         end
       end
       @@cached_total_memory
@@ -1242,6 +1253,7 @@ class FormConfig
     @is_serial   = nil
     @is_threaded = nil
     @is_mpi      = nil
+    @has_flint   = nil
     @wordsize    = wordsize
     @form_cmd    = nil
   end
@@ -1259,6 +1271,10 @@ class FormConfig
 
   def mpi?
     @is_mpi
+  end
+
+  def flint?
+    @has_flint
   end
 
   def check_bin(name, bin)
@@ -1318,6 +1334,17 @@ class FormConfig
       else
         system("#{form_bin} #{frmname}")
         fatal("failed to get the version of '#{@form}'")
+      end
+      # Check if Flint is available.
+      # Use form -vv which contains either "+flint=VERSION" or "-flint".
+      feature_out, _status = Open3.capture2e(@form_bin, "-vv")
+      if feature_out =~ /(?:^|\s)\+flint(?:=|\s|$)/
+        @has_flint = true
+      elsif feature_out =~ /(?:^|\s)-flint(?:\s|$)/
+        @has_flint = false
+      else
+        warn("failed to determine FLINT support of '#{@form}'")
+        @has_flint = false
       end
       # Check the wordsize.
       # Method 1: from the output header.
@@ -1416,6 +1443,7 @@ class FormConfig
           @head = form_version_line
         end
       else
+        system("#{@form_cmd} #{frmname}")
         fatal("failed to execute '#{@form_cmd}'")
       end
       if !@valgrind.nil?

@@ -12,7 +12,7 @@ inputs:
   flint_version:
     description: FLINT version to build.
     required: false
-    default: '3.4.0'
+    default: '3.6.0'
 
 runs:
   using: composite
@@ -30,7 +30,8 @@ runs:
           build_flint=false
           automake=false diffutils=false gcc=true git=false ruby=true wget=false
           latex=false latex2html=false
-          formlib=false color=false forcer=false mincer=false series=false
+          formlib=false color=false forcer=false mincer=false series=false hyperform=false fmft=false
+          mzv=false
         # NOTE: Some features and OS image combinations are not implemented.
       shell: bash
       run: |
@@ -134,15 +135,21 @@ runs:
           feat_forcer=true
           feat_mincer=true
           feat_series=true
+          feat_hyperform=true
+          feat_fmft=true
+          feat_mzv=true
         fi
 
-        if $feat_color || $feat_forcer || $feat_mincer || $feat_series; then
+        if $feat_color || $feat_forcer || $feat_mincer || $feat_series || $feat_hyperform || $feat_fmft || $feat_mzv; then
           feat_formlib=true
           items=''
           $feat_color && items="$items-color-1.0.0"
           $feat_forcer && items="$items-forcer-1.0.0"
           $feat_mincer && items="$items-mincer-1.0.0"
           $feat_series && items="$items-series-1.0.0"
+          $feat_hyperform && items="$items-hyperform-1.0.0"
+          $feat_fmft && items="$items-fmft-1.0.0"
+          $feat_mzv && items="$items-mzv-1.0.0"
           echo "formlib_key=formlib$items" >>"$GITHUB_OUTPUT"
           echo "formlib_restore_keys=formlib-" >>"$GITHUB_OUTPUT"
           echo "FORMPATH=${{ github.workspace }}/formlib" >>"$GITHUB_ENV"
@@ -263,15 +270,27 @@ runs:
           echo "CONFIG_ARGS=$args" >>"$GITHUB_ENV"
         fi
 
+        # Fix dubious ownership in containers for Git operations.
+        # See: https://github.com/actions/runner/issues/2033#issuecomment-1204205989
+
+        if $feat_container; then
+          chown -R "$(id -u):$(id -g)" "$PWD"
+        fi
+
         # Determine DISTNAME if possible.
 
         if [ -f ./scripts/git-version-gen.sh ] && command -v git >/dev/null 2>&1; then
           echo "DISTNAME=form-$(./scripts/git-version-gen.sh -r | sed '2q;d' | sed 's/^v//')" >>"$GITHUB_ENV"
         fi
 
+        # Get cache key for the image.
+
+        # See: https://github.com/actions/upload-artifact/issues/231
+        echo "image_key=$ImageOS-$ImageVersion" >>"$GITHUB_OUTPUT"
+
     - name: Install dependencies (Ubuntu)
       if: runner.os == 'Linux' && steps.setup.outputs.container == 'false'
-      uses: awalsh128/cache-apt-pkgs-action@a605dbde2ac49a823c9c87ad58491b51848bf355  # for empty_packages_behavior
+      uses: awalsh128/cache-apt-pkgs-action@v1.6.3
       with:
         # We assume libgmp-dev and zlib1g-dev are always installed.
         packages: >-
@@ -281,8 +300,14 @@ runs:
           ${{ steps.setup.outputs.mpfr == 'true' && 'libmpfr-dev' || '' }}
           ${{ steps.setup.outputs.zstd == 'true' && 'libzstd-dev' || '' }}
           ${{ steps.setup.outputs.valgrind == 'true' && 'valgrind' || '' }}
-        version: 1.0
+        # Include the runner image version in the cache key to avoid using stale cache.
+        # See: https://github.com/awalsh128/cache-apt-pkgs-action/issues/187
+        version: ${{ steps.setup.outputs.image_key }}-1.1
         empty_packages_behavior: ignore
+      env:
+        # This avoids skipping running apt-fast update.
+        # See: https://github.com/awalsh128/cache-apt-pkgs-action/issues/166
+        ACT: true
 
     # awalsh128/cache-apt-pkgs-action does not work for MPI.
     # See: https://github.com/awalsh128/cache-apt-pkgs-action/issues/57#issuecomment-1304062077
@@ -440,25 +465,15 @@ runs:
           ${{ steps.setup.outputs.zlib == 'true' && 'mingw-w64-clang-aarch64-zlib' || '' }}
           ${{ steps.setup.outputs.zstd == 'true' && 'mingw-w64-clang-aarch64-zstd' || '' }}
 
-    - name: Get cache key for the image
-      id: cache_key
-      if: steps.setup.outputs.build_flint == 'true'
-      shell: ${{ steps.setup.outputs.msys2 == 'true' && 'msys2 {0}' || 'bash' }}
-      run: |
-        ### Get cache key for the image ###
-
-        # See: https://github.com/actions/upload-artifact/issues/231
-        echo "image_key=$ImageOS-$ImageVersion" >>"$GITHUB_OUTPUT"
-
     - name: Cache FLINT
       id: cache-flint
       if: steps.setup.outputs.build_flint == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: lib/flint
         # Here, we set a conservative cache key so that the cache is not reused
         # when the version or environment changes even slightly.
-        key: flint-${{ inputs.flint_version }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.cache_key.outputs.image_key }}
+        key: flint-${{ inputs.flint_version }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.setup.outputs.image_key }}
 
     # Note that we always set --enable-static so that release and non-release
     # builds can share the same cache.
@@ -512,7 +527,7 @@ runs:
     - name: Cache FORM library
       id: cache-formlib
       if: steps.setup.outputs.formlib == 'true'
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: formlib
         key: ${{ steps.setup.outputs.formlib_key }}
@@ -555,16 +570,31 @@ runs:
           wget https://github.com/a-maier/series/releases/download/1.0.0/series.h -P formlib
           touch formlib/series-1.0.0
         fi
+        if ${{ steps.setup.outputs.hyperform }} && [ ! -f formlib/hyperform-1.0.0 ]; then
+          rm -f formlib/{declare-hyperform.h,hyperform.h,mzvlow.h}
+          git clone https://github.com/adamkardos/HyperFORM.git
+          git -C HyperFORM checkout 44705844f8585454c70b6702024b357d15e7b2c3
+          mv HyperFORM/src/{declare-hyperform.h,hyperform.h,mzvlow.h} formlib/
+          # this file needs to be copied to check/extra when running the tests
+          cat HyperFORM/check/*.frm | sed 's/\*{{{/*--#[/' | sed 's/\*}}}/*--#]/' > formlib/hyperform.frm
+          rm -f formlib/hyperform-*
+          touch formlib/hyperform-1.0.0
+        fi
+        if ${{ steps.setup.outputs.fmft }} && [ ! -f formlib/fmft-1.0.0 ]; then
+          rm -f formlib/fmft*
+          wget https://raw.githubusercontent.com/apik/fmft/refs/tags/1.0/fmft.hh -P formlib
+          touch formlib/fmft-1.0.0
+        fi
+        if ${{ steps.setup.outputs.mzv }} && [ ! -f formlib/mzv-1.0.0 ]; then
+          rm -f formlib/hexall.h
+          wget https://raw.githubusercontent.com/form-dev/form-bench/refs/heads/main/tests/mzv-dm/hexall.h -P formlib
+          touch formlib/mzv-1.0.0
+        fi
 
-    # Fix dubious ownership in containers for Git operations.
-    # See: https://github.com/actions/runner/issues/2033#issuecomment-1204205989
-    - name: Fix dubious ownership
-      if: steps.setup.outputs.container == 'true'
-      shell: bash
-      run: |
-        ### Fix dubious ownership
-
-        chown -R $(id -u):$(id -g) $PWD
+    - name: Copy test files from cache
+      if: steps.setup.outputs.hyperform == 'true'
+      shell: ${{ steps.setup.outputs.msys2 == 'true' && 'msys2 {0}' || 'bash' }}
+      run: cp formlib/hyperform.frm check/extra/
 
     - name: Uncompress tarball
       if: steps.setup.outputs.untar == 'true'

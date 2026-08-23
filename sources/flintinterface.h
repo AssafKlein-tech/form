@@ -65,6 +65,7 @@ extern "C" {
 // The bits of std that are needed:
 using std::cout;
 using std::endl;
+using std::fill;
 using std::map;
 using std::swap;
 using std::string;
@@ -132,10 +133,12 @@ namespace flint {
 	void cleanup(void);
 	void cleanup_master(void);
 
-	WORD* divmod_mpoly(PHEAD const WORD *, const WORD *, const bool, const WORD, const var_map_t &);
+	WORD* divmod_mpoly(PHEAD const WORD *, const WORD *, const bool, const WORD, const var_map_t &,
+		const bool);
 	WORD* divmod_poly(PHEAD const WORD *, const WORD *, const bool, const WORD, const var_map_t &);
 
-	WORD* factorize_mpoly(PHEAD const WORD *, WORD *, const bool, const bool, const var_map_t &);
+	WORD* factorize_mpoly(PHEAD const WORD *, WORD *, const bool, const bool, const var_map_t &,
+		const bool);
 	WORD* factorize_poly(PHEAD const WORD *, WORD *, const bool, const bool, const var_map_t &);
 
 	void form_sort(PHEAD WORD *);
@@ -147,20 +150,20 @@ namespace flint {
 	WORD fmpz_get_form(fmpz_t, WORD *);
 	void fmpz_set_form(fmpz_t, UWORD *, WORD);
 
-	WORD* gcd_mpoly(PHEAD const WORD *, const WORD *, const WORD, const var_map_t &);
+	WORD* gcd_mpoly(PHEAD const WORD *, const WORD *, const WORD, const var_map_t &, const bool);
 	WORD* gcd_poly(PHEAD const WORD *, const WORD *, const WORD, const var_map_t &);
 
 	var_map_t get_variables(const vector <WORD *> &, const bool, const bool);
 
 	WORD* inverse_poly(PHEAD const WORD *, const WORD *, const var_map_t &);
 
-	WORD* mul_mpoly(PHEAD const WORD *, const WORD *, const var_map_t &);
+	WORD* mul_mpoly(PHEAD const WORD *, const WORD *, const var_map_t &, const bool);
 	WORD* mul_poly(PHEAD const WORD *, const WORD *, const var_map_t &);
 
-	void ratfun_add_mpoly(PHEAD const WORD *, const WORD *, WORD *, const var_map_t &);
+	void ratfun_add_mpoly(PHEAD const WORD *, const WORD *, WORD *, const var_map_t &, const bool);
 	void ratfun_add_poly(PHEAD const WORD *, const WORD *, WORD *, const var_map_t &);
 
-	void ratfun_normalize_mpoly(PHEAD WORD *, const var_map_t &);
+	void ratfun_normalize_mpoly(PHEAD WORD *, const var_map_t &, const bool);
 	void ratfun_normalize_poly(PHEAD WORD *, const var_map_t &);
 
 	void ratfun_read_mpoly(const WORD *, fmpz_mpoly_t, fmpz_mpoly_t, const var_map_t &,
@@ -168,9 +171,9 @@ namespace flint {
 	void ratfun_read_poly(const WORD *, fmpz_poly_t, fmpz_poly_t);
 
 	uint64_t to_argument_mpoly(PHEAD WORD *, const bool, const bool, const bool, const uint64_t,
-		const fmpz_mpoly_t, const var_map_t &, const fmpz_mpoly_ctx_t);
+		const fmpz_mpoly_t, const var_map_t &, const fmpz_mpoly_ctx_t, const bool);
 	uint64_t to_argument_mpoly(PHEAD WORD *, const bool, const bool, const bool, const uint64_t,
-		const fmpz_mpoly_t, const var_map_t &, const fmpz_mpoly_ctx_t, const fmpz_t);
+		const fmpz_mpoly_t, const var_map_t &, const fmpz_mpoly_ctx_t, const bool, const fmpz_t);
 	uint64_t to_argument_poly(PHEAD WORD *, const bool, const bool, const bool, const uint64_t,
 		const fmpz_poly_t, const var_map_t &);
 	uint64_t to_argument_poly(PHEAD WORD *, const bool, const bool, const bool, const uint64_t,

@@ -89,6 +89,7 @@ SETUPPARAMETERS setupparameters[] =
 	,{(UBYTE *)"oldgcd",                    ONOFFVALUE, 0, (LONG)1}
 	,{(UBYTE *)"oldorder",                  ONOFFVALUE, 0, (LONG)0}
 	,{(UBYTE *)"oldparallelstatistics",     ONOFFVALUE, 0, (LONG)0}
+	,{(UBYTE *)"oldprfsign",                ONOFFVALUE, 0, (LONG)0}
 	,{(UBYTE *)"parentheses",           NUMERICALVALUE, 0, (LONG)MAXPARLEVEL}
 	,{(UBYTE *)"path",                       PATHVALUE, 0, (LONG)curdirp}
 	,{(UBYTE *)"procedureextension",       STRINGVALUE, 0, (LONG)procedureextension}
@@ -279,11 +280,11 @@ restart:;
 				break;
 			case PATHVALUE:
 				if ( StrICmp(s1,(UBYTE *)"incdir") == 0 ) {
-					AM.IncDir = 0;
+					AM.IncDir = NULL;
 				}
 				else if ( StrICmp(s1,(UBYTE *)"path") == 0 ) {
 					if ( AM.Path ) M_free(AM.Path,"path");
-					AM.Path = 0;
+					AM.Path = NULL;
 				}
 				else {
 					MesPrint("Setups: %s not yet implemented",s1);
@@ -389,8 +390,17 @@ int RecalcSetups(void)
 	if ( AM.MaxTer > MAXPOSITIVE - 200*(LONG)(sizeof(WORD)) ) AM.MaxTer = MAXPOSITIVE - 200*(LONG)(sizeof(WORD));
 	AM.MaxTer /= sizeof(WORD);
 	AM.MaxTer *= sizeof(WORD);
-	minimumsize = (AM.totalnumberofthreads-1)*(AM.MaxTer+
-		NUMBEROFBLOCKSINSORT*MINIMUMNUMBEROFTERMS*AM.MaxTer);
+#ifdef WITHSORTBOTS
+	if ( AM.totalnumberofthreads-1 > 2 ) {
+		minimumsize = (2*(AM.totalnumberofthreads-1)-2)*(AM.MaxTer+
+			NUMBEROFBLOCKSINSORT*MINIMUMNUMBEROFTERMS/2*AM.MaxTer);
+	}
+	else
+#endif
+	{
+		minimumsize = (AM.totalnumberofthreads-1)*(AM.MaxTer+
+			NUMBEROFBLOCKSINSORT*MINIMUMNUMBEROFTERMS*AM.MaxTer);
+	}
 	if ( totalsize < minimumsize ) {
 		sp->value = minimumsize - sp1->value;
 	}
@@ -546,7 +556,7 @@ int AllocSetups(void)
 	sp = GetSetupPar((UBYTE *)"threadsortfilesynch");
 	AC.ThreadSortFileSynch = AM.gThreadSortFileSynch = AM.ggThreadSortFileSynch = sp->value;
 /*
-     The size for shared memory window for oneside MPI2 communications
+     The size for shared memory window for oneside MPI2 communications (unused)
 */
 	sp = GetSetupPar((UBYTE *)"shmwinsize");
 	AM.shmWinSize = sp->value/sizeof(WORD);
@@ -763,6 +773,8 @@ int AllocSetups(void)
 	AC.OldFactArgFlag = AM.gOldFactArgFlag = AM.ggOldFactArgFlag = sp->value;
 	sp = GetSetupPar((UBYTE *)"oldgcd");
 	AC.OldGCDflag = AM.gOldGCDflag = AM.ggOldGCDflag = sp->value;
+	sp = GetSetupPar((UBYTE *)"oldprfsign");
+	AC.OldPRFSignFlag = sp->value;
 	sp = GetSetupPar((UBYTE *)"wtimestats");
 	if ( sp->value == 2 ) sp->value = AM.ggWTimeStatsFlag;
 	AC.WTimeStatsFlag = AM.gWTimeStatsFlag = AM.ggWTimeStatsFlag = sp->value;
@@ -833,16 +845,16 @@ int AllocSetups(void)
 /*
 	And now some order sensitive things
 */
-	if ( AM.Path == 0 ) {
+	if ( AM.Path == NULL ) {
 		sp = GetSetupPar((UBYTE *)"path");
 		AM.Path = strDup1((UBYTE *)(sp->value),"path");
 	}
-	if ( AM.IncDir == 0 ) {
+	if ( AM.IncDir == NULL ) {
 		sp = GetSetupPar((UBYTE *)"incdir");
 		AM.IncDir = strDup1((UBYTE *)(sp->value),"incdir");
 	}
 /*
-	if ( AM.TempDir == 0 ) {
+	if ( AM.TempDir == NULL ) {
 		sp = GetSetupPar((UBYTE *)"tempdir");
 		AM.TempDir = strDup1((UBYTE *)(sp->value),"tempdir");
 	}
@@ -1186,6 +1198,32 @@ int MakeSetupAllocs(void)
 
 /*
  		#] MakeSetupAllocs : 
+		#[ AllocNormData :
+
+	Allocate the arrays within the NORMDATA struct. These are dynamic,
+	such that valgrind can detect buffer overruns in these arrays.
+*/
+
+NORMDATA* AllocNormData(void)
+{
+	NORMDATA* tmp = Malloc1(sizeof(NORMDATA), "NormData struct");
+
+	tmp->psym = Malloc1(7*NORMSIZE*sizeof(*(tmp->psym)), "Normalize struct psym");
+	tmp->pvec = Malloc1(1*NORMSIZE*sizeof(*(tmp->pvec)), "Normalize struct pvec");
+	tmp->pdot = Malloc1(3*NORMSIZE*sizeof(*(tmp->pdot)), "Normalize struct pdot");
+	tmp->pdel = Malloc1(2*NORMSIZE*sizeof(*(tmp->pdel)), "Normalize struct pdel");
+	tmp->pind = Malloc1(1*NORMSIZE*sizeof(*(tmp->pind)), "Normalize struct pind");
+	tmp->peps = Malloc1(NORMSIZE/3*sizeof(*(tmp->peps)), "Normalize struct peps");
+	tmp->pden = Malloc1(NORMSIZE/3*sizeof(*(tmp->pden)), "Normalize struct pden");
+	tmp->pcom = Malloc1(1*NORMSIZE*sizeof(*(tmp->pcom)), "Normalize struct pcom");
+	tmp->pnco = Malloc1(1*NORMSIZE*sizeof(*(tmp->pnco)), "Normalize struct pnco");
+	tmp->pcon = Malloc1(2*NORMSIZE*sizeof(*(tmp->pcon)), "Normalize struct pcon");
+
+	return tmp;
+}
+
+/*
+		#] AllocNormData : 
  		#[ TryFileSetups :
 
 		Routine looks in the input file for a start of the type
@@ -1206,6 +1244,7 @@ int TryFileSetups(void)
 	int oldNoShowInput = AC.NoShowInput;
 	UBYTE buff[SETBUFSIZE+1], *s, *t, *u, *settop, c;
 	LONG linenum, prevline;
+	AP.FoundFileSetupCount = 0;
 
 	if ( AC.CurrentStream == 0 ) return(error);
 	oldstream = AC.CurrentStream - AC.Streams;
@@ -1232,6 +1271,8 @@ int TryFileSetups(void)
 			while ( c != '\n' && c != ENDOFINPUT ) c = GetInput();
 			continue;
 		}
+		// Count the number of file setup parameters found
+		AP.FoundFileSetupCount++;
 		s = buff;
 		while ( ( c = GetInput() ) == ' ' || c == '\t' || c == '\r' ) {}
 		if ( c == ENDOFINPUT ) break;

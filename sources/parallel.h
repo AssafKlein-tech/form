@@ -36,12 +36,22 @@
 /*
   	#[ macros & definitions :
 */
+
+/*
+ * Rank of the master process.
+ */
 #define MASTER 0
 #define REDUCER 1
 
-#define PF_RESET 0
-#define PF_TIME  1
+/*
+ * Selector constants for PF_RealTime().
+ */
+#define PF_RESET 0  /* reset the timer */
+#define PF_TIME  1  /* get the elapsed time */
 
+/*
+ * Message tags for communication during parallel execution.
+ */
 #define PF_TERM_MSGTAG          10  /* master -> slave: sending terms */
 #define PF_ENDSORT_MSGTAG       11  /* master -> slave: no more terms to be distributed, slave -> master: after EndSort() */
 #define PF_DOLLAR_MSGTAG        12  /* slave -> master: sending $-variables */
@@ -55,6 +65,8 @@
 #define PF_OPT_MCTS_MSGTAG      70  /* master <-> slave: optimization */
 #define PF_OPT_HORNER_MSGTAG    71  /* master <-> slave: optimization */
 #define PF_OPT_COLLECT_MSGTAG   72  /* slave -> master: optimization */
+#define PF_RUNTIME_ERROR_MSGTAG 80  /* slave <-> master: runtime error */
+#define PF_RUNTIME_SYNC_MSGTAG  81  /* master <-> slave: sync after EndSort() */
 #define PF_MISC_MSGTAG         100
 #define PF_SHUFFLE_MSGTAG      110  /* mapper -> reducer: sending terms*/
 #define PF_ENDSHUFFLE_MSGTAG   111  /* same as PF_SHUFFLE_MSGTAG but indicates the end of operation*/
@@ -216,8 +228,8 @@ typedef struct ParallelVars {
 	int         exprbufsize;    /* buffer size in WORDs to be used for transferring expressions */
 	int         exprtodo;       /* >= 0: the expression to do in InParallel, -1: otherwise */
 	int         log;            /* flag for logging mode */
-	//MPI_Comm    mapComm;			/*communicator for mappers*/
 	PF_Dispatch dispatch;      /* dispatcher for mappers->reducers communication */
+	int         notMyFault;     /* flag for termination due to another process's runtime error */
 	WORD        numsbufs;       /* number of cyclic send buffers (PF.sbufs->numbufs) */
 	WORD        numrbufs;       /* number of cyclic receive buffers (PF.rbufs[i]->numbufs, i=1,...numtasks-1) */
 	LONG        shuffle_arena_words; /* mapper-config sort buffer arena in WORDs = (mapper-largesize + mapper-smallextension)/sizeof(WORD).
@@ -244,6 +256,7 @@ extern int    PF_GetDestReducer();
 extern int    PF_ISendSbuf(int,int);
 extern int    PF_WISendSbuf(int , int);
 extern int    PF_Bcast(void *buffer, int count);
+extern int    PF_Reduce(const void *sendbuf, void *recvbuf, int count, MPI_Datatype type, MPI_Op op, int root);
 extern int    PF_RawSend(int,void *,LONG,int);
 extern LONG   PF_RawRecv(int *,void *,LONG,int *);
 
@@ -292,6 +305,7 @@ extern int    PF_EndSort(void);
 extern WORD   PF_Deferred(WORD *,WORD);
 extern int    PF_Processor(EXPRESSIONS,WORD,WORD);
 extern int    PF_Init(int*,char ***);
+extern void   PF_PreTerminate(int errorcode);
 extern int    PF_Terminate(int);
 extern LONG   PF_GetSlaveTimes(void);
 extern LONG   PF_BroadcastNumber(LONG);
@@ -315,6 +329,7 @@ extern void   PF_MUnlock(void);
 extern LONG   PF_WriteFileToFile(int,UBYTE *,LONG);
 extern void   PF_FlushStdOutBuffer(void);
 extern int    PF_shuffle_nocompress;  /* env PF_SHUFFLE_NOCOMPRESS toggle for the per-reducer delta-compression path in PutOut/lowmr_sort */
+extern void   PF_ReceiveRuntimeError(void) NORETURN;
 
 /*
   	#] Function prototypes :

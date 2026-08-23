@@ -66,7 +66,7 @@ WORD* flint_div(PHEAD WORD *a, WORD *b, const WORD must_fit_term) {
 
 	const bool return_rem = false;
 	if ( var_map.size() > 1 ) {
-		return flint::divmod_mpoly(BHEAD a, b, return_rem, must_fit_term, var_map);
+		return flint::divmod_mpoly(BHEAD a, b, return_rem, must_fit_term, var_map, sort_vars);
 	}
 	else {
 		return flint::divmod_poly(BHEAD a, b, return_rem, must_fit_term, var_map);
@@ -85,7 +85,7 @@ int flint_factorize_argument(PHEAD WORD *argin, WORD *argout) {
 
 	const bool is_fun_arg = true;
 	if ( var_map.size() > 1 ) {
-		flint::factorize_mpoly(BHEAD argin, argout, with_arghead, is_fun_arg, var_map);
+		flint::factorize_mpoly(BHEAD argin, argout, with_arghead, is_fun_arg, var_map, sort_vars);
 	}
 	else {
 		flint::factorize_poly(BHEAD argin, argout, with_arghead, is_fun_arg, var_map);
@@ -106,7 +106,7 @@ WORD* flint_factorize_dollar(PHEAD WORD *argin) {
 
 	const bool is_fun_arg = false;
 	if ( var_map.size() > 1 ) {
-		return flint::factorize_mpoly(BHEAD argin, NULL, with_arghead, is_fun_arg, var_map);
+		return flint::factorize_mpoly(BHEAD argin, NULL, with_arghead, is_fun_arg, var_map, sort_vars);
 	}
 	else {
 		return flint::factorize_poly(BHEAD argin, NULL, with_arghead, is_fun_arg, var_map);
@@ -127,7 +127,7 @@ WORD* flint_gcd(PHEAD WORD *a, WORD *b, const WORD must_fit_term) {
 	const flint::var_map_t var_map = flint::get_variables(e, with_arghead, sort_vars);
 
 	if ( var_map.size() > 1 ) {
-		return flint::gcd_mpoly(BHEAD a, b, must_fit_term, var_map);
+		return flint::gcd_mpoly(BHEAD a, b, must_fit_term, var_map, sort_vars);
 	}
 	else {
 		return flint::gcd_poly(BHEAD a, b, must_fit_term, var_map);
@@ -164,10 +164,12 @@ WORD* flint_mul(PHEAD WORD *a, WORD *b) {
 	e.reserve(2);
 	e.push_back(a);
 	e.push_back(b);
-	const flint::var_map_t var_map = flint::get_variables(e, false, false);
+	const bool with_arghead = false;
+	const bool sort_vars = false;
+	const flint::var_map_t var_map = flint::get_variables(e, with_arghead, sort_vars);
 
 	if ( var_map.size() > 1 ) {
-		return flint::mul_mpoly(BHEAD a, b, var_map);
+		return flint::mul_mpoly(BHEAD a, b, var_map, sort_vars);
 	}
 	else {
 		return flint::mul_poly(BHEAD a, b, var_map);
@@ -200,11 +202,11 @@ WORD* flint_ratfun_add(PHEAD WORD *t1, WORD *t2) {
 		NEXTARG(t);
 	}
 	const bool with_arghead = true;
-	const bool sort_vars = true;
+	const bool sort_vars = AC.OldPRFSignFlag ? true : false;
 	const flint::var_map_t var_map = flint::get_variables(e, with_arghead, sort_vars);
 
 	if ( var_map.size() > 1 ) {
-		flint::ratfun_add_mpoly(BHEAD t1, t2, oldworkpointer, var_map);
+		flint::ratfun_add_mpoly(BHEAD t1, t2, oldworkpointer, var_map, sort_vars);
 	}
 	else {
 		flint::ratfun_add_poly(BHEAD t1, t2, oldworkpointer, var_map);
@@ -266,11 +268,11 @@ int flint_ratfun_normalize(PHEAD WORD *term) {
 		}
 	}
 	const bool with_arghead = true;
-	const bool sort_vars = true;
+	const bool sort_vars = AC.OldPRFSignFlag ? true : false;
 	const flint::var_map_t var_map = flint::get_variables(e, with_arghead, sort_vars);
 
 	if ( var_map.size() > 1 ) {
-		flint::ratfun_normalize_mpoly(BHEAD term, var_map);
+		flint::ratfun_normalize_mpoly(BHEAD term, var_map, sort_vars);
 	}
 	else {
 		flint::ratfun_normalize_poly(BHEAD term, var_map);
@@ -301,7 +303,7 @@ WORD* flint_rem(PHEAD WORD *a, WORD *b, const WORD must_fit_term) {
 
 	const bool return_rem = true;
 	if ( var_map.size() > 1 ) {
-		return flint::divmod_mpoly(BHEAD a, b, return_rem, must_fit_term, var_map);
+		return flint::divmod_mpoly(BHEAD a, b, return_rem, must_fit_term, var_map, sort_vars);
 	}
 	else {
 		return flint::divmod_poly(BHEAD a, b, return_rem, must_fit_term, var_map);

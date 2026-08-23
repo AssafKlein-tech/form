@@ -291,7 +291,7 @@ int DoTail(int argc, UBYTE **argv)
 	AM.LogType = -1;
 	AM.HoldFlag = AM.qError = AM.Interact = AM.FileOnlyFlag = 0;
 	AM.InputFileName = AM.LogFileName = AM.IncDir = AM.TempDir = AM.TempSortDir =
-	AM.SetupDir = AM.SetupFile = AM.Path = 0;
+	AM.SetupDir = AM.SetupFile = AM.Path = NULL;
 	AM.FromStdin = 0;
 	/* Always use MultiRun, "-M" option is now ignored. */
 	AM.MultiRun = 1;
@@ -565,7 +565,7 @@ IllegalOption:
 			while ( *s ) *t++ = *s++;
 			*t++ = '.'; *t++ = 'f'; *t++ = 'r'; *t++ = 'm'; *t = 0;
 		}
-		if ( AM.LogType >= 0 && AM.LogFileName == 0 ) {
+		if ( AM.LogType >= 0 && AM.LogFileName == NULL ) {
 			AM.LogFileName = strDup1(AM.InputFileName,"name of logfile");
 			s = AM.LogFileName;
 			while ( *s ) s++;
@@ -594,7 +594,7 @@ NoFile:
 		printf("No filename specified in call of FORM\n");
 		errorflag++;
 	}
-	if ( AM.Path == 0 ) AM.Path = (UBYTE *)getenv("FORMPATH");
+	if ( AM.Path == NULL ) AM.Path = (UBYTE *)getenv("FORMPATH");
 	if ( AM.Path ) {
 		/*
 		 * AM.Path is taken from argv or getenv. Reallocate it to avoid invalid
@@ -745,22 +745,22 @@ void ReserveTempFiles(int par)
 	int i = 0;
 	WORD j;
 	if ( par == 0 || par == 1 ) {
-	if ( AM.TempDir == 0 ) {
+	if ( AM.TempDir == NULL ) {
 		sp = GetSetupPar((UBYTE *)"tempdir");
 		if ( ( sp->flags & USEDFLAG ) != USEDFLAG ) {
 			AM.TempDir = (UBYTE *)getenv("FORMTMP");
-			if ( AM.TempDir == 0 ) AM.TempDir = emptystring;
+			if ( AM.TempDir == NULL ) AM.TempDir = emptystring;
 		}
 		else AM.TempDir = (UBYTE *)(sp->value);
 	}
-	if ( AM.TempSortDir == 0 ) {
+	if ( AM.TempSortDir == NULL ) {
 		if ( AM.havesortdir ) {
 			sp = GetSetupPar((UBYTE *)"tempsortdir");
 			AM.TempSortDir = (UBYTE *)(sp->value);
 		}
 		else {
 			AM.TempSortDir = (UBYTE *)getenv("FORMTMPSORT");
-			if ( AM.TempSortDir == 0 ) AM.TempSortDir = AM.TempDir;
+			if ( AM.TempSortDir == NULL ) AM.TempSortDir = AM.TempDir;
 		}
 	}
 /*
@@ -1260,6 +1260,11 @@ void StartVariables(void)
 	AR.wranfnpair1 = NPAIR1;
 	AR.wranfnpair2 = NPAIR2;
 	AR.wranfseed = 0;
+
+	AT.NormData = Malloc1(sizeof(*(AT.NormData)), "NormData pointers");
+	AT.NormDataSize = 1;
+	AT.NormData[0] = AllocNormData();
+	AT.NormDepth = 0;
 #endif
 	AM.atstartup = 1;
 	AM.oldnumextrasymbols = strDup1((UBYTE *)"OLDNUMEXTRASYMBOLS_","oldnumextrasymbols");
@@ -1364,6 +1369,7 @@ void StartVariables(void)
 	AC.OldParallelStats = AM.gOldParallelStats = AM.ggOldParallelStats = 0;
 	AC.OldFactArgFlag = AM.gOldFactArgFlag = AM.ggOldFactArgFlag = NEWFACTARG;
 	AC.OldGCDflag = AM.gOldGCDflag = AM.ggOldGCDflag = 1;
+	AC.OldPRFSignFlag = 0;
 	AC.WTimeStatsFlag = AM.gWTimeStatsFlag = AM.ggWTimeStatsFlag = 0;
 	AM.gcNumDollars = AP.DollarList.num;
 	AC.SizeCommuteInSet = AM.gSizeCommuteInSet = 0;
@@ -1944,7 +1950,11 @@ static int firstterminate = 1;
 
 void TerminateImpl(int errorcode, const char* file, int line, const char* function)
 {
+#ifdef WITHMPI
+	if ( errorcode && firstterminate && !PF.notMyFault ) {
+#else
 	if ( errorcode && firstterminate ) {
+#endif
 		firstterminate = 0;
 
 		MLOCK(ErrorMessageLock);
@@ -2070,6 +2080,9 @@ backtrace_fallback: ;
 
 		MUNLOCK(ErrorMessageLock);
 
+#ifdef WITHMPI
+		PF_PreTerminate(errorcode);
+#endif
 		Crash();
 	}
 #ifdef TRAPSIGNALS
